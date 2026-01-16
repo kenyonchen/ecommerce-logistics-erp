@@ -2,6 +2,7 @@ package site.hexaarch.ecommerce.logistics.domain.tenant.repository;
 
 import site.hexaarch.ecommerce.logistics.domain.tenant.aggregate.Tenant;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -41,6 +42,13 @@ public interface TenantRepository {
      * @return 租户
      */
     Optional<Tenant> findByContactEmail(String email);
+
+    /**
+     * 获取所有租户
+     *
+     * @return 租户列表
+     */
+    List<Tenant> findAll();
 
     /**
      * 删除租户

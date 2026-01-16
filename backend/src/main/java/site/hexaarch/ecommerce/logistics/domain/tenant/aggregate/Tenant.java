@@ -8,6 +8,7 @@ import site.hexaarch.ecommerce.logistics.domain.tenant.valueobject.TenantStatus;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * 租户聚合根
@@ -40,6 +41,7 @@ public class Tenant extends BaseAggregateRoot<Tenant> {
     // 工厂方法
     public static Tenant create(String name, String description, String contactEmail, String contactPhone) {
         Tenant tenant = new Tenant();
+        tenant.id = UUID.randomUUID().toString();  // 生成唯一ID
         tenant.name = name;
         tenant.description = description;
         tenant.contactEmail = contactEmail;

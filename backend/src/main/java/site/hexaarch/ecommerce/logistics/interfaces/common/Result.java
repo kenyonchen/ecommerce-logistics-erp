@@ -81,7 +81,7 @@ public class Result<T> {
      * @return 错误响应
      */
     public static <T> Result<T> error(String message) {
-        return new Result<>("ERROR", message, null);
+        return new Result<>("500", message, null);
     }
 
     /**
@@ -105,6 +105,6 @@ public class Result<T> {
      * @return 错误响应
      */
     public static <T> Result<T> fail(String message) {
-        return new Result<>("ERROR", message, null);
+        return new Result<>("400", message, null);
     }
 }

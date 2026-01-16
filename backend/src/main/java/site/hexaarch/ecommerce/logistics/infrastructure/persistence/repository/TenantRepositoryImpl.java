@@ -6,6 +6,7 @@ import site.hexaarch.ecommerce.logistics.domain.tenant.repository.TenantReposito
 import site.hexaarch.ecommerce.logistics.infrastructure.persistence.jpa.mapper.TenantMapper;
 import site.hexaarch.ecommerce.logistics.infrastructure.persistence.jpa.repository.TenantJpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -47,6 +48,14 @@ public class TenantRepositoryImpl implements TenantRepository {
     public Optional<Tenant> findByContactEmail(String email) {
         return tenantJpaRepository.findByContactEmail(email)
                 .map(tenantMapper::toDomainEntity);
+    }
+
+    @Override
+    public List<Tenant> findAll() {
+        return tenantJpaRepository.findAll()
+                .stream()
+                .map(tenantMapper::toDomainEntity)
+                .toList();
     }
 
     @Override

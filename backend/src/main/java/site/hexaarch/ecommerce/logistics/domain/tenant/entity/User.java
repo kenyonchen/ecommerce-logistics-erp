@@ -8,6 +8,7 @@ import site.hexaarch.ecommerce.logistics.domain.tenant.valueobject.UserStatus;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * 用户实体
@@ -43,6 +44,7 @@ public class User extends BaseEntity {
     public static User create(String tenantId, String username, String password, String email,
                               String phone, String firstName, String lastName) {
         User user = new User();
+        user.id = UUID.randomUUID().toString();  // 生成唯一ID
         user.tenantId = tenantId;
         user.username = username;
         user.password = password;

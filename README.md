@@ -1,8 +1,8 @@
-# 电商物流ERP系统
+# 跨境大卖ERP系统
 
 ## 项目简介
 
-本项目是一个基于领域驱动设计（DDD）的电商物流ERP系统，专为跨境电商卖家提供订单管理、仓储管理、物流管理等一体化服务。系统采用前后端分离架构，前端使用React + Vite，后端使用Java Spring Boot。
+本项目是一个基于领域驱动设计（DDD）的跨境大卖ERP系统，专为跨境电商卖家提供订单管理、仓储管理、物流管理等一体化服务。系统采用前后端分离架构，前端使用React + Vite，后端使用Java Spring Boot。
 主要功能如下：
 - 实现订单状态变更、取消、同步功能
 - 实现物流状态跟踪、渠道管理、标签生成
@@ -179,11 +179,11 @@ git clone https://github.com/kenyonchen/ecommerce-logistics-erp.git
 cd ecommerce-logistics-erp
 ```
 
-### 前端
+### 用户前端
 
 1. 进入前端目录
    ```bash
-   cd frontend
+   cd frontend/user-web
    ```
 
 2. 安装依赖
@@ -198,6 +198,26 @@ cd ecommerce-logistics-erp
 
 4. 访问系统
    打开浏览器，访问 http://localhost:5173
+
+### 管理员前端
+
+1. 进入前端目录
+   ```bash
+   cd frontend/admin-web
+   ```
+
+2. 安装依赖
+   ```bash
+   npm install
+   ```
+
+3. 启动开发服务器
+   ```bash
+   npm run dev
+   ```
+
+4. 访问系统
+   打开浏览器，访问 http://localhost:5174
 
 ### 后端
 

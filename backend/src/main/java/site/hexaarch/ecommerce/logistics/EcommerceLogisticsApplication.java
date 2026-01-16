@@ -5,7 +5,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.ComponentScan;
 
 /**
- * Spring Boot应用程序主类，作为电商物流ERP系统的入口点。
+ * Spring Boot应用程序主类，作为跨境大卖ERP系统的入口点。
  *
  * @author kenyon
  */

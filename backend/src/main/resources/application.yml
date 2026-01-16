@@ -5,6 +5,13 @@ spring:
   application:
     name: ecommerce-logistics-erp
   
+  # 热部署配置
+  devtools:
+    restart:
+      enabled: true
+      additional-paths: src/main/java
+      exclude: META-INF/maven/**,META-INF/resources/**,resources/**,static/**,public/**,templates/**,**/test/**
+  
   # 数据库配置
   datasource:
     url: jdbc:mysql://localhost:3306/ecommerce_logistics_erp?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
@@ -19,18 +26,17 @@ spring:
       ddl-auto: update
     show-sql: true
   
-  # Kafka配置
-  kafka:
-    bootstrap-servers: localhost:9092
+  # RocketMQ配置
+  rocketmq:
+    name-server: localhost:9876
     producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-    consumer:
-      group-id: ecommerce-logistics-erp-group
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
-      properties:
-        spring.json.trusted.packages: site.hexaarch.ecommerce.logistics
+      group: ecommerce-logistics-producer-group
+      send-message-timeout: 3000
+      retry-times-when-send-failed: 2
+      retry-times-when-send-async-failed: 2
+      compress-message-body-threshold: 4096
+      max-message-size: 4194304
+      retry-next-server: true
 
 # Swagger配置
 springdoc:
@@ -54,7 +60,7 @@ logging:
     org.springdoc: INFO
 
 jwt:
-  secret: sssssssssss
+  secret: mySecretKeyMustBeAtLeast256BitsLongForHS512AlgorithmAndShouldContainComplexCharacters12345!
   expiration: 86400000
   refresh:
     expiration: 86400000

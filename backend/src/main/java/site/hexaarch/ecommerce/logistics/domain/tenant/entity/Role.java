@@ -7,6 +7,7 @@ import site.hexaarch.ecommerce.logistics.domain.common.BaseEntity;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * 角色实体
@@ -37,6 +38,7 @@ public class Role extends BaseEntity {
     // 工厂方法
     public static Role create(String tenantId, String name, String description) {
         Role role = new Role();
+        role.id = UUID.randomUUID().toString();  // 生成唯一ID
         role.tenantId = tenantId;
         role.name = name;
         role.description = description;
@@ -46,6 +48,7 @@ public class Role extends BaseEntity {
     // 创建系统角色
     public static Role createSystemRole(String name, String description) {
         Role role = new Role();
+        role.id = UUID.randomUUID().toString();  // 生成唯一ID
         role.tenantId = "SYSTEM";
         role.name = name;
         role.description = description;

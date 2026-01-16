@@ -55,6 +55,7 @@ public class OrderController {
     @GetMapping("/{id}")
     public Result<OrderDto> getOrderById(
             @Parameter(description = "订单ID") @PathVariable String id) {
+        // 测试热部署功能
         var order = orderApplicationService.findOrderById(id);
         return Result.success(orderMapper.toDto(order));
     }

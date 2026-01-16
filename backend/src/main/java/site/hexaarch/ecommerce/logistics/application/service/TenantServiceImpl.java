@@ -45,8 +45,7 @@ public class TenantServiceImpl implements TenantService {
 
     @Override
     public List<Tenant> getAllTenants() {
-        // 实现获取所有租户的逻辑
-        return List.of();
+        return tenantRepository.findAll();
     }
 
     @Override
