@@ -1,0 +1,60 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ecommerce-logistics-erp
+  
+  # 数据库配置
+  datasource:
+    url: jdbc:mysql://localhost:3306/ecommerce_logistics_erp?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: root
+    password: 123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  
+  # JPA配置
+  jpa:
+    database-platform: org.hibernate.dialect.MySQL8Dialect
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+  
+  # Kafka配置
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: ecommerce-logistics-erp-group
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: site.hexaarch.ecommerce.logistics
+
+# Swagger配置
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
+  group-configs:
+    - group: 'public-api'
+      paths-to-match: '/api/**'
+      packages-to-scan: site.hexaarch.ecommerce.logistics.interfaces.controller
+
+# 日志配置
+logging:
+  level:
+    site.hexaarch.ecommerce.logistics: INFO
+    org.springframework: INFO
+    org.hibernate: INFO
+    org.springdoc: INFO
+
+jwt:
+  secret: sssssssssss
+  expiration: 86400000
+  refresh:
+    expiration: 86400000
