@@ -10,6 +10,17 @@ public class BusinessException extends RuntimeException {
     private final Object[] params;
 
     /**
+     * 构造方法（默认错误码 BUSINESS_ERROR）
+     *
+     * @param message 错误消息
+     */
+    public BusinessException(String message) {
+        super(message);
+        this.errorCode = "BUSINESS_ERROR";
+        this.params = null;
+    }
+
+    /**
      * 构造方法
      *
      * @param message   错误消息

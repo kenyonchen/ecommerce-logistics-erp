@@ -1,68 +1,100 @@
+/* ==========================================================================
+   全局重置 + 设计令牌
+   平台管理端为亮色数据密集型控制台，此处不再声明 color-scheme: light dark，
+   否则系统切到深色模式时页面底色会被翻转、与 antd 亮色主题冲突。
+   ========================================================================== */
+
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+  /* 间距刻度：4/8dp 节奏 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  /* 圆角 */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
 
+  /* 语义色：与 src/theme.js 的 antd token 保持一致 */
+  --color-primary: #1e40af;
+  --color-primary-hover: #1d4ed8;
+  --color-bg-layout: #f1f5f9;
+  --color-bg-container: #ffffff;
+  --color-text: #0f172a;
+  --color-text-secondary: #475569;
+  --color-border: #dbeafe;
+  --color-danger: #dc2626;
+
+  /* 层级：header / sider 遮罩 */
+  --z-header: 20;
+  --z-sider-mask: 30;
+
+  /* 交互态过渡：150-300ms */
+  --transition-base: 180ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* 中文优先的系统字体栈（设计系统推荐的 Fira Sans 无中文字形，
+     强行套用会触发逐字回退，反而降低中文渲染与加载表现） */
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial,
+    sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
+* {
+  box-sizing: border-box;
 }
-a:hover {
-  color: #535bf2;
+
+/* 撑满视口：#root 限宽居中会让大屏内容被压窄、小屏被 padding 挤压 */
+html,
+body,
+#root {
+  height: 100%;
 }
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
+  background: var(--color-bg-layout);
+  color: var(--color-text);
+  /* 不使用 display:flex + place-items:center —— 那会让内容无法撑满并干扰滚动 */
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+/* 标题默认外边距交由组件控制，避免浏览器默认 0.67em 造成的垂直节奏错乱 */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  margin: 0;
 }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+/* 链接默认继承颜色，具体颜色由组件（antd Link / Menu）自行决定 */
+a {
+  color: inherit;
+  text-decoration: none;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
+/* 键盘可达性：焦点环必须可见 */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* 尊重系统的「减少动态效果」设置 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

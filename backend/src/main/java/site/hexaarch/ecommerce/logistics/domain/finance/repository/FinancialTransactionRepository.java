@@ -1,9 +1,11 @@
 package site.hexaarch.ecommerce.logistics.domain.finance.repository;
 
+import site.hexaarch.ecommerce.logistics.domain.common.PageResult;
 import site.hexaarch.ecommerce.logistics.domain.finance.aggregate.FinancialTransaction;
 import site.hexaarch.ecommerce.logistics.domain.finance.valueobject.TransactionStatus;
 import site.hexaarch.ecommerce.logistics.domain.finance.valueobject.TransactionType;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -52,4 +54,22 @@ public interface FinancialTransactionRepository {
      * @return 财务交易列表
      */
     List<FinancialTransaction> findByReference(String referenceId, String referenceType);
+
+    /**
+     * 按条件分页查询财务交易（按创建时间倒序）。
+     *
+     * @param tenantId      租户ID（可空）
+     * @param type          交易类型（可空）
+     * @param status        交易状态（可空）
+     * @param referenceId   关联ID（可空）
+     * @param referenceType 关联类型（可空）
+     * @param from          创建时间起（可空）
+     * @param to            创建时间止（可空）
+     * @param page          页码，从0开始
+     * @param size          每页条数
+     * @return 分页结果
+     */
+    PageResult<FinancialTransaction> search(String tenantId, TransactionType type, TransactionStatus status,
+                                            String referenceId, String referenceType,
+                                            LocalDateTime from, LocalDateTime to, int page, int size);
 }

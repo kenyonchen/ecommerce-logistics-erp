@@ -1,0 +1,16 @@
+directory,files,lines,main_extensions
+backend/src/main/java,513,54858,java:513
+frontend/user-web,70,20268,jsx:52; js:9; json:2
+backend/src/test/java,54,13149,java:54
+frontend/admin-web,21,6012,jsx:9; js:3; json:2
+docs/tech,27,3042,csv:15; md:12
+docs/spec,10,2011,md:10
+docs/product,8,1442,md:8
+docs/db,4,1317,md:3; sql:1
+docs/adr,13,927,md:13
+docs/api,3,904,md:3
+docs,5,719,md:5
+ROOT,5,376,noext:4; md:1
+docs/qa,2,297,md:2
+backend/other,2,293,xml:1; yml:1
+scripts,7,287,noext:3; sh:1; conf:1

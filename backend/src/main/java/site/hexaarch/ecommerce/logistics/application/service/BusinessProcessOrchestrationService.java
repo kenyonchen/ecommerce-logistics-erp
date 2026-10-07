@@ -3,6 +3,10 @@ package site.hexaarch.ecommerce.logistics.application.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import site.hexaarch.ecommerce.logistics.application.service.logistics.LogisticsApplicationService;
+import site.hexaarch.ecommerce.logistics.application.service.order.OrderApplicationService;
+import site.hexaarch.ecommerce.logistics.application.service.product.ProductApplicationService;
+import site.hexaarch.ecommerce.logistics.application.service.warehouse.WarehouseApplicationService;
 import site.hexaarch.ecommerce.logistics.domain.logistics.aggregate.LogisticsOrder;
 import site.hexaarch.ecommerce.logistics.domain.order.aggregate.Order;
 import site.hexaarch.ecommerce.logistics.domain.order.valueobject.OrderStatus;
@@ -12,6 +16,7 @@ import site.hexaarch.ecommerce.logistics.domain.warehouse.aggregate.Warehouse;
 import site.hexaarch.ecommerce.logistics.domain.warehouse.entity.InventoryRecord;
 
 import java.util.List;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 业务流程协调服务
@@ -39,6 +44,7 @@ public class BusinessProcessOrchestrationService {
      * @param paymentInfo     付款信息
      * @return 处理完成的订单
      */
+    @Transactional
     public Order processFullOrder(String customerId, List<?> orderItems, Object shippingAddress, Object paymentInfo) {
         log.info("开始处理完整订单流程");
 

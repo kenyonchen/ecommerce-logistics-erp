@@ -4,12 +4,17 @@ import site.hexaarch.ecommerce.logistics.application.service.platform.PlatformIn
 import site.hexaarch.ecommerce.logistics.domain.platform.aggregate.PlatformIntegration;
 import site.hexaarch.ecommerce.logistics.domain.platform.valueobject.PlatformName;
 import site.hexaarch.ecommerce.logistics.domain.platform.valueobject.PlatformStatus;
+import site.hexaarch.ecommerce.logistics.infrastructure.security.TenantContext;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.AuthorityUtils;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -20,8 +25,12 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import site.hexaarch.ecommerce.logistics.interfaces.controller.platform.PlatformIntegrationController;
 
 class PlatformIntegrationControllerTest {
+
+    private static final String TENANT_A = "tenant-a";
+    private static final String TENANT_B = "tenant-b";
 
     @Mock
     private PlatformIntegrationApplicationService platformIntegrationApplicationService;
@@ -35,6 +44,39 @@ class PlatformIntegrationControllerTest {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         mockMvc = MockMvcBuilders.standaloneSetup(platformIntegrationController).build();
+    }
+
+    @AfterEach
+    void tearDown() {
+        TenantContext.clearTenantId();
+        SecurityContextHolder.clearContext();
+    }
+
+    /**
+     * 模拟租户用户登录：只带租户上下文，不带平台管理员角色
+     */
+    private void loginAsTenantUser(String tenantId) {
+        TenantContext.setTenantId(tenantId);
+    }
+
+    /**
+     * 模拟平台管理员登录：ROLE_PLATFORM_ADMIN 可跨租户
+     */
+    private void loginAsPlatformAdmin() {
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                "platform-admin", "n/a",
+                AuthorityUtils.createAuthorityList("ROLE_PLATFORM_ADMIN")));
+    }
+
+    private PlatformIntegration mockIntegration(String tenantId) {
+        return PlatformIntegration.builder()
+                .id(UUID.randomUUID())
+                .tenantId(tenantId)
+                .platformName(PlatformName.AMAZON)
+                .apiKey("test-api-key")
+                .apiSecret("test-api-secret")
+                .status(PlatformStatus.ACTIVE)
+                .build();
     }
 
     @Test
@@ -61,9 +103,11 @@ class PlatformIntegrationControllerTest {
 
     @Test
     void testGetPlatformIntegrationById() throws Exception {
+        loginAsTenantUser(TENANT_A);
         UUID platformId = UUID.randomUUID();
         PlatformIntegration mockPlatform = PlatformIntegration.builder()
                 .id(platformId)
+                .tenantId(TENANT_A)
                 .platformName(PlatformName.AMAZON)
                 .apiKey("test-api-key")
                 .apiSecret("test-api-secret")
@@ -78,24 +122,67 @@ class PlatformIntegrationControllerTest {
                 .andExpect(jsonPath("$.data.id").value(platformId.toString()));
     }
 
+    /**
+     * 读接口已放开到登录用户，但租户用户不得读取其他租户的平台集成（BR-02：出参仍只给掩码）。
+     */
+    @Test
+    void testGetPlatformIntegrationById_TenantAccessDenied() throws Exception {
+        loginAsTenantUser(TENANT_A);
+        UUID platformId = UUID.randomUUID();
+        PlatformIntegration otherTenantIntegration = mockIntegration(TENANT_B);
+
+        when(platformIntegrationApplicationService.getPlatformIntegrationById(eq(platformId)))
+                .thenReturn(otherTenantIntegration);
+
+        mockMvc.perform(get("/api/platform-integrations/" + platformId))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("TENANT_ACCESS_DENIED"));
+    }
+
     @Test
     void testGetAllPlatformIntegrations() throws Exception {
-        UUID platformId = UUID.randomUUID();
-        PlatformIntegration mockPlatform = PlatformIntegration.builder()
-                .id(platformId)
-                .platformName(PlatformName.AMAZON)
-                .apiKey("test-api-key")
-                .apiSecret("test-api-secret")
-                .status(PlatformStatus.ACTIVE)
-                .build();
+        loginAsTenantUser(TENANT_A);
+        PlatformIntegration mockPlatform = mockIntegration(TENANT_A);
 
-        when(platformIntegrationApplicationService.getAllPlatformIntegrations())
+        when(platformIntegrationApplicationService.getPlatformIntegrationsByTenant(TENANT_A))
                 .thenReturn(List.of(mockPlatform));
 
         mockMvc.perform(get("/api/platform-integrations"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.length()").value(1));
+    }
+
+    /**
+     * 租户用户即使显式传别的 tenantId，也只按登录租户过滤（横向越权防护）。
+     */
+    @Test
+    void testGetAllPlatformIntegrations_IgnoresRequestedTenantId() throws Exception {
+        loginAsTenantUser(TENANT_A);
+        PlatformIntegration mockPlatform = mockIntegration(TENANT_A);
+
+        when(platformIntegrationApplicationService.getPlatformIntegrationsByTenant(TENANT_A))
+                .thenReturn(List.of(mockPlatform));
+
+        mockMvc.perform(get("/api/platform-integrations").param("tenantId", TENANT_B))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.length()").value(1));
+    }
+
+    /**
+     * 平台管理员不传 tenantId 时仍可跨租户查看全量。
+     */
+    @Test
+    void testGetAllPlatformIntegrations_PlatformAdminSeesAllTenants() throws Exception {
+        loginAsPlatformAdmin();
+        when(platformIntegrationApplicationService.getAllPlatformIntegrations())
+                .thenReturn(List.of(mockIntegration(TENANT_A), mockIntegration(TENANT_B)));
+
+        mockMvc.perform(get("/api/platform-integrations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.length()").value(2));
     }
 
     @Test
@@ -117,7 +204,14 @@ class PlatformIntegrationControllerTest {
                 .content("{\"id\":\"" + platformId + "\",\"platformName\":\"AMAZON\",\"apiKey\":\"updated-api-key\",\"apiSecret\":\"updated-api-secret\",\"status\":\"ACTIVE\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.data.apiKey").value("updated-api-key"));
+                // BR-02：出参只给掩码，凭据明文一律不回传
+                .andExpect(jsonPath("$.data.apiKeyMasked").value("upd****-key"))
+                .andExpect(jsonPath("$.data.apiKey").doesNotExist())
+                .andExpect(jsonPath("$.data.apiSecret").doesNotExist())
+                .andExpect(jsonPath("$.data.accessToken").doesNotExist())
+                .andExpect(result -> org.junit.jupiter.api.Assertions.assertFalse(
+                        result.getResponse().getContentAsString().contains("updated-api-secret"),
+                        "响应体不得包含凭据明文"));
     }
 
     @Test

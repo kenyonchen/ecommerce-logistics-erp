@@ -1,19 +1,25 @@
 import React, { useState } from 'react';
-import { Form, Input, Button, Card, message, Select } from 'antd';
+import { Form, Input, Button, Card, message } from 'antd';
 import { tenantApi } from '../../services/api';
-
-const { Option } = Select;
+import { useNavigate } from 'react-router-dom';
 
 const CreateTenant = () => {
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
   const onFinish = async (values) => {
     setLoading(true);
     try {
-      const response = await tenantApi.createTenant(values);
+      // 后端 CreateTenantRequest 字段：name/description/contactEmail/contactPhone
+      const response = await tenantApi.createTenant({
+        name: values.name,
+        description: values.description,
+        contactEmail: values.contactEmail,
+        contactPhone: values.contactPhone
+      });
       message.success('租户创建成功');
-      console.log('Tenant created:', response);
-      // 可以在这里添加跳转逻辑
+      // 跳转到租户列表
+      navigate('/tenants');
     } catch (error) {
       message.error('租户创建失败: ' + error.message);
     } finally {
@@ -63,21 +69,12 @@ const CreateTenant = () => {
           <Input />
         </Form.Item>
 
-        <Form.Item
-          label="状态"
-          name="status"
-          initialValue="ACTIVE"
-        >
-          <Select>
-            <Option value="ACTIVE">激活</Option>
-            <Option value="INACTIVE">未激活</Option>
-            <Option value="SUSPENDED">暂停</Option>
-          </Select>
-        </Form.Item>
-
         <Form.Item wrapperCol={{ offset: 4, span: 16 }}>
           <Button type="primary" htmlType="submit" loading={loading}>
             提交
+          </Button>
+          <Button style={{ marginLeft: 8 }} onClick={() => navigate('/tenants')}>
+            取消
           </Button>
         </Form.Item>
       </Form>

@@ -3,6 +3,7 @@ package site.hexaarch.ecommerce.logistics.domain.tenant.service;
 import site.hexaarch.ecommerce.logistics.domain.tenant.entity.Role;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 角色服务接口
@@ -51,6 +52,15 @@ public interface RoleService {
      * @return 系统角色列表
      */
     List<Role> getSystemRoles();
+
+    /**
+     * 按名称查找租户内的角色
+     *
+     * @param tenantId 租户ID
+     * @param name     角色名
+     * @return 角色，不存在时返回 {@link Optional#empty()}
+     */
+    Optional<Role> findByName(String tenantId, String name);
 
     /**
      * 更新角色信息

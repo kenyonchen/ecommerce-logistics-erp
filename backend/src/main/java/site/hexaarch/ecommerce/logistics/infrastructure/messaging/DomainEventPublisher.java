@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.event.TransactionPhase;
@@ -24,7 +25,7 @@ public class DomainEventPublisher {
     private static final Logger log = LoggerFactory.getLogger(DomainEventPublisher.class);
 
     private final ApplicationEventPublisher applicationEventPublisher;
-    private final RocketMQTemplate rocketMQTemplate;
+    private final ObjectProvider<RocketMQTemplate> rocketMQTemplateProvider;
 
     /**
      * 发布聚合根中的所有领域事件
@@ -33,10 +34,8 @@ public class DomainEventPublisher {
      */
     public void publishEventsFrom(Object aggregate) {
         try {
-            // 使用反射获取domainEvents字段
-            java.lang.reflect.Field domainEventsField = aggregate.getClass().getDeclaredField("domainEvents");
-            domainEventsField.setAccessible(true);
-            List<Object> events = (List<Object>) domainEventsField.get(aggregate);
+            // 优先走基类访问器，避免 getDeclaredField 取不到父类字段导致事件永远发不出去
+            List<Object> events = resolveDomainEvents(aggregate);
 
             if (events != null && !events.isEmpty()) {
                 events.forEach(event -> {
@@ -49,12 +48,33 @@ public class DomainEventPublisher {
                 // 清空已发布的事件
                 events.clear();
             }
-        } catch (NoSuchFieldException e) {
-            // 如果对象没有domainEvents字段，则忽略
-            log.debug("对象没有domainEvents字段: {}", aggregate.getClass().getName());
         } catch (Exception e) {
             log.error("发布领域事件时出错", e);
         }
+    }
+
+    /**
+     * 获取聚合根中待发布的领域事件列表：
+     * 基类聚合走 {@link BaseAggregateRoot#getDomainEvents()}，其余对象回退到沿继承链反射查找。
+     */
+    @SuppressWarnings("unchecked")
+    private List<Object> resolveDomainEvents(Object aggregate) {
+        if (aggregate instanceof site.hexaarch.ecommerce.logistics.domain.common.BaseAggregateRoot<?> root) {
+            return root.getDomainEvents();
+        }
+        Class<?> clazz = aggregate.getClass();
+        while (clazz != null) {
+            try {
+                java.lang.reflect.Field field = clazz.getDeclaredField("domainEvents");
+                field.setAccessible(true);
+                return (List<Object>) field.get(aggregate);
+            } catch (NoSuchFieldException e) {
+                clazz = clazz.getSuperclass();
+            } catch (IllegalAccessException e) {
+                return null;
+            }
+        }
+        return null;
     }
 
     /**
@@ -64,6 +84,11 @@ public class DomainEventPublisher {
      */
     private void publishToRocketMQ(Object event) {
         try {
+            RocketMQTemplate rocketMQTemplate = rocketMQTemplateProvider.getIfAvailable();
+            if (rocketMQTemplate == null) {
+                log.debug("RocketMQ 未启用，事件仅走进程内通道: {}", event.getClass().getSimpleName());
+                return;
+            }
             String topic = getTopicForEvent(event);
             if (topic != null) {
                 rocketMQTemplate.convertAndSend(topic, event);
@@ -86,6 +111,8 @@ public class DomainEventPublisher {
         String eventClassName = event.getClass().getName();
         if (eventClassName.contains("order.event")) {
             return "order-events";
+        } else if (eventClassName.contains("customer.event")) {
+            return "customer-events";
         } else if (eventClassName.contains("logistics.event")) {
             return "logistics-events";
         } else if (eventClassName.contains("warehouse.event")) {
@@ -94,6 +121,12 @@ public class DomainEventPublisher {
             return "finance-events";
         } else if (eventClassName.contains("purchase.event")) {
             return "purchase-events";
+        } else if (eventClassName.contains("product.event")) {
+            return "product-events";
+        } else if (eventClassName.contains("platform.event")) {
+            return "platform-events";
+        } else if (eventClassName.contains("shop.event")) {
+            return "shop-events";
         }
         return null;
     }

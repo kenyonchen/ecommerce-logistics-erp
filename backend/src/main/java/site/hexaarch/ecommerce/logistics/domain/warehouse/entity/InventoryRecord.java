@@ -22,7 +22,8 @@ public class InventoryRecord {
     private InventoryStatus inventoryStatus;
 
     private InventoryRecord(String inventoryId, String warehouseId, String productId, String sku, String locationId, LocalDateTime lastUpdated, int quantity, InventoryStatus inventoryStatus) {
-        this.inventoryId = inventoryId;
+        // 主键由应用层赋值（无 @GeneratedValue），新建记录必须补 id，否则 Hibernate persist 抛 IdentifierGenerationException
+        this.inventoryId = inventoryId != null && !inventoryId.isBlank() ? inventoryId : java.util.UUID.randomUUID().toString();
         this.warehouseId = warehouseId;
         this.productId = productId;
         this.sku = sku;

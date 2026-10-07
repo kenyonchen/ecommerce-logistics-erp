@@ -1,10 +1,20 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, Row, Col, Statistic, Button, Table, Space, Tag, Typography, Progress } from 'antd';
-import { UserOutlined, ShopOutlined, DatabaseOutlined, BarChartOutlined, AlertOutlined } from '@ant-design/icons';
+import {
+  UserOutlined,
+  ShopOutlined,
+  DatabaseOutlined,
+  BarChartOutlined,
+  SettingOutlined,
+  FileTextOutlined,
+} from '@ant-design/icons';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 const PlatformDashboard = () => {
+  const navigate = useNavigate();
+
   // 模拟数据
   const [statistics] = useState({
     totalTenants: 12,
@@ -60,28 +70,12 @@ const PlatformDashboard = () => {
     }
   ]);
 
-  // 租户状态
+  // 租户状态：颜色取自 theme.js 的状态色，避免页面内散落色值
   const [tenantStatus] = useState([
-    {
-      name: '活跃',
-      value: 10,
-      color: '#52c41a'
-    },
-    {
-      name: '非活跃',
-      value: 1,
-      color: '#d9d9d9'
-    },
-    {
-      name: '暂停',
-      value: 1,
-      color: '#faad14'
-    },
-    {
-      name: '删除',
-      value: 0,
-      color: '#ff4d4f'
-    }
+    { key: 'ACTIVE', name: '活跃', value: 10, color: '#16a34a' },
+    { key: 'INACTIVE', name: '非活跃', value: 1, color: '#94a3b8' },
+    { key: 'SUSPENDED', name: '暂停', value: 1, color: '#d97706' },
+    { key: 'DELETED', name: '删除', value: 0, color: '#dc2626' },
   ]);
 
   // 获取活动类型图标
@@ -150,12 +144,17 @@ const PlatformDashboard = () => {
   ];
 
   return (
-    <div style={{ padding: '20px' }}>
-      <Title level={2}>平台管理仪表盘</Title>
-      
-      {/* 系统概览 */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col span={6}>
+    <div className="page">
+      <div className="page__header">
+        <div>
+          <h1 className="page__title">平台管理仪表盘</h1>
+          <p className="page__subtitle">租户、用户与系统资源的全局概览</p>
+        </div>
+      </div>
+
+      {/* 系统概览：窄屏 1 列 / 平板 2 列 / 桌面 4 列 */}
+      <Row gutter={[16, 16]}>
+        <Col xs={24} sm={12} xl={6}>
           <Card>
             <Statistic
               title="总租户数"
@@ -165,7 +164,7 @@ const PlatformDashboard = () => {
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col xs={24} sm={12} xl={6}>
           <Card>
             <Statistic
               title="总用户数"
@@ -174,7 +173,7 @@ const PlatformDashboard = () => {
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col xs={24} sm={12} xl={6}>
           <Card>
             <Statistic
               title="总订单数"
@@ -183,7 +182,7 @@ const PlatformDashboard = () => {
             />
           </Card>
         </Col>
-        <Col span={6}>
+        <Col xs={24} sm={12} xl={6}>
           <Card>
             <Statistic
               title="系统负载"
@@ -195,10 +194,10 @@ const PlatformDashboard = () => {
           </Card>
         </Col>
       </Row>
-      
-      {/* 资源使用情况 */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col span={8}>
+
+      {/* 资源使用情况：窄屏 1 列 / 桌面 3 列 */}
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={8}>
           <Card title="数据库使用情况">
             <Progress percent={statistics.databaseUsage} status="active" />
             <Text type="secondary" style={{ marginTop: 8, display: 'block' }}>
@@ -206,7 +205,7 @@ const PlatformDashboard = () => {
             </Text>
           </Card>
         </Col>
-        <Col span={8}>
+        <Col xs={24} lg={8}>
           <Card title="存储使用情况">
             <Progress percent={statistics.storageUsage} status="success" />
             <Text type="secondary" style={{ marginTop: 8, display: 'block' }}>
@@ -214,7 +213,7 @@ const PlatformDashboard = () => {
             </Text>
           </Card>
         </Col>
-        <Col span={8}>
+        <Col xs={24} lg={8}>
           <Card title="租户状态分布">
             {tenantStatus.map((item) => (
               <div key={item.name} style={{ marginBottom: 8 }}>
@@ -222,7 +221,14 @@ const PlatformDashboard = () => {
                   <Text>{item.name}</Text>
                   <Text>{item.value}</Text>
                 </div>
-                <Progress percent={(item.value / statistics.totalTenants) * 100} status="normal" strokeColor={item.color} />
+                <Progress
+                  percent={
+                    statistics.totalTenants > 0
+                      ? Math.round((item.value / statistics.totalTenants) * 100)
+                      : 0
+                  }
+                  strokeColor={item.color}
+                />
               </div>
             ))}
           </Card>
@@ -230,35 +236,36 @@ const PlatformDashboard = () => {
       </Row>
       
       {/* 最近活动 */}
-      <Card title="最近活动" style={{ marginBottom: 24 }}>
+      <Card title="最近活动">
         <Table
           columns={activityColumns}
           dataSource={recentActivities}
           rowKey="id"
-          pagination={{ pageSize: 5 }}
+          pagination={{ pageSize: 5, hideOnSinglePage: true }}
+          scroll={{ x: 'max-content' }}
         />
       </Card>
       
-      {/* 快捷操作 */}
+      {/* 快捷操作：窄屏 1 列 / 平板 2 列 / 桌面 4 列 */}
       <Card title="快捷操作">
         <Row gutter={[16, 16]}>
-          <Col span={6}>
-            <Button type="primary" block icon={<ShopOutlined />}>
+          <Col xs={24} sm={12} xl={6}>
+            <Button type="primary" block icon={<ShopOutlined />} onClick={() => navigate('/tenants')}>
               管理租户
             </Button>
           </Col>
-          <Col span={6}>
-            <Button type="default" block icon={<UserOutlined />}>
+          <Col xs={24} sm={12} xl={6}>
+            <Button block icon={<UserOutlined />} onClick={() => navigate('/users')}>
               管理用户
             </Button>
           </Col>
-          <Col span={6}>
-            <Button type="default" block icon={<DatabaseOutlined />}>
+          <Col xs={24} sm={12} xl={6}>
+            <Button block icon={<SettingOutlined />} onClick={() => navigate('/platform/config')}>
               系统配置
             </Button>
           </Col>
-          <Col span={6}>
-            <Button type="default" block icon={<AlertOutlined />}>
+          <Col xs={24} sm={12} xl={6}>
+            <Button block icon={<FileTextOutlined />} disabled>
               查看日志
             </Button>
           </Col>

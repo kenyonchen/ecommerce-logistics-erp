@@ -83,11 +83,28 @@ public class Warehouse {
      * @return 新的仓库
      */
     public static Warehouse create(String tenantId, String warehouseName, String address, int capacity) {
+        return create(tenantId, warehouseName, null, address, capacity);
+    }
+
+    /**
+     * 创建新的仓库（指定仓库编码）。
+     *
+     * @param tenantId      租户ID
+     * @param warehouseName 仓库名称
+     * @param warehouseCode 仓库编码，为空时自动生成
+     * @param address       仓库地址
+     * @param capacity      仓库容量
+     * @return 新的仓库
+     */
+    public static Warehouse create(String tenantId, String warehouseName, String warehouseCode, String address, int capacity) {
+        String code = warehouseCode != null && !warehouseCode.isBlank()
+                ? warehouseCode.trim()
+                : "WH-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         return new Warehouse(
                 UUID.randomUUID().toString(), // warehouseId
                 tenantId, // tenantId
                 warehouseName, // warehouseName
-                null, // warehouseCode
+                code, // warehouseCode
                 address, // address
                 capacity, // capacity
                 new ArrayList<>(), // locations
@@ -156,8 +173,11 @@ public class Warehouse {
      * @return 库存记录，如果不存在则返回Optional.empty()
      */
     public Optional<InventoryRecord> findInventoryRecord(String productId) {
+        if (productId == null) {
+            return Optional.empty();
+        }
         return this.inventoryRecords.stream()
-                .filter(record -> record.getProductId().equals(productId))
+                .filter(record -> productId.equals(record.getProductId()))
                 .findFirst();
     }
 

@@ -1,66 +1,90 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Space, Card, Typography, Form, Input, Select, InputNumber, message, Table, DatePicker } from 'antd';
+import { Button, Space, Card, Typography, Form, Input, Select, InputNumber, message, Table } from 'antd';
 import { ArrowLeftOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons';
-import { purchaseApi } from "../../services/api";
+import { purchaseApi, warehouseApi } from "../../services/api";
 
 const { Title } = Typography;
 const { Option } = Select;
-const { TextArea } = Input;
+
+let rowKeySeed = 1;
+
+const buildEmptyItem = () => ({ key: rowKeySeed++, skuCode: '', productName: '', quantity: 1, unitPrice: 0 });
 
 const CreatePurchase = () => {
   const navigate = useNavigate();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
-  const [items, setItems] = useState([{ id: 1, productId: '', productName: '', quantity: 1, unitPrice: 0 }]);
+  const [warehouses, setWarehouses] = useState([]);
+  const [items, setItems] = useState([buildEmptyItem()]);
 
-  // 采购状态选项
-  const purchaseStatusOptions = [
-    { value: 'PENDING', label: '待处理' },
-    { value: 'PROCESSING', label: '处理中' },
-    { value: 'COMPLETED', label: '已完成' },
-    { value: 'CANCELLED', label: '已取消' }
-  ];
+  const fetchWarehouses = useCallback(async () => {
+    try {
+      const data = await warehouseApi.getWarehouses();
+      setWarehouses(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('获取仓库列表失败:', error);
+      setWarehouses([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchWarehouses();
+  }, [fetchWarehouses]);
 
   // 返回列表页
   const handleBack = () => {
     navigate('/purchase');
   };
 
+  const updateItem = (key, patch) => {
+    setItems(prev => prev.map(item => (item.key === key ? { ...item, ...patch } : item)));
+  };
+
   // 添加采购物品
   const addItem = () => {
-    setItems([...items, { id: items.length + 1, productId: '', productName: '', quantity: 1, unitPrice: 0 }]);
+    setItems(prev => [...prev, buildEmptyItem()]);
   };
 
   // 删除采购物品
-  const removeItem = (id) => {
-    setItems(items.filter(item => item.id !== id));
+  const removeItem = (key) => {
+    setItems(prev => prev.filter(item => item.key !== key));
   };
 
-  // 提交表单
+  // 提交：单头与明细行一次提交，总金额由服务端按明细小计重算
   const handleSubmit = async (values) => {
+    const validItems = items.filter(item => item.skuCode && item.productName && item.quantity > 0 && item.unitPrice > 0);
+    if (validItems.length !== items.length) {
+      message.error('请完整填写每一行采购项的 SKU编码、产品名称、数量，单价必须大于 0');
+      return;
+    }
+    const duplicated = validItems
+      .map(item => item.skuCode.trim().toLowerCase())
+      .filter((sku, index, all) => all.indexOf(sku) !== index);
+    if (duplicated.length > 0) {
+      message.error(`同一张采购单内 SKU 不能重复：${[...new Set(duplicated)].join('、').toUpperCase()}`);
+      return;
+    }
+
     setLoading(true);
     try {
-      // 计算总金额
-      const totalAmount = items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
-      
-      // 构建采购记录数据
-      const purchaseData = {
-        ...values,
-        totalAmount,
-        items
-      };
-      
-      // 实际应该调用后端API创建采购记录
-      console.log('创建采购记录:', purchaseData);
-      // 模拟API调用成功
-      setTimeout(() => {
-        message.success('采购记录创建成功');
-        navigate('/purchase');
-      }, 1000);
+      // 不传 tenantId：由后端从 JWT 租户上下文解析，传错值会被 TenantIsolationAspect 判越权
+      const created = await purchaseApi.createPurchaseOrder({
+        supplierId: values.supplierId,
+        supplierName: values.supplierName,
+        warehouseId: values.warehouseId,
+        items: validItems.map(item => ({
+          skuCode: item.skuCode.trim(),
+          productName: item.productName.trim(),
+          quantity: item.quantity,
+          unitPrice: item.unitPrice
+        }))
+      });
+      message.success(`采购单 ${created?.purchaseOrderId || ''} 创建成功`);
+      navigate('/purchase');
     } catch (error) {
+      // 业务失败（400/404）已由响应拦截器提示具体原因，例如仓库不属于当前租户
       console.error('创建采购记录失败:', error);
-      message.error('创建采购记录失败');
     } finally {
       setLoading(false);
     }
@@ -69,24 +93,14 @@ const CreatePurchase = () => {
   // 采购物品列配置
   const columns = [
     {
-      title: '序号',
-      dataIndex: 'id',
-      key: 'id',
-    },
-    {
-      title: '产品ID',
-      dataIndex: 'productId',
-      key: 'productId',
-      render: (text, record) => (
-        <Input 
-          value={record.productId} 
-          onChange={(e) => {
-            const newItems = items.map(item => 
-              item.id === record.id ? { ...item, productId: e.target.value } : item
-            );
-            setItems(newItems);
-          }} 
-          placeholder="请输入产品ID"
+      title: 'SKU编码',
+      dataIndex: 'skuCode',
+      key: 'skuCode',
+      render: (_, record) => (
+        <Input
+          value={record.skuCode}
+          onChange={(e) => updateItem(record.key, { skuCode: e.target.value })}
+          placeholder="请输入SKU编码"
         />
       ),
     },
@@ -94,15 +108,10 @@ const CreatePurchase = () => {
       title: '产品名称',
       dataIndex: 'productName',
       key: 'productName',
-      render: (text, record) => (
-        <Input 
-          value={record.productName} 
-          onChange={(e) => {
-            const newItems = items.map(item => 
-              item.id === record.id ? { ...item, productName: e.target.value } : item
-            );
-            setItems(newItems);
-          }} 
+      render: (_, record) => (
+        <Input
+          value={record.productName}
+          onChange={(e) => updateItem(record.key, { productName: e.target.value })}
           placeholder="请输入产品名称"
         />
       ),
@@ -111,16 +120,13 @@ const CreatePurchase = () => {
       title: '数量',
       dataIndex: 'quantity',
       key: 'quantity',
-      render: (text, record) => (
-        <InputNumber 
-          value={record.quantity} 
-          onChange={(value) => {
-            const newItems = items.map(item => 
-              item.id === record.id ? { ...item, quantity: value } : item
-            );
-            setItems(newItems);
-          }} 
+      width: 120,
+      render: (_, record) => (
+        <InputNumber
+          value={record.quantity}
+          onChange={(value) => updateItem(record.key, { quantity: value })}
           min={1}
+          style={{ width: '100%' }}
         />
       ),
     },
@@ -128,39 +134,39 @@ const CreatePurchase = () => {
       title: '单价',
       dataIndex: 'unitPrice',
       key: 'unitPrice',
-      render: (text, record) => (
-        <InputNumber 
-          value={record.unitPrice} 
-          onChange={(value) => {
-            const newItems = items.map(item => 
-              item.id === record.id ? { ...item, unitPrice: value } : item
-            );
-            setItems(newItems);
-          }} 
-          min={0}
+      width: 140,
+      render: (_, record) => (
+        <InputNumber
+          value={record.unitPrice}
+          onChange={(value) => updateItem(record.key, { unitPrice: value })}
+          min={0.01}
           step={0.01}
+          style={{ width: '100%' }}
         />
       ),
     },
     {
       title: '总价',
-      dataIndex: 'totalPrice',
       key: 'totalPrice',
-      render: (text, record) => {
-        const totalPrice = record.quantity * record.unitPrice;
+      width: 120,
+      render: (_, record) => {
+        const totalPrice = (record.quantity || 0) * (record.unitPrice || 0);
         return `¥${totalPrice.toFixed(2)}`;
       },
     },
     {
       title: '操作',
       key: 'action',
-      render: (text, record) => (
-        <Button danger icon={<DeleteOutlined />} onClick={() => removeItem(record.id)}>
+      width: 100,
+      render: (_, record) => (
+        <Button danger icon={<DeleteOutlined />} disabled={items.length === 1} onClick={() => removeItem(record.key)}>
           删除
         </Button>
       ),
     },
   ];
+
+  const totalAmount = items.reduce((sum, item) => sum + (item.quantity || 0) * (item.unitPrice || 0), 0);
 
   return (
     <div>
@@ -172,76 +178,58 @@ const CreatePurchase = () => {
       </div>
 
       <Card>
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={handleSubmit}
-          initialValues={{
-            status: 'PENDING'
-          }}
-        >
+        <Form form={form} layout="vertical" onFinish={handleSubmit}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             {/* 基本信息 */}
             <div style={{ gridColumn: 'span 2' }}>
               <Title level={5}>基本信息</Title>
             </div>
-            
+
             <Form.Item
-              label="采购订单ID"
-              name="purchaseOrderId"
-              rules={[{ required: true, message: '请输入采购订单ID' }]}
+              label="供应商ID"
+              name="supplierId"
+              rules={[{ required: true, message: '请输入供应商ID' }]}
             >
-              <Input placeholder="请输入采购订单ID" />
+              <Input placeholder="请输入供应商ID" />
             </Form.Item>
-            
+
             <Form.Item
-              label="供应商"
-              name="supplier"
-              rules={[{ required: true, message: '请输入供应商' }]}
+              label="供应商名称"
+              name="supplierName"
+              rules={[{ required: true, message: '请输入供应商名称' }]}
             >
-              <Input placeholder="请输入供应商" />
+              <Input placeholder="请输入供应商名称" />
             </Form.Item>
-            
+
             <Form.Item
-              label="采购状态"
-              name="status"
-              rules={[{ required: true, message: '请选择采购状态' }]}
+              label="收货仓库"
+              name="warehouseId"
+              rules={[{ required: true, message: '请选择收货仓库' }]}
             >
-              <Select placeholder="请选择采购状态">
-                {purchaseStatusOptions.map(option => (
-                  <Option key={option.value} value={option.value}>{option.label}</Option>
+              <Select placeholder="请选择收货仓库" showSearch optionFilterProp="children">
+                {warehouses.map(warehouse => (
+                  <Option key={warehouse.warehouseId} value={warehouse.warehouseId}>
+                    {warehouse.warehouseName}（{warehouse.warehouseId}）
+                  </Option>
                 ))}
               </Select>
-            </Form.Item>
-            
-            <Form.Item
-              label="期望交付日期"
-              name="expectedDeliveryDate"
-              rules={[{ required: true, message: '请选择期望交付日期' }]}
-            >
-              <DatePicker style={{ width: '100%' }} />
-            </Form.Item>
-            
-            <Form.Item
-              label="创建人"
-              name="createdBy"
-              rules={[{ required: true, message: '请输入创建人' }]}
-            >
-              <Input placeholder="请输入创建人" />
             </Form.Item>
 
             {/* 采购物品 */}
             <div style={{ gridColumn: 'span 2' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
                 <Title level={5}>采购物品</Title>
-                <Button type="primary" icon={<PlusOutlined />} onClick={addItem}>
-                  添加物品
-                </Button>
+                <Space>
+                  <span>预估总金额：¥{totalAmount.toFixed(2)}</span>
+                  <Button type="primary" icon={<PlusOutlined />} onClick={addItem}>
+                    添加物品
+                  </Button>
+                </Space>
               </div>
-              <Table 
-                dataSource={items} 
-                columns={columns} 
-                rowKey="id" 
+              <Table
+                dataSource={items}
+                columns={columns}
+                rowKey="key"
                 pagination={false}
               />
             </div>

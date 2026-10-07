@@ -16,7 +16,11 @@ target
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
+.codebuddy/
+.workbuddy/
+.trae/
+.cladue/
 .DS_Store
 *.suo
 *.ntvs*

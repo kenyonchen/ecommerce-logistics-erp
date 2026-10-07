@@ -6,6 +6,10 @@ package site.hexaarch.ecommerce.logistics.domain.common.exception;
  * @author kenyon
  */
 public class EntityNotFoundException extends BusinessException {
+    public EntityNotFoundException(String message) {
+        super(message, "ENTITY_NOT_FOUND");
+    }
+
     public EntityNotFoundException(String entityType, String id) {
         super(entityType + " not found with id: " + id, "ENTITY_NOT_FOUND");
     }

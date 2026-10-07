@@ -7,8 +7,10 @@ import site.hexaarch.ecommerce.logistics.domain.product.event.ProductCreatedEven
 import site.hexaarch.ecommerce.logistics.domain.product.event.ProductUpdatedEvent;
 import site.hexaarch.ecommerce.logistics.domain.product.event.SKUCreatedEvent;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -29,7 +31,7 @@ public class Product {
     /**
      * 产品分类
      */
-    private final ProductCategory category;
+    private ProductCategory category;
     /**
      * 领域事件列表
      */
@@ -50,8 +52,24 @@ public class Product {
      * 是否激活
      */
     private boolean active;
+    /**
+     * 来源平台（第三方电商平台名称，手动创建时为空）
+     */
+    private final String sourcePlatform;
+    /**
+     * 来源平台侧的商品ID，用于重复导入时的幂等更新
+     */
+    private final String sourceProductId;
+    /**
+     * 创建时间
+     */
+    private LocalDateTime createdAt;
+    /**
+     * 更新时间
+     */
+    private LocalDateTime updatedAt;
 
-    private Product(String id, String tenantId, ProductCategory category, List<Object> domainEvents, String name, String description, List<SKU> skus, boolean active) {
+    private Product(String id, String tenantId, ProductCategory category, List<Object> domainEvents, String name, String description, List<SKU> skus, boolean active, String sourcePlatform, String sourceProductId, LocalDateTime createdAt, LocalDateTime updatedAt) {
         this.id = id;
         this.tenantId = tenantId;
         this.category = category;
@@ -60,6 +78,10 @@ public class Product {
         this.description = description;
         this.skus = skus;
         this.active = active;
+        this.sourcePlatform = sourcePlatform;
+        this.sourceProductId = sourceProductId;
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
     }
 
     // Builder class
@@ -80,6 +102,8 @@ public class Product {
                 .skus(new ArrayList<>())
                 .active(true)
                 .domainEvents(new ArrayList<>())
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
                 .build();
 
         // 添加产品创建事件
@@ -127,6 +151,55 @@ public class Product {
     }
 
     /**
+     * 根据SKU编码查找SKU
+     */
+    public Optional<SKU> findSkuByCode(String skuCode) {
+        if (this.skus == null || skuCode == null) {
+            return Optional.empty();
+        }
+        return this.skus.stream()
+                .filter(sku -> skuCode.equals(sku.getSkuCode()))
+                .findFirst();
+    }
+
+    /**
+     * 替换SKU：如已存在相同SKU编码则先移除再新增，保证SKU编码在产品内唯一。
+     * 第三方平台导入场景下用于幂等更新。
+     */
+    public void replaceSKU(SKU sku) {
+        this.skus = this.skus == null ? new ArrayList<>() : this.skus;
+        this.skus.removeIf(existing -> existing.getSkuCode() != null
+                && existing.getSkuCode().equals(sku.getSkuCode()));
+        this.skus.add(sku);
+
+        this.domainEvents.add(SKUCreatedEvent.builder()
+                .skuId(sku.getId())
+                .skuCode(sku.getSkuCode())
+                .productId(this.getId())
+                .timestamp(System.currentTimeMillis())
+                .build());
+    }
+
+    /**
+     * 移除指定SKU编码的SKU
+     *
+     * @return 是否真的移除了SKU
+     */
+    public boolean removeSKU(String skuCode) {
+        if (this.skus == null || skuCode == null) {
+            return false;
+        }
+        return this.skus.removeIf(sku -> skuCode.equals(sku.getSkuCode()));
+    }
+
+    /**
+     * 更新产品分类
+     */
+    public void updateCategory(ProductCategory newCategory) {
+        this.category = newCategory;
+    }
+
+    /**
      * 激活产品
      */
     public void activate() {
@@ -138,6 +211,13 @@ public class Product {
      */
     public void deactivate() {
         this.active = false;
+    }
+
+    /**
+     * 刷新更新时间
+     */
+    public void touch() {
+        this.updatedAt = LocalDateTime.now();
     }
 
     /**
@@ -156,6 +236,30 @@ public class Product {
         private String description;
         private List<SKU> skus;
         private boolean active;
+        private String sourcePlatform;
+        private String sourceProductId;
+        private LocalDateTime createdAt;
+        private LocalDateTime updatedAt;
+
+        public Builder sourcePlatform(String sourcePlatform) {
+            this.sourcePlatform = sourcePlatform;
+            return this;
+        }
+
+        public Builder sourceProductId(String sourceProductId) {
+            this.sourceProductId = sourceProductId;
+            return this;
+        }
+
+        public Builder createdAt(LocalDateTime createdAt) {
+            this.createdAt = createdAt;
+            return this;
+        }
+
+        public Builder updatedAt(LocalDateTime updatedAt) {
+            this.updatedAt = updatedAt;
+            return this;
+        }
 
         public Builder id(String id) {
             this.id = id;
@@ -198,7 +302,7 @@ public class Product {
         }
 
         public Product build() {
-            return new Product(id, tenantId, category, domainEvents, name, description, skus, active);
+            return new Product(id, tenantId, category, domainEvents, name, description, skus, active, sourcePlatform, sourceProductId, createdAt, updatedAt);
         }
     }
 }

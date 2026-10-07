@@ -1,6 +1,6 @@
 package site.hexaarch.ecommerce.logistics.interfaces.controller;
 
-import site.hexaarch.ecommerce.logistics.application.service.WarehouseApplicationService;
+import site.hexaarch.ecommerce.logistics.application.service.warehouse.WarehouseApplicationService;
 import site.hexaarch.ecommerce.logistics.domain.warehouse.aggregate.Warehouse;
 import site.hexaarch.ecommerce.logistics.domain.warehouse.entity.InventoryRecord;
 import site.hexaarch.ecommerce.logistics.domain.warehouse.valueobject.InventoryMovement;
@@ -22,6 +22,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import site.hexaarch.ecommerce.logistics.interfaces.controller.warehouse.WarehouseController;
 
 class WarehouseControllerTest {
 
@@ -42,7 +43,7 @@ class WarehouseControllerTest {
     @Test
     void testCreateWarehouse() throws Exception {
         String warehouseId = UUID.randomUUID().toString();
-        
+
         Warehouse mockWarehouse = Warehouse.builder()
                 .warehouseId(warehouseId)
                 .warehouseName("Main Warehouse")
@@ -56,10 +57,8 @@ class WarehouseControllerTest {
                 .thenReturn(mockWarehouse);
 
         mockMvc.perform(post("/api/warehouses")
-                .param("warehouseName", "Main Warehouse")
-                .param("warehouseCode", "MW001")
-                .param("address", "123 Main St")
-                .param("capacity", "1000"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"tenantId\":\"123\",\"warehouseName\":\"Main Warehouse\",\"warehouseCode\":\"MW001\",\"address\":\"123 Main St\",\"capacity\":1000}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.warehouseId").value(warehouseId));
@@ -187,5 +186,40 @@ class WarehouseControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.quantity").value(150));
+    }
+
+    @Test
+    void testTransferInventory() throws Exception {
+        String warehouseId = UUID.randomUUID().toString();
+        String targetWarehouseId = UUID.randomUUID().toString();
+        String productId = UUID.randomUUID().toString();
+
+        InventoryRecord mockInventory = InventoryRecord.builder()
+                .inventoryId(productId)
+                .warehouseId(targetWarehouseId)
+                .sku("SKU001")
+                .quantity(50)
+                .inventoryStatus(InventoryStatus.NORMAL)
+                .build();
+
+        when(warehouseApplicationService.moveInventory(eq(warehouseId), any(InventoryMovement.class)))
+                .thenReturn(mockInventory);
+
+        mockMvc.perform(post("/api/warehouses/" + warehouseId + "/inventory/move")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"warehouseId\":\"" + warehouseId + "\",\"targetWarehouseId\":\"" + targetWarehouseId
+                        + "\",\"productId\":\"" + productId + "\",\"sku\":\"SKU001\",\"quantity\":50,\"movementType\":\"TRANSFER\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.quantity").value(50));
+    }
+
+    @Test
+    void testDeleteWarehouse() throws Exception {
+        String warehouseId = UUID.randomUUID().toString();
+
+        mockMvc.perform(delete("/api/warehouses/" + warehouseId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
     }
 }

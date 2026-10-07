@@ -1,21 +1,21 @@
 import React from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { Spin, Card } from 'antd';
+import { Spin, Card, Result, Button } from 'antd';
 
 /**
- * 认证守卫组件
+ * 认证守卫组件：未登录跳转登录页；指定角色时不匹配则显示无权限
  */
 const AuthGuard = ({ requiredRoles = [] }) => {
-  const { isAuthenticated, loading, user } = useAuth();
+  const { isAuthenticated, loading, user, hasRole } = useAuth();
   const location = useLocation();
 
   if (loading) {
     return (
-      <div style={{ 
-        minHeight: '100vh', 
-        display: 'flex', 
-        alignItems: 'center', 
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: '#f0f2f5'
       }}>
@@ -30,10 +30,17 @@ const AuthGuard = ({ requiredRoles = [] }) => {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // 这里可以添加角色检查逻辑
-  // if (requiredRoles.length > 0 && !requiredRoles.includes(user.role)) {
-  //   return <Navigate to="/unauthorized" replace />;
-  // }
+  // 角色检查：requiredRoles 非空时要求用户拥有其中任一角色
+  if (requiredRoles.length > 0 && !hasRole(requiredRoles)) {
+    return (
+      <Result
+        status="403"
+        title="无权限访问"
+        subTitle={`该页面需要以下角色之一：${requiredRoles.join(' / ')}`}
+        extra={<Button type="primary" href="/">返回首页</Button>}
+      />
+    );
+  }
 
   return <Outlet />;
 };
@@ -49,7 +56,7 @@ const PlatformAdminGuard = () => {
  * 租户管理员守卫
  */
 const TenantAdminGuard = () => {
-  return <AuthGuard requiredRoles={['TENANT_ADMIN']} />;
+  return <AuthGuard requiredRoles={['TENANT_ADMIN', 'PLATFORM_ADMIN']} />;
 };
 
 export { AuthGuard, PlatformAdminGuard, TenantAdminGuard };

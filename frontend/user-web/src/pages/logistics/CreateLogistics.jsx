@@ -1,173 +1,180 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Space, Card, Typography, Form, Input, Select, DatePicker, message } from 'antd';
+import {
+  Alert,
+  Button,
+  Card,
+  Checkbox,
+  Col,
+  Input,
+  Row,
+  Select,
+  Space,
+  Typography,
+  message
+} from 'antd';
 import { ArrowLeftOutlined, PlusOutlined } from '@ant-design/icons';
-import { logisticsApi } from '../../services/api';
+import { logisticsApi, logisticsChannelApi, orderApi } from '../../services/api';
+import { DEFAULT_TENANT_ID } from '../../constants/logistics';
 
-const { Title } = Typography;
-const { Option } = Select;
+const { Title, Text } = Typography;
 
+/**
+ * 创建物流单：字段与后端 CreateLogisticsRequest 一一对应
+ * （订单可用 orderId 或订单号定位，渠道可用 channelId 或渠道编码定位）。
+ */
 const CreateLogistics = () => {
   const navigate = useNavigate();
-  const [form] = Form.useForm();
-  const [loading, setLoading] = useState(false);
+  const [channels, setChannels] = useState([]);
+  const [loadingChannels, setLoadingChannels] = useState(false);
+  const [orderTip, setOrderTip] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [form, setForm] = useState({
+    orderNumber: '',
+    channelCode: undefined,
+    trackingNumber: '',
+    carrier: '',
+    shipImmediately: false
+  });
 
-  // 物流渠道选项
-  const logisticsChannelOptions = [
-    { value: 'FEDEX', label: 'FedEx' },
-    { value: 'UPS', label: 'UPS' },
-    { value: 'DHL', label: 'DHL' },
-    { value: 'SF', label: '顺丰' },
-    { value: 'STO', label: '申通' },
-    { value: 'YTO', label: '圆通' },
-    { value: 'YUNDA', label: '韵达' },
-    { value: 'ZTO', label: '中通' }
-  ];
+  useEffect(() => {
+    loadChannels();
+  }, []);
 
-  // 物流状态选项
-  const logisticsStatusOptions = [
-    { value: 'PENDING', label: '待处理' },
-    { value: 'PICKED_UP', label: '已揽收' },
-    { value: 'IN_TRANSIT', label: '运输中' },
-    { value: 'DELIVERED', label: '已送达' }
-  ];
-
-  // 返回列表页
-  const handleBack = () => {
-    navigate('/logistics');
+  const loadChannels = async () => {
+    setLoadingChannels(true);
+    try {
+      const data = await logisticsChannelApi.getChannels({ onlyActive: true });
+      setChannels(data || []);
+    } catch {
+      message.error('加载物流渠道失败');
+    } finally {
+      setLoadingChannels(false);
+    }
   };
 
-  // 提交表单
-  const handleSubmit = async (values) => {
-    setLoading(true);
+  // 创建前按订单号校验订单是否存在，避免提交后才知道订单不存在
+  const handleOrderNumberBlur = async () => {
+    const orderNumber = form.orderNumber.trim();
+    if (!orderNumber) {
+      setOrderTip(null);
+      return;
+    }
     try {
-      // 实际应该调用后端API创建物流单
-      console.log('创建物流单:', values);
-      // 模拟API调用成功
-      setTimeout(() => {
-        message.success('物流单创建成功');
-        navigate('/logistics');
-      }, 1000);
+      const data = await orderApi.getOrders({ tenantId: DEFAULT_TENANT_ID, orderNumber, page: 0, size: 1 });
+      const matched = data?.content?.[0];
+      setOrderTip(
+        matched
+          ? { type: 'success', text: `已匹配订单：${matched.orderNumber}（状态：${matched.statusLabel || matched.status}）` }
+          : { type: 'warning', text: '系统内未找到该订单号，创建将失败，请先到订单列表确认' }
+      );
+    } catch {
+      setOrderTip(null);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!form.orderNumber.trim()) {
+      message.warning('请输入订单编号');
+      return;
+    }
+    if (!form.channelCode) {
+      message.warning('请选择物流渠道');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const created = await logisticsApi.createLogistics({
+        tenantId: DEFAULT_TENANT_ID,
+        orderNumber: form.orderNumber.trim(),
+        channelCode: form.channelCode,
+        trackingNumber: form.trackingNumber.trim() || undefined,
+        carrier: form.carrier.trim() || undefined,
+        shipImmediately: form.shipImmediately
+      });
+      message.success('物流单创建成功');
+      navigate(`/logistics/${created.logisticsOrderId}`);
     } catch (error) {
-      console.error('创建物流单失败:', error);
-      message.error('创建物流单失败');
+      message.error(`创建失败：${error?.message || '未知错误'}`);
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <Button icon={<ArrowLeftOutlined />} onClick={handleBack}>返回列表</Button>
-          <Title level={4}>创建物流单</Title>
-        </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
+        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/logistics')}>返回列表</Button>
+        <Title level={4} style={{ margin: 0 }}>创建物流单</Title>
       </div>
 
       <Card>
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={handleSubmit}
-          initialValues={{
-            channel: 'SF',
-            status: 'PENDING'
-          }}
-        >
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            {/* 基本信息 */}
-            <div style={{ gridColumn: 'span 2' }}>
-              <Title level={5}>基本信息</Title>
+        <Row gutter={16}>
+          <Col span={12}>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ marginBottom: 4 }}>订单编号 *</div>
+              <Input
+                placeholder="系统订单号，如 ORD-2026-0001"
+                value={form.orderNumber}
+                onChange={(e) => setForm((prev) => ({ ...prev, orderNumber: e.target.value }))}
+                onBlur={handleOrderNumberBlur}
+              />
+              {orderTip && (
+                <Alert style={{ marginTop: 8 }} type={orderTip.type} message={orderTip.text} showIcon />
+              )}
             </div>
-            
-            <Form.Item
-              label="订单编号"
-              name="orderNumber"
-              rules={[{ required: true, message: '请输入订单编号' }]}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ marginBottom: 4 }}>物流渠道 *</div>
+              <Select
+                style={{ width: '100%' }}
+                loading={loadingChannels}
+                showSearch
+                optionFilterProp="label"
+                placeholder="请选择物流渠道"
+                value={form.channelCode}
+                onChange={(value) => setForm((prev) => ({ ...prev, channelCode: value }))}
+                options={channels.map((item) => ({
+                  value: item.channelCode,
+                  label: `${item.channelName}（${item.channelCode}）`
+                }))}
+              />
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                渠道列表来自「物流渠道」维护功能，缺失时请先在渠道管理中新增。
+              </Text>
+            </div>
+          </Col>
+          <Col span={12}>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ marginBottom: 4 }}>运单号</div>
+              <Input
+                placeholder="承运商运单号，可创建后补录"
+                value={form.trackingNumber}
+                onChange={(e) => setForm((prev) => ({ ...prev, trackingNumber: e.target.value }))}
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ marginBottom: 4 }}>承运商</div>
+              <Input
+                placeholder="留空则取渠道名称"
+                value={form.carrier}
+                onChange={(e) => setForm((prev) => ({ ...prev, carrier: e.target.value }))}
+              />
+            </div>
+            <Checkbox
+              checked={form.shipImmediately}
+              onChange={(e) => setForm((prev) => ({ ...prev, shipImmediately: e.target.checked }))}
             >
-              <Input placeholder="请输入订单编号" />
-            </Form.Item>
-            
-            <Form.Item
-              label="物流渠道"
-              name="channel"
-              rules={[{ required: true, message: '请选择物流渠道' }]}
-            >
-              <Select placeholder="请选择物流渠道">
-                {logisticsChannelOptions.map(option => (
-                  <Option key={option.value} value={option.value}>{option.label}</Option>
-                ))}
-              </Select>
-            </Form.Item>
-            
-            <Form.Item
-              label="物流状态"
-              name="status"
-              rules={[{ required: true, message: '请选择物流状态' }]}
-            >
-              <Select placeholder="请选择物流状态">
-                {logisticsStatusOptions.map(option => (
-                  <Option key={option.value} value={option.value}>{option.label}</Option>
-                ))}
-              </Select>
-            </Form.Item>
-            
-            <Form.Item
-              label="追踪单号"
-              name="trackingNumber"
-              rules={[{ required: true, message: '请输入追踪单号' }]}
-            >
-              <Input placeholder="请输入追踪单号" />
-            </Form.Item>
-            
-            <Form.Item
-              label="预计送达时间"
-              name="estimatedDeliveryTime"
-              rules={[{ required: true, message: '请选择预计送达时间' }]}
-            >
-              <DatePicker showTime style={{ width: '100%' }} />
-            </Form.Item>
+              创建后立即发货（状态置为已揽收）
+            </Checkbox>
+          </Col>
+        </Row>
 
-            {/* 收货信息 */}
-            <div style={{ gridColumn: 'span 2' }}>
-              <Title level={5}>收货信息</Title>
-            </div>
-            
-            <Form.Item
-              label="收件人"
-              name="recipient"
-              rules={[{ required: true, message: '请输入收件人' }]}
-            >
-              <Input placeholder="请输入收件人" />
-            </Form.Item>
-            
-            <Form.Item
-              label="联系电话"
-              name="recipientPhone"
-              rules={[{ required: true, message: '请输入联系电话' }]}
-            >
-              <Input placeholder="请输入联系电话" />
-            </Form.Item>
-            
-            <Form.Item
-              label="收货地址"
-              name="shippingAddress"
-              rules={[{ required: true, message: '请输入收货地址' }]}
-              style={{ gridColumn: 'span 2' }}
-            >
-              <Input.TextArea rows={3} placeholder="请输入收货地址" />
-            </Form.Item>
-
-            {/* 提交按钮 */}
-            <div style={{ gridColumn: 'span 2', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <Button icon={<ArrowLeftOutlined />} onClick={handleBack}>取消</Button>
-              <Button type="primary" icon={<PlusOutlined />} htmlType="submit" loading={loading}>
-                创建物流单
-              </Button>
-            </div>
-          </div>
-        </Form>
+        <Space style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
+          <Button onClick={() => navigate('/logistics')}>取消</Button>
+          <Button type="primary" icon={<PlusOutlined />} loading={submitting} onClick={handleSubmit}>
+            创建物流单
+          </Button>
+        </Space>
       </Card>
     </div>
   );

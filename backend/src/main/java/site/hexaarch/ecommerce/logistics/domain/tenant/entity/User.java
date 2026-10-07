@@ -1,5 +1,6 @@
 package site.hexaarch.ecommerce.logistics.domain.tenant.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import site.hexaarch.ecommerce.logistics.domain.common.BaseEntity;
@@ -21,6 +22,7 @@ public class User extends BaseEntity {
     private String id;
     private String tenantId;
     private String username;
+    @JsonIgnore
     private String password;
     private String email;
     private String phone;
@@ -88,13 +90,32 @@ public class User extends BaseEntity {
         this.updatedAt = LocalDateTime.now();
     }
 
-    // 添加角色
+    // 添加角色（按角色ID判重，重复授予同一角色不会产生重复绑定）
     public void addRole(Role role) {
+        if (role == null || role.getId() == null) {
+            return;
+        }
+        this.roles.removeIf(existing -> sameRoleId(existing, role));
         this.roles.add(role);
     }
 
-    // 移除角色
+    /**
+     * 移除角色（按角色ID匹配）。
+     * <p>
+     * 这里不能用 {@code Set.remove(Object)}：{@code Role} 的 equals 由 Lombok {@code @Data}
+     * 生成、比较的是全部字段，而 {@code createdAt} 在每次构造时都是新的 {@code LocalDateTime.now()}，
+     * 同一个角色从不同路径加载出的两个实例 equals 恒为 false，
+     * 会导致「撤销角色」接口返回 200 但实际没撤掉。
+     * </p>
+     */
     public void removeRole(Role role) {
-        this.roles.remove(role);
+        if (role == null || role.getId() == null) {
+            return;
+        }
+        this.roles.removeIf(existing -> sameRoleId(existing, role));
+    }
+
+    private static boolean sameRoleId(Role left, Role right) {
+        return left != null && left.getId() != null && left.getId().equals(right.getId());
     }
 }

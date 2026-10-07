@@ -1,15 +1,18 @@
 package site.hexaarch.ecommerce.logistics.interfaces.controller;
 
-import site.hexaarch.ecommerce.logistics.application.service.OrderApplicationService;
+import site.hexaarch.ecommerce.logistics.application.service.order.OrderApplicationService;
 import site.hexaarch.ecommerce.logistics.domain.order.aggregate.Order;
 import site.hexaarch.ecommerce.logistics.domain.order.valueobject.OrderStatus;
 import site.hexaarch.ecommerce.logistics.domain.order.valueobject.PaymentInfo;
 import site.hexaarch.ecommerce.logistics.domain.order.valueobject.ShippingAddress;
-import site.hexaarch.ecommerce.logistics.infrastructure.persistence.jpa.mapper.OrderMapper;
+import site.hexaarch.ecommerce.logistics.infrastructure.persistence.jpa.mapper.order.OrderMapper;
+import site.hexaarch.ecommerce.logistics.interfaces.controller.order.OrderController;
 import site.hexaarch.ecommerce.logistics.interfaces.dto.order.CreateOrderDto;
+import site.hexaarch.ecommerce.logistics.interfaces.dto.order.OrderDto;
 import site.hexaarch.ecommerce.logistics.interfaces.dto.order.OrderItemDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
@@ -45,18 +48,31 @@ class OrderControllerTest {
         mockMvc = MockMvcBuilders.standaloneSetup(orderController).build();
     }
 
+    /**
+     * 构造与聚合字段一致的DTO，避免依赖 MapStruct 生成实现
+     */
+    private OrderDto toDto(Order order) {
+        OrderDto dto = new OrderDto();
+        dto.setOrderId(order.getId());
+        dto.setOrderNumber(order.getOrderNumber());
+        dto.setCustomerId(order.getCustomerId());
+        dto.setStatus(order.getOrderStatus());
+        dto.setStatusLabel(order.getOrderStatus() == null ? null : order.getOrderStatus().getLabel());
+        return dto;
+    }
+
     @Test
     void testCreateOrder() throws Exception {
         String orderId = UUID.randomUUID().toString();
         String customerId = UUID.randomUUID().toString();
-        
+
         OrderItemDto orderItemDto = new OrderItemDto();
         orderItemDto.setProductName("Test Product");
         orderItemDto.setSkuCode("TP-001");
         orderItemDto.setQuantity(2);
         orderItemDto.setUnitPrice(10.0);
         orderItemDto.setTotalPrice(20.0);
-        
+
         ShippingAddress shippingAddress = ShippingAddress.builder()
                 .country("USA")
                 .province("CA")
@@ -66,7 +82,7 @@ class OrderControllerTest {
                 .recipient("John Doe")
                 .phone("1234567890")
                 .build();
-        
+
         PaymentInfo paymentInfo = PaymentInfo.builder()
                 .paymentMethod("CREDIT_CARD")
                 .paymentStatus("SUCCESS")
@@ -90,22 +106,26 @@ class OrderControllerTest {
                 .orderStatus(OrderStatus.PENDING)
                 .build();
 
-        when(orderApplicationService.createOrder(any(String.class), any(String.class), any(List.class), any(ShippingAddress.class), any(PaymentInfo.class)))
+        when(orderApplicationService.createOrder(any(String.class), any(String.class), any(String.class),
+                any(String.class), any(String.class), ArgumentMatchers.<List>any(),
+                any(ShippingAddress.class), any(PaymentInfo.class)))
                 .thenReturn(mockOrder);
+        when(orderMapper.toDto(any(Order.class))).thenAnswer(invocation -> toDto(invocation.getArgument(0)));
 
         mockMvc.perform(post("/api/orders")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"orderNumber\":\"ORD-001\",\"customerId\":\"" + customerId + "\",\"customerName\":\"John Doe\",\"customerEmail\":\"john@example.com\",\"shippingAddress\":{\"country\":\"USA\",\"province\":\"CA\",\"city\":\"San Francisco\",\"street\":\"123 Main St\",\"zipCode\":\"94105\",\"recipient\":\"John Doe\",\"phone\":\"1234567890\"},\"paymentInfo\":{\"paymentMethod\":\"CREDIT_CARD\",\"paymentStatus\":\"SUCCESS\",\"transactionId\":\"TXN001\",\"amount\":20.0},\"orderItems\":[{\"productName\":\"Test Product\",\"skuCode\":\"TP-001\",\"quantity\":2,\"unitPrice\":10.0,\"totalPrice\":20.0}]}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.data.orderId").value(orderId));
+                .andExpect(jsonPath("$.data.orderId").value(orderId))
+                .andExpect(jsonPath("$.data.orderNumber").value("ORD-001"));
     }
 
     @Test
     void testGetOrderById() throws Exception {
         String orderId = UUID.randomUUID().toString();
         String customerId = UUID.randomUUID().toString();
-        
+
         Order mockOrder = Order.builder()
                 .id(orderId)
                 .orderNumber("ORD-001")
@@ -114,18 +134,20 @@ class OrderControllerTest {
                 .build();
 
         when(orderApplicationService.findOrderById(eq(orderId))).thenReturn(mockOrder);
+        when(orderMapper.toDto(any(Order.class))).thenAnswer(invocation -> toDto(invocation.getArgument(0)));
 
         mockMvc.perform(get("/api/orders/" + orderId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.data.orderId").value(orderId));
+                .andExpect(jsonPath("$.data.orderId").value(orderId))
+                .andExpect(jsonPath("$.data.statusLabel").value("待处理"));
     }
 
     @Test
     void testUpdateOrderStatus() throws Exception {
         String orderId = UUID.randomUUID().toString();
         String customerId = UUID.randomUUID().toString();
-        
+
         Order mockOrder = Order.builder()
                 .id(orderId)
                 .orderNumber("ORD-001")
@@ -135,6 +157,7 @@ class OrderControllerTest {
 
         when(orderApplicationService.updateOrderStatus(eq(orderId), eq(OrderStatus.PROCESSING)))
                 .thenReturn(mockOrder);
+        when(orderMapper.toDto(any(Order.class))).thenAnswer(invocation -> toDto(invocation.getArgument(0)));
 
         mockMvc.perform(put("/api/orders/" + orderId + "/status")
                 .param("status", "PROCESSING"))
@@ -147,7 +170,7 @@ class OrderControllerTest {
     void testGetOrdersByCustomer() throws Exception {
         String orderId = UUID.randomUUID().toString();
         String customerId = UUID.randomUUID().toString();
-        
+
         Order mockOrder = Order.builder()
                 .id(orderId)
                 .orderNumber("ORD-001")
@@ -155,8 +178,15 @@ class OrderControllerTest {
                 .orderStatus(OrderStatus.PENDING)
                 .build();
 
+        OrderDto dto = new OrderDto();
+        dto.setOrderId(orderId);
+        dto.setOrderNumber("ORD-001");
+        dto.setCustomerId(customerId);
+        dto.setStatus(OrderStatus.PENDING);
+
         when(orderApplicationService.findOrdersByCustomerId(eq(customerId)))
                 .thenReturn(List.of(mockOrder));
+        when(orderMapper.toDtoList(anyList())).thenReturn(List.of(dto));
 
         mockMvc.perform(get("/api/orders/customer/" + customerId))
                 .andExpect(status().isOk())

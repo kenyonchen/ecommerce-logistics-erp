@@ -2,6 +2,7 @@ package site.hexaarch.ecommerce.logistics.domain.warehouse.service;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import site.hexaarch.ecommerce.logistics.domain.common.exception.EntityNotFoundException;
 import site.hexaarch.ecommerce.logistics.domain.warehouse.aggregate.Warehouse;
 import site.hexaarch.ecommerce.logistics.domain.warehouse.entity.InventoryRecord;
 import site.hexaarch.ecommerce.logistics.domain.warehouse.repository.InventoryRecordRepository;
@@ -29,17 +30,17 @@ public class InventoryCountService {
     public InventoryRecord countInventory(String warehouseId, String productId, int actualQuantity) {
         // 查找仓库
         Warehouse warehouse = warehouseRepository.findById(warehouseId)
-                .orElseThrow(() -> new IllegalArgumentException("Warehouse not found: " + warehouseId));
+                .orElseThrow(() -> new EntityNotFoundException("仓库不存在: " + warehouseId));
 
-        // 查找库存记录
-        InventoryRecord inventoryRecord = inventoryRecordRepository.findByProductId(productId)
-                .orElseThrow(() -> new IllegalArgumentException("Inventory record not found: " + productId));
+        // 查找库存记录（仓库聚合内定位；不受仓库限定的 findByProductId 会盘点到别的仓库的行）
+        InventoryRecord inventoryRecord = warehouse.findInventoryRecord(productId)
+                .or(() -> warehouse.getInventoryRecords().stream()
+                        .filter(record -> productId != null && productId.equals(record.getSku()))
+                        .findFirst())
+                .orElseThrow(() -> new EntityNotFoundException("库存记录不存在: " + productId));
 
-        // 执行库存盘点
-        warehouse.countInventory(productId, actualQuantity);
-
-        // 调整库存数量
-        inventoryRecord.adjustQuantity(actualQuantity);
+        // 执行库存盘点（聚合内改的就是上面这个实例，无需再调一次 adjustQuantity）
+        warehouse.countInventory(inventoryRecord.getProductId(), actualQuantity);
 
         // 保存库存记录和仓库
         inventoryRecordRepository.save(inventoryRecord);

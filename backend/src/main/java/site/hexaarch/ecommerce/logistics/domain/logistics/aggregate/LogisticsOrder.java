@@ -1,6 +1,5 @@
 package site.hexaarch.ecommerce.logistics.domain.logistics.aggregate;
 
-import lombok.Getter;
 import site.hexaarch.ecommerce.logistics.domain.logistics.event.LogisticsCompletedEvent;
 import site.hexaarch.ecommerce.logistics.domain.logistics.event.LogisticsLabelGeneratedEvent;
 import site.hexaarch.ecommerce.logistics.domain.logistics.event.LogisticsOrderCreatedEvent;
@@ -8,65 +7,79 @@ import site.hexaarch.ecommerce.logistics.domain.logistics.event.LogisticsStatusC
 import site.hexaarch.ecommerce.logistics.domain.logistics.valueobject.LogisticsFee;
 import site.hexaarch.ecommerce.logistics.domain.logistics.valueobject.LogisticsLabel;
 import site.hexaarch.ecommerce.logistics.domain.logistics.valueobject.LogisticsStatus;
+import site.hexaarch.ecommerce.logistics.domain.logistics.valueobject.LogisticsTrace;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * 物流单聚合根，是物流单聚合的核心实体，负责管理物流状态、物流标签、物流费用等。
+ * 物流单聚合根，是物流单聚合的核心实体，负责管理物流状态、物流标签、物流费用、运单轨迹等。
  *
  * @author kenyon
  */
-@Getter
 public class LogisticsOrder {
-    protected List<Object> domainEvents;
+
+    /**
+     * 允许直接流转到目标状态的来源状态集合，终态（已送达/已取消）不再允许变更
+     */
+    private static final java.util.Set<LogisticsStatus> FINAL_STATUSES =
+            java.util.Set.of(LogisticsStatus.DELIVERED, LogisticsStatus.CANCELLED);
+
+    private final List<Object> domainEvents = new ArrayList<>();
+
     private String logisticsOrderId;
+    private String logisticsOrderNumber;
     private String tenantId;
     private String orderId;
     private String logisticsChannelId;
+    private String carrier;
     private String trackingNumber;
-    private LocalDateTime createdAt;
+    private String trackingUrl;
+    private String platform;
+    private String externalLogisticsId;
     private LogisticsStatus logisticsStatus;
     private LogisticsLabel logisticsLabel;
     private LogisticsFee logisticsFee;
+    private LocalDateTime shippedAt;
+    private LocalDateTime estimatedArrivalAt;
+    private LocalDateTime deliveredAt;
+    private final List<LogisticsTrace> traces = new ArrayList<>();
+    private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
     /**
-     * 受保护的无参构造函数，用于JPA和MapStruct。
+     * 受保护的无参构造函数，供持久化框架使用。
      */
     protected LogisticsOrder() {
-        this.domainEvents = new ArrayList<>();
     }
 
-    /**
-     * 私有构造函数，防止直接实例化。
-     *
-     * @param logisticsOrderId   物流单ID
-     * @param tenantId           租户ID
-     * @param orderId            订单ID
-     * @param logisticsChannelId 物流渠道ID
-     * @param logisticsStatus    物流状态
-     * @param trackingNumber     运单号
-     * @param logisticsLabel     物流标签
-     * @param logisticsFee       物流费用
-     * @param createdAt          创建时间
-     * @param updatedAt          更新时间
-     */
-    private LogisticsOrder(String logisticsOrderId, String tenantId, String orderId, String logisticsChannelId, LogisticsStatus logisticsStatus, String trackingNumber, LogisticsLabel logisticsLabel, LogisticsFee logisticsFee, LocalDateTime createdAt, LocalDateTime updatedAt) {
-        this.logisticsOrderId = logisticsOrderId != null ? logisticsOrderId : UUID.randomUUID().toString();
-        this.tenantId = tenantId;
-        this.orderId = Objects.requireNonNull(orderId, "Order ID cannot be null");
-        this.logisticsChannelId = Objects.requireNonNull(logisticsChannelId, "Logistics channel ID cannot be null");
-        this.logisticsStatus = logisticsStatus != null ? logisticsStatus : LogisticsStatus.PENDING;
-        this.trackingNumber = trackingNumber != null ? trackingNumber : generateTrackingNumber();
-        this.logisticsLabel = logisticsLabel;
-        this.logisticsFee = logisticsFee;
-        this.createdAt = createdAt != null ? createdAt : LocalDateTime.now();
-        this.updatedAt = updatedAt != null ? updatedAt : LocalDateTime.now();
-        this.domainEvents = new ArrayList<>(); // 初始化domainEvents
+    private LogisticsOrder(Builder builder) {
+        this.logisticsOrderId = builder.logisticsOrderId != null ? builder.logisticsOrderId
+                : java.util.UUID.randomUUID().toString();
+        this.logisticsOrderNumber = builder.logisticsOrderNumber != null ? builder.logisticsOrderNumber
+                : generateLogisticsOrderNumber();
+        this.tenantId = builder.tenantId;
+        this.orderId = builder.orderId;
+        this.logisticsChannelId = builder.logisticsChannelId;
+        this.carrier = builder.carrier;
+        this.trackingNumber = builder.trackingNumber != null ? builder.trackingNumber : generateTrackingNumber();
+        this.trackingUrl = builder.trackingUrl;
+        this.platform = builder.platform;
+        this.externalLogisticsId = builder.externalLogisticsId;
+        this.logisticsStatus = builder.logisticsStatus != null ? builder.logisticsStatus : LogisticsStatus.PENDING;
+        this.logisticsLabel = builder.logisticsLabel;
+        this.logisticsFee = builder.logisticsFee;
+        this.shippedAt = builder.shippedAt;
+        this.estimatedArrivalAt = builder.estimatedArrivalAt;
+        this.deliveredAt = builder.deliveredAt;
+        if (builder.traces != null) {
+            this.traces.addAll(builder.traces);
+        }
+        this.createdAt = builder.createdAt != null ? builder.createdAt : LocalDateTime.now();
+        this.updatedAt = builder.updatedAt != null ? builder.updatedAt : LocalDateTime.now();
     }
 
     /**
@@ -78,45 +91,245 @@ public class LogisticsOrder {
      * @return 新的物流单
      */
     public static LogisticsOrder create(String tenantId, String orderId, String logisticsChannelId) {
-        LogisticsOrder logisticsOrder = new LogisticsOrder(
-                UUID.randomUUID().toString(), // logisticsOrderId
-                tenantId, // tenantId
-                orderId, // orderId
-                logisticsChannelId, // logisticsChannelId
-                LogisticsStatus.PENDING, // logisticsStatus
-                generateTrackingNumber(), // trackingNumber
-                null, // logisticsLabel
-                null, // logisticsFee
-                LocalDateTime.now(), // createdAt
-                LocalDateTime.now() // updatedAt
-        );
+        return create(tenantId, orderId, logisticsChannelId, null, null);
+    }
 
-        // 注册物流单创建事件
-        LogisticsOrderCreatedEvent event = LogisticsOrderCreatedEvent.builder()
+    /**
+     * 创建新的物流单（可指定运单号与承运商，用于批量发货场景）。
+     *
+     * @param tenantId           租户ID
+     * @param orderId            订单ID
+     * @param logisticsChannelId 物流渠道ID
+     * @param trackingNumber     运单号，为空时系统生成
+     * @param carrier            承运商名称
+     * @return 新的物流单
+     */
+    public static LogisticsOrder create(String tenantId, String orderId, String logisticsChannelId,
+                                        String trackingNumber, String carrier) {
+        Objects.requireNonNull(orderId, "订单ID不能为空");
+        Objects.requireNonNull(logisticsChannelId, "物流渠道ID不能为空");
+
+        LogisticsOrder logisticsOrder = builder()
+                .tenantId(tenantId)
+                .orderId(orderId)
+                .logisticsChannelId(logisticsChannelId)
+                .trackingNumber(trackingNumber)
+                .carrier(carrier)
+                .logisticsStatus(LogisticsStatus.PENDING)
+                .build();
+
+        logisticsOrder.registerDomainEvent(LogisticsOrderCreatedEvent.builder()
                 .logisticsOrderId(logisticsOrder.getLogisticsOrderId())
                 .tenantId(logisticsOrder.getTenantId())
                 .orderId(logisticsOrder.getOrderId())
                 .logisticsChannelId(logisticsOrder.getLogisticsChannelId())
                 .trackingNumber(logisticsOrder.getTrackingNumber())
                 .createdAt(logisticsOrder.getCreatedAt())
-                .build();
-        logisticsOrder.registerDomainEvent(event);
-
+                .build());
         return logisticsOrder;
     }
 
     /**
-     * 生成运单号。
-     *
-     * @return 运单号
+     * 依据持久化结果还原物流单实例，避免通过反射写入字段。
      */
-    private static String generateTrackingNumber() {
-        // 简单生成一个运单号，实际项目中应该使用物流渠道提供的API生成
-        return "TN" + System.currentTimeMillis() + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+    public static LogisticsOrder restore(String logisticsOrderId, String logisticsOrderNumber, String tenantId,
+                                         String orderId, String logisticsChannelId, String carrier,
+                                         String trackingNumber, String trackingUrl, String platform,
+                                         String externalLogisticsId, LogisticsStatus logisticsStatus,
+                                         LogisticsLabel logisticsLabel, LogisticsFee logisticsFee,
+                                         LocalDateTime shippedAt, LocalDateTime estimatedArrivalAt,
+                                         LocalDateTime deliveredAt, List<LogisticsTrace> traces,
+                                         LocalDateTime createdAt, LocalDateTime updatedAt) {
+        return builder()
+                .logisticsOrderId(logisticsOrderId)
+                .logisticsOrderNumber(logisticsOrderNumber)
+                .tenantId(tenantId)
+                .orderId(orderId)
+                .logisticsChannelId(logisticsChannelId)
+                .carrier(carrier)
+                .trackingNumber(trackingNumber)
+                .trackingUrl(trackingUrl)
+                .platform(platform)
+                .externalLogisticsId(externalLogisticsId)
+                .logisticsStatus(logisticsStatus)
+                .logisticsLabel(logisticsLabel)
+                .logisticsFee(logisticsFee)
+                .shippedAt(shippedAt)
+                .estimatedArrivalAt(estimatedArrivalAt)
+                .deliveredAt(deliveredAt)
+                .traces(traces)
+                .createdAt(createdAt)
+                .updatedAt(updatedAt)
+                .build();
     }
 
-    public static LogisticsOrderBuilder builder() {
-        return new LogisticsOrderBuilder();
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    /**
+     * 生成物流单号。
+     */
+    private static String generateLogisticsOrderNumber() {
+        return "LG" + LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS"))
+                + String.format("%04d", ThreadLocalRandom.current().nextInt(10000));
+    }
+
+    /**
+     * 生成运单号。真实场景应由物流渠道API返回，此处作为兜底。
+     */
+    private static String generateTrackingNumber() {
+        return "TN" + System.currentTimeMillis() + java.util.UUID.randomUUID().toString()
+                .substring(0, 8).toUpperCase();
+    }
+
+    /**
+     * 更新物流状态，并追加轨迹节点。
+     *
+     * @param newStatus 新的物流状态
+     */
+    public void updateStatus(LogisticsStatus newStatus) {
+        updateStatus(newStatus, null);
+    }
+
+    /**
+     * 更新物流状态。
+     *
+     * @param newStatus   新的物流状态
+     * @param description 轨迹描述，为空时使用状态中文名
+     */
+    public void updateStatus(LogisticsStatus newStatus, String description) {
+        if (newStatus == null) {
+            throw new IllegalArgumentException("物流状态不能为空");
+        }
+        if (this.logisticsStatus != null && FINAL_STATUSES.contains(this.logisticsStatus)
+                && this.logisticsStatus != newStatus) {
+            throw new IllegalStateException("物流单已处于终态[" + this.logisticsStatus.getDescription()
+                    + "]，不允许再变更为[" + newStatus.getDescription() + "]");
+        }
+        LogisticsStatus oldStatus = this.logisticsStatus;
+        this.logisticsStatus = newStatus;
+        this.updatedAt = LocalDateTime.now();
+        if (newStatus == LogisticsStatus.DELIVERED && this.deliveredAt == null) {
+            this.deliveredAt = this.updatedAt;
+        }
+        appendTrace(new LogisticsTrace(this.updatedAt, newStatus.name(),
+                description == null ? newStatus.getDescription() : description, null));
+
+        registerDomainEvent(LogisticsStatusChangedEvent.builder()
+                .logisticsOrderId(this.logisticsOrderId)
+                .orderId(this.orderId)
+                .oldStatus(oldStatus)
+                .newStatus(newStatus)
+                .changedAt(this.updatedAt)
+                .build());
+
+        if (newStatus.isDelivered()) {
+            registerDomainEvent(LogisticsCompletedEvent.builder()
+                    .logisticsOrderId(this.logisticsOrderId)
+                    .orderId(this.orderId)
+                    .completedAt(this.updatedAt)
+                    .build());
+        }
+    }
+
+    /**
+     * 生成物流标签并流转到「已打单」。
+     *
+     * @param label 物流标签
+     */
+    public void generateLabel(LogisticsLabel label) {
+        this.logisticsLabel = label;
+        registerDomainEvent(LogisticsLabelGeneratedEvent.builder()
+                .logisticsOrderId(this.logisticsOrderId)
+                .orderId(this.orderId)
+                .labelId(label.getLabelId())
+                .trackingNumber(this.trackingNumber)
+                .generatedAt(LocalDateTime.now())
+                .build());
+        updateStatus(LogisticsStatus.LABEL_GENERATED, "已打单");
+    }
+
+    /**
+     * 标记为已发货（揽收），记录发货时间。
+     *
+     * @param shippedAt 发货时间，为空时取当前时间
+     */
+    public void markShipped(LocalDateTime shippedAt) {
+        this.shippedAt = shippedAt == null ? LocalDateTime.now() : shippedAt;
+        updateStatus(LogisticsStatus.COLLECTED, "已揽收发货");
+    }
+
+    /**
+     * 设置运单号。
+     */
+    public void assignTrackingNumber(String trackingNumber) {
+        if (trackingNumber == null || trackingNumber.isBlank()) {
+            return;
+        }
+        this.trackingNumber = trackingNumber.trim();
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    /**
+     * 绑定第三方平台来源信息，用于导入幂等。
+     */
+    public void bindPlatformSource(String platform, String externalLogisticsId) {
+        this.platform = platform;
+        this.externalLogisticsId = externalLogisticsId;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    /**
+     * 绑定第三方平台回传的面单信息，不改变物流状态。
+     */
+    public void attachLabel(LogisticsLabel label) {
+        this.logisticsLabel = label;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    /**
+     * 登记平台回传的发货时间（不推进状态，状态由 {@link #updateStatus} 负责）。
+     */
+    public void recordShippedAt(LocalDateTime shippedAt) {
+        if (shippedAt != null) {
+            this.shippedAt = shippedAt;
+            this.updatedAt = LocalDateTime.now();
+        }
+    }
+
+    /**
+     * 登记平台回传的预计送达时间。
+     */
+    public void recordEstimatedArrivalAt(LocalDateTime estimatedArrivalAt) {
+        if (estimatedArrivalAt != null) {
+            this.estimatedArrivalAt = estimatedArrivalAt;
+            this.updatedAt = LocalDateTime.now();
+        }
+    }
+
+    /**
+     * 登记平台回传的签收时间。
+     */
+    public void recordDeliveredAt(LocalDateTime deliveredAt) {
+        if (deliveredAt != null) {
+            this.deliveredAt = deliveredAt;
+            this.updatedAt = LocalDateTime.now();
+        }
+    }
+
+    /**
+     * 追加轨迹节点（保留最新100条）。
+     */
+    public void appendTrace(LogisticsTrace trace) {
+        if (trace == null || trace.description() == null || trace.description().isBlank()) {
+            return;
+        }
+        this.traces.add(trace);
+        while (this.traces.size() > 100) {
+            this.traces.remove(0);
+        }
+        this.updatedAt = LocalDateTime.now();
     }
 
     public List<Object> getDomainEvents() {
@@ -124,235 +337,227 @@ public class LogisticsOrder {
     }
 
     public void clearDomainEvents() {
-        if (domainEvents != null) {
-            domainEvents.clear();
-        }
+        domainEvents.clear();
     }
 
-    protected void registerDomainEvent(Object event) {
-        if (domainEvents == null) {
-            domainEvents = new ArrayList<>();
-        }
+    private void registerDomainEvent(Object event) {
         domainEvents.add(event);
-    }
-
-    /**
-     * 更新物流状态。
-     *
-     * @param newStatus 新的物流状态
-     */
-    public void updateStatus(LogisticsStatus newStatus) {
-        LogisticsStatus oldStatus = this.logisticsStatus;
-        this.logisticsStatus = newStatus;
-        this.updatedAt = LocalDateTime.now();
-
-        // 注册物流状态变更事件
-        LogisticsStatusChangedEvent event = LogisticsStatusChangedEvent.builder()
-                .logisticsOrderId(this.getLogisticsOrderId())
-                .orderId(this.getOrderId())
-                .oldStatus(oldStatus)
-                .newStatus(newStatus)
-                .changedAt(this.getUpdatedAt())
-                .build();
-        this.registerDomainEvent(event);
-
-        // 如果物流状态变为已送达，注册物流完成事件
-        if (newStatus.isDelivered()) {
-            LogisticsCompletedEvent completedEvent = LogisticsCompletedEvent.builder()
-                    .logisticsOrderId(this.getLogisticsOrderId())
-                    .orderId(this.getOrderId())
-                    .completedAt(this.getUpdatedAt())
-                    .build();
-            this.registerDomainEvent(completedEvent);
-        }
-    }
-
-    /**
-     * 生成物流标签。
-     *
-     * @param label 物流标签
-     */
-    public void generateLabel(LogisticsLabel label) {
-        this.logisticsLabel = label;
-        this.updatedAt = LocalDateTime.now();
-
-        // 注册物流标签生成事件
-        LogisticsLabelGeneratedEvent event = LogisticsLabelGeneratedEvent.builder()
-                .logisticsOrderId(this.getLogisticsOrderId())
-                .orderId(this.getOrderId())
-                .labelId(label.getLabelId())
-                .trackingNumber(this.getTrackingNumber())
-                .generatedAt(this.getUpdatedAt())
-                .build();
-        this.registerDomainEvent(event);
-    }
-
-    protected void setLogisticsFeeForFramework(LogisticsFee logisticsFee) {
-        this.logisticsFee = logisticsFee;
     }
 
     public String getLogisticsOrderId() {
         return logisticsOrderId;
     }
 
-    // 为JPA和MapStruct添加setter方法
-    protected void setLogisticsOrderId(String logisticsOrderId) {
+    public void setLogisticsOrderId(String logisticsOrderId) {
         this.logisticsOrderId = logisticsOrderId;
     }
 
-    public String getOrderId() {
-        return orderId;
-    }
-
-    protected void setOrderId(String orderId) {
-        this.orderId = orderId;
-    }
-
-    public String getLogisticsChannelId() {
-        return logisticsChannelId;
-    }
-
-    protected void setLogisticsChannelId(String logisticsChannelId) {
-        this.logisticsChannelId = logisticsChannelId;
-    }
-
-    public String getTrackingNumber() {
-        return trackingNumber;
-    }
-
-    protected void setTrackingNumber(String trackingNumber) {
-        this.trackingNumber = trackingNumber;
-    }
-
-    public LocalDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    protected void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt;
-    }
-
-    public LogisticsStatus getLogisticsStatus() {
-        return logisticsStatus;
-    }
-
-    protected void setLogisticsStatus(LogisticsStatus logisticsStatus) {
-        this.logisticsStatus = logisticsStatus;
-    }
-
-    public LogisticsLabel getLogisticsLabel() {
-        return logisticsLabel;
-    }
-
-    protected void setLogisticsLabel(LogisticsLabel logisticsLabel) {
-        this.logisticsLabel = logisticsLabel;
-    }
-
-    public LogisticsFee getLogisticsFee() {
-        return logisticsFee;
-    }
-
-    /**
-     * 设置物流费用。
-     *
-     * @param fee 物流费用
-     */
-    public void setLogisticsFee(LogisticsFee fee) {
-        this.logisticsFee = fee;
-        this.updatedAt = LocalDateTime.now();
-    }
-
-    public LocalDateTime getUpdatedAt() {
-        return updatedAt;
-    }
-
-    protected void setUpdatedAt(LocalDateTime updatedAt) {
-        this.updatedAt = updatedAt;
+    public String getLogisticsOrderNumber() {
+        return logisticsOrderNumber;
     }
 
     public String getTenantId() {
         return tenantId;
     }
 
-    protected void setTenantId(String tenantId) {
-        this.tenantId = tenantId;
+    public String getOrderId() {
+        return orderId;
     }
 
-    public static class LogisticsOrderBuilder {
+    public String getLogisticsChannelId() {
+        return logisticsChannelId;
+    }
+
+    public String getCarrier() {
+        return carrier;
+    }
+
+    public void setCarrier(String carrier) {
+        this.carrier = carrier;
+    }
+
+    public String getTrackingNumber() {
+        return trackingNumber;
+    }
+
+    public String getTrackingUrl() {
+        return trackingUrl;
+    }
+
+    public void setTrackingUrl(String trackingUrl) {
+        this.trackingUrl = trackingUrl;
+    }
+
+    public String getPlatform() {
+        return platform;
+    }
+
+    public String getExternalLogisticsId() {
+        return externalLogisticsId;
+    }
+
+    public LogisticsStatus getLogisticsStatus() {
+        return logisticsStatus;
+    }
+
+    public LogisticsLabel getLogisticsLabel() {
+        return logisticsLabel;
+    }
+
+    public LogisticsFee getLogisticsFee() {
+        return logisticsFee;
+    }
+
+    public void setLogisticsFee(LogisticsFee fee) {
+        this.logisticsFee = fee;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public LocalDateTime getShippedAt() {
+        return shippedAt;
+    }
+
+    public LocalDateTime getEstimatedArrivalAt() {
+        return estimatedArrivalAt;
+    }
+
+    public LocalDateTime getDeliveredAt() {
+        return deliveredAt;
+    }
+
+    public List<LogisticsTrace> getTraces() {
+        return List.copyOf(traces);
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    /**
+     * 物流单构建器。
+     */
+    public static class Builder {
         private String logisticsOrderId;
+        private String logisticsOrderNumber;
         private String tenantId;
         private String orderId;
         private String logisticsChannelId;
-        private LogisticsStatus logisticsStatus;
+        private String carrier;
         private String trackingNumber;
+        private String trackingUrl;
+        private String platform;
+        private String externalLogisticsId;
+        private LogisticsStatus logisticsStatus;
         private LogisticsLabel logisticsLabel;
         private LogisticsFee logisticsFee;
+        private LocalDateTime shippedAt;
+        private LocalDateTime estimatedArrivalAt;
+        private LocalDateTime deliveredAt;
+        private List<LogisticsTrace> traces;
         private LocalDateTime createdAt;
         private LocalDateTime updatedAt;
 
-        public LogisticsOrderBuilder logisticsOrderId(String logisticsOrderId) {
+        public Builder logisticsOrderId(String logisticsOrderId) {
             this.logisticsOrderId = logisticsOrderId;
             return this;
         }
 
-        public LogisticsOrderBuilder tenantId(String tenantId) {
+        public Builder logisticsOrderNumber(String logisticsOrderNumber) {
+            this.logisticsOrderNumber = logisticsOrderNumber;
+            return this;
+        }
+
+        public Builder tenantId(String tenantId) {
             this.tenantId = tenantId;
             return this;
         }
 
-        public LogisticsOrderBuilder orderId(String orderId) {
+        public Builder orderId(String orderId) {
             this.orderId = orderId;
             return this;
         }
 
-        public LogisticsOrderBuilder logisticsChannelId(String logisticsChannelId) {
+        public Builder logisticsChannelId(String logisticsChannelId) {
             this.logisticsChannelId = logisticsChannelId;
             return this;
         }
 
-        public LogisticsOrderBuilder logisticsStatus(LogisticsStatus logisticsStatus) {
-            this.logisticsStatus = logisticsStatus;
+        public Builder carrier(String carrier) {
+            this.carrier = carrier;
             return this;
         }
 
-        public LogisticsOrderBuilder trackingNumber(String trackingNumber) {
+        public Builder trackingNumber(String trackingNumber) {
             this.trackingNumber = trackingNumber;
             return this;
         }
 
-        public LogisticsOrderBuilder logisticsLabel(LogisticsLabel logisticsLabel) {
+        public Builder trackingUrl(String trackingUrl) {
+            this.trackingUrl = trackingUrl;
+            return this;
+        }
+
+        public Builder platform(String platform) {
+            this.platform = platform;
+            return this;
+        }
+
+        public Builder externalLogisticsId(String externalLogisticsId) {
+            this.externalLogisticsId = externalLogisticsId;
+            return this;
+        }
+
+        public Builder logisticsStatus(LogisticsStatus logisticsStatus) {
+            this.logisticsStatus = logisticsStatus;
+            return this;
+        }
+
+        public Builder logisticsLabel(LogisticsLabel logisticsLabel) {
             this.logisticsLabel = logisticsLabel;
             return this;
         }
 
-        public LogisticsOrderBuilder logisticsFee(LogisticsFee logisticsFee) {
+        public Builder logisticsFee(LogisticsFee logisticsFee) {
             this.logisticsFee = logisticsFee;
             return this;
         }
 
-        public LogisticsOrderBuilder createdAt(LocalDateTime createdAt) {
+        public Builder shippedAt(LocalDateTime shippedAt) {
+            this.shippedAt = shippedAt;
+            return this;
+        }
+
+        public Builder estimatedArrivalAt(LocalDateTime estimatedArrivalAt) {
+            this.estimatedArrivalAt = estimatedArrivalAt;
+            return this;
+        }
+
+        public Builder deliveredAt(LocalDateTime deliveredAt) {
+            this.deliveredAt = deliveredAt;
+            return this;
+        }
+
+        public Builder traces(List<LogisticsTrace> traces) {
+            this.traces = traces;
+            return this;
+        }
+
+        public Builder createdAt(LocalDateTime createdAt) {
             this.createdAt = createdAt;
             return this;
         }
 
-        public LogisticsOrderBuilder updatedAt(LocalDateTime updatedAt) {
+        public Builder updatedAt(LocalDateTime updatedAt) {
             this.updatedAt = updatedAt;
             return this;
         }
 
         public LogisticsOrder build() {
-            return new LogisticsOrder(
-                    logisticsOrderId != null ? logisticsOrderId : java.util.UUID.randomUUID().toString(),
-                    tenantId,
-                    orderId,
-                    logisticsChannelId,
-                    logisticsStatus != null ? logisticsStatus : LogisticsStatus.PENDING,
-                    trackingNumber != null ? trackingNumber : generateTrackingNumber(),
-                    logisticsLabel,
-                    logisticsFee,
-                    createdAt != null ? createdAt : java.time.LocalDateTime.now(),
-                    updatedAt != null ? updatedAt : java.time.LocalDateTime.now()
-            );
+            return new LogisticsOrder(this);
         }
     }
 }

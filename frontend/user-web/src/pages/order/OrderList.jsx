@@ -1,14 +1,34 @@
-import React, { useState, useEffect } from 'react';
-import { Table, Button, Space, Input, Select, DatePicker, Typography } from 'antd';
-import { PlusOutlined, SearchOutlined, EyeOutlined, EditOutlined } from '@ant-design/icons';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  Table,
+  Button,
+  Space,
+  Input,
+  Select,
+  DatePicker,
+  Typography,
+  Popconfirm,
+  Tag,
+  Card,
+  message
+} from 'antd';
+import { PlusOutlined, SearchOutlined, EyeOutlined, DeleteOutlined, ImportOutlined } from '@ant-design/icons';
+import { Link, useNavigate } from 'react-router-dom';
 import { orderApi } from '../../services/api';
+import {
+  DEFAULT_TENANT_ID,
+  orderStatusOptions,
+  orderStatusMap,
+  platformOptions,
+  platformLabel
+} from '../../constants/order';
 
 const { Title } = Typography;
 const { Option } = Select;
 const { RangePicker } = DatePicker;
 
 const OrderList = () => {
+  const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState({
@@ -21,68 +41,63 @@ const OrderList = () => {
   const [searchParams, setSearchParams] = useState({
     orderNumber: '',
     customerId: '',
-    status: '',
+    customerName: '',
+    status: undefined,
+    platform: undefined,
+    keyword: '',
     dateRange: []
   });
 
-  // 订单状态选项
-  const orderStatusOptions = [
-    { value: 'PENDING', label: '待处理' },
-    { value: 'PROCESSING', label: '处理中' },
-    { value: 'SHIPPED', label: '已发货' },
-    { value: 'COMPLETED', label: '已完成' },
-    { value: 'CANCELLED', label: '已取消' }
-  ];
-
-  // 获取订单列表
-  const fetchOrders = async () => {
+  // 获取订单列表（服务端分页）
+  const fetchOrders = useCallback(async () => {
     setLoading(true);
     try {
-      // 这里简化处理，实际应该调用后端的分页查询API
-      // 暂时使用模拟数据
-      const mockOrders = Array.from({ length: 20 }, (_, index) => ({
-        id: `order-${index + 1}`,
-        orderNumber: `ORD-${2024}-${String(index + 1).padStart(6, '0')}`,
-        customerId: `customer-${Math.floor(Math.random() * 10) + 1}`,
-        customerName: `客户${Math.floor(Math.random() * 10) + 1}`,
-        totalAmount: 100 + Math.random() * 900,
-        status: orderStatusOptions[Math.floor(Math.random() * orderStatusOptions.length)].value,
-        createdAt: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
-        updatedAt: new Date(Date.now() - Math.random() * 3 * 24 * 60 * 60 * 1000).toISOString()
-      }));
-      
-      setOrders(mockOrders);
-      setPagination(prev => ({
+      const [startDate, endDate] = searchParams.dateRange || [];
+      const params = {
+        tenantId: DEFAULT_TENANT_ID,
+        page: (pagination.current || 1) - 1,
+        size: pagination.pageSize || 10,
+        orderNumber: searchParams.orderNumber || undefined,
+        customerId: searchParams.customerId || undefined,
+        customerName: searchParams.customerName || undefined,
+        status: searchParams.status || undefined,
+        platform: searchParams.platform || undefined,
+        keyword: searchParams.keyword || undefined,
+        startDate: startDate ? startDate.format('YYYY-MM-DD') : undefined,
+        endDate: endDate ? endDate.format('YYYY-MM-DD') : undefined
+      };
+      const result = await orderApi.getOrders(params);
+      const content = result?.content || [];
+      setOrders(content);
+      setPagination((prev) => ({
         ...prev,
-        total: mockOrders.length
+        total: result?.total || 0,
+        current: (result?.page ?? 0) + 1
       }));
     } catch (error) {
       console.error('获取订单列表失败:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [pagination.current, pagination.pageSize, searchParams]);
 
-  // 初始化加载数据
+  // 初始化与条件变化加载数据
   useEffect(() => {
     fetchOrders();
-  }, []);
+  }, [fetchOrders]);
 
-  // 处理分页变化
-  const handlePaginationChange = (page, pageSize) => {
-    setPagination(prev => ({
+  // 处理分页/排序变化
+  const handleTableChange = (pageInfo) => {
+    setPagination((prev) => ({
       ...prev,
-      current: page,
-      pageSize
+      current: pageInfo.current || 1,
+      pageSize: pageInfo.pageSize || 10
     }));
   };
 
   // 处理查询
   const handleSearch = () => {
-    setPagination(prev => ({
-      ...prev,
-      current: 1
-    }));
+    setPagination((prev) => ({ ...prev, current: 1 }));
     fetchOrders();
   };
 
@@ -91,14 +106,24 @@ const OrderList = () => {
     setSearchParams({
       orderNumber: '',
       customerId: '',
-      status: '',
+      customerName: '',
+      status: undefined,
+      platform: undefined,
+      keyword: '',
       dateRange: []
     });
-    setPagination(prev => ({
-      ...prev,
-      current: 1
-    }));
-    fetchOrders();
+    setPagination((prev) => ({ ...prev, current: 1 }));
+  };
+
+  // 删除订单
+  const handleDelete = async (id) => {
+    try {
+      await orderApi.deleteOrder(id);
+      message.success('订单删除成功');
+      fetchOrders();
+    } catch (error) {
+      console.error('删除订单失败:', error);
+    }
   };
 
   // 表格列配置
@@ -113,20 +138,22 @@ const OrderList = () => {
       title: '客户ID',
       dataIndex: 'customerId',
       key: 'customerId',
-      width: 120
+      width: 140,
+      render: (text) => text || '-'
     },
     {
       title: '客户名称',
       dataIndex: 'customerName',
       key: 'customerName',
-      width: 120
+      width: 120,
+      render: (text) => text || '-'
     },
     {
       title: '订单金额',
       dataIndex: 'totalAmount',
       key: 'totalAmount',
       width: 120,
-      render: (text) => `¥${text.toFixed(2)}`
+      render: (text) => (text === null || text === undefined ? '-' : `¥${Number(text).toFixed(2)}`)
     },
     {
       title: '订单状态',
@@ -134,38 +161,45 @@ const OrderList = () => {
       key: 'status',
       width: 100,
       render: (text) => {
-        const statusMap = {
-          PENDING: '待处理',
-          PROCESSING: '处理中',
-          SHIPPED: '已发货',
-          COMPLETED: '已完成',
-          CANCELLED: '已取消'
-        };
-        return statusMap[text] || text;
+        const matched = orderStatusMap[text];
+        return matched ? <Tag color={matched.color}>{matched.text}</Tag> : text || '-';
       }
+    },
+    {
+      title: '来源平台',
+      dataIndex: 'platform',
+      key: 'platform',
+      width: 110,
+      render: (text) => platformLabel(text)
     },
     {
       title: '创建时间',
       dataIndex: 'createdAt',
       key: 'createdAt',
       width: 180,
-      render: (text) => new Date(text).toLocaleString()
-    },
-    {
-      title: '更新时间',
-      dataIndex: 'updatedAt',
-      key: 'updatedAt',
-      width: 180,
-      render: (text) => new Date(text).toLocaleString()
+      render: (text) => (text ? new Date(text).toLocaleString() : '-')
     },
     {
       title: '操作',
       key: 'action',
-      width: 150,
+      width: 170,
+      fixed: 'right',
       render: (_, record) => (
-        <Space size="middle">
-          <Button type="link" icon={<EyeOutlined />}><Link to={`/orders/${record.id}`}>查看</Link></Button>
-          <Button type="link" icon={<EditOutlined />}>编辑</Button>
+        <Space size="small">
+          <Button type="link" icon={<EyeOutlined />} onClick={() => navigate(`/orders/${record.orderId}`)}>
+            查看
+          </Button>
+          <Popconfirm
+            title="确认删除该订单？"
+            description="删除后无法恢复。"
+            okText="确定"
+            cancelText="取消"
+            onConfirm={() => handleDelete(record.orderId)}
+          >
+            <Button type="link" danger icon={<DeleteOutlined />}>
+              删除
+            </Button>
+          </Popconfirm>
         </Space>
       )
     }
@@ -175,73 +209,119 @@ const OrderList = () => {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
         <Title level={4}>订单列表</Title>
-        <Button type="primary" icon={<PlusOutlined />}><Link to="/orders/create">创建订单</Link></Button>
+        <Space>
+          <Button icon={<ImportOutlined />}>
+            <Link to="/orders/import">订单导入</Link>
+          </Button>
+          <Button type="primary" icon={<PlusOutlined />}>
+            <Link to="/orders/create">创建订单</Link>
+          </Button>
+        </Space>
       </div>
 
       {/* 查询条件 */}
-      <div style={{ backgroundColor: '#fff', padding: 16, marginBottom: 5, borderRadius: 8, boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)' }}>
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 5 }}>
+      <Card style={{ marginBottom: 5 }} styles={{ body: { padding: 16 } }}>
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>订单编号：</span>
             <Input
               placeholder="请输入订单编号"
+              allowClear
               value={searchParams.orderNumber}
-              onChange={(e) => setSearchParams(prev => ({ ...prev, orderNumber: e.target.value }))}
-              style={{ width: 200 }}
+              onChange={(e) => setSearchParams((prev) => ({ ...prev, orderNumber: e.target.value }))}
+              style={{ width: 180 }}
             />
           </div>
-          
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>客户ID：</span>
             <Input
               placeholder="请输入客户ID"
+              allowClear
               value={searchParams.customerId}
-              onChange={(e) => setSearchParams(prev => ({ ...prev, customerId: e.target.value }))}
+              onChange={(e) => setSearchParams((prev) => ({ ...prev, customerId: e.target.value }))}
               style={{ width: 150 }}
             />
           </div>
-          
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>关键字：</span>
+            <Input
+              placeholder="订单号/客户/平台订单号"
+              allowClear
+              value={searchParams.keyword}
+              onChange={(e) => setSearchParams((prev) => ({ ...prev, keyword: e.target.value }))}
+              style={{ width: 180 }}
+            />
+          </div>
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>订单状态：</span>
             <Select
               placeholder="请选择状态"
+              allowClear
               value={searchParams.status}
-              onChange={(value) => setSearchParams(prev => ({ ...prev, status: value }))}
-              style={{ width: 120 }}
+              onChange={(value) => setSearchParams((prev) => ({ ...prev, status: value }))}
+              style={{ width: 130 }}
             >
-              {orderStatusOptions.map(option => (
-                <Option key={option.value} value={option.value}>{option.label}</Option>
+              {orderStatusOptions.map((option) => (
+                <Option key={option.value} value={option.value}>
+                  {option.label}
+                </Option>
               ))}
             </Select>
           </div>
-          
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>来源平台：</span>
+            <Select
+              placeholder="请选择平台"
+              allowClear
+              value={searchParams.platform}
+              onChange={(value) => setSearchParams((prev) => ({ ...prev, platform: value }))}
+              style={{ width: 130 }}
+            >
+              {platformOptions.map((option) => (
+                <Option key={option.value} value={option.value}>
+                  {option.label}
+                </Option>
+              ))}
+            </Select>
+          </div>
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>创建时间：</span>
             <RangePicker
               value={searchParams.dateRange}
-              onChange={(dateRange) => setSearchParams(prev => ({ ...prev, dateRange }))}
+              onChange={(dateRange) => setSearchParams((prev) => ({ ...prev, dateRange: dateRange || [] }))}
             />
           </div>
         </div>
-        
+
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <Button onClick={handleReset}>重置</Button>
-          <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>查询</Button>
+          <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
+            查询
+          </Button>
         </div>
-      </div>
+      </Card>
 
       {/* 订单表格 */}
-      <div style={{ backgroundColor: '#fff', padding: 16, borderRadius: 8, boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)' }}>
+      <Card styles={{ body: { padding: 16 } }}>
         <Table
           columns={columns}
           dataSource={orders}
-          rowKey="id"
+          rowKey="orderId"
           loading={loading}
-          pagination={pagination}
-          onChange={handlePaginationChange}
-          scroll={{ x: 1000 }}
+          pagination={{
+            ...pagination,
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 条`
+          }}
+          onChange={handleTableChange}
+          scroll={{ x: 1100 }}
         />
-      </div>
+      </Card>
     </div>
   );
 };

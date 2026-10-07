@@ -20,12 +20,12 @@ public class FinancialTransaction extends BaseAggregateRoot {
     private final String transactionId;
     private final String tenantId;
     private final TransactionType type;
-    private final BigDecimal amount;
+    private BigDecimal amount;
     private final String currency;
     private final String referenceId;
     private final String referenceType;
-    private final String description;
-    private final LocalDateTime createdAt;
+    private String description;
+    private LocalDateTime createdAt;
     private TransactionStatus status;
     private LocalDateTime updatedAt;
 
@@ -76,6 +76,34 @@ public class FinancialTransaction extends BaseAggregateRoot {
             String referenceId,
             String referenceType,
             String description) {
+        // 防主键错位回归断言：第一个参数必须是交易ID（TXN- 前缀），第二个参数必须是租户ID
+        if (transactionId == null || transactionId.isBlank()) {
+            throw new IllegalArgumentException("交易ID(transactionId)不能为空");
+        }
+        if (tenantId == null || tenantId.isBlank()) {
+            throw new IllegalArgumentException("租户ID(tenantId)不能为空");
+        }
+        if (transactionId.equals(tenantId)) {
+            throw new IllegalArgumentException("交易ID与租户ID相同，疑似参数错位: " + transactionId);
+        }
+        if (type == null) {
+            throw new IllegalArgumentException("交易类型(type)不能为空");
+        }
+        if (amount == null) {
+            throw new IllegalArgumentException("金额(amount)不能为空");
+        }
+        if (amount.signum() == 0) {
+            throw new IllegalArgumentException("金额(amount)不能为0，零金额交易无记账意义: " + amount);
+        }
+        if (currency == null || currency.isBlank()) {
+            throw new IllegalArgumentException("币种(currency)不能为空");
+        }
+        if (referenceId == null || referenceId.isBlank()) {
+            throw new IllegalArgumentException("关联ID(referenceId)不能为空");
+        }
+        if (referenceType == null || referenceType.isBlank()) {
+            throw new IllegalArgumentException("关联类型(referenceType)不能为空");
+        }
         var transaction = new FinancialTransaction(
                 transactionId,
                 tenantId,
@@ -159,6 +187,39 @@ public class FinancialTransaction extends BaseAggregateRoot {
                 TransactionStatus.CANCELLED,
                 this.getUpdatedAt()
         ));
+    }
+
+    /**
+     * 应用平台侧同步更新（导入管线 updateExisting=true 时使用）：
+     * 仅更新金额/状态/描述；状态发生变化时注册状态变更事件。
+     *
+     * @param amount      新金额（为空则保持原值）
+     * @param newStatus   新状态（为空则保持原值）
+     * @param description 新描述（为空则保持原值）
+     */
+    public void applyPlatformUpdate(BigDecimal amount, TransactionStatus newStatus, String description) {
+        if (amount != null) {
+            if (amount.signum() == 0) {
+                throw new IllegalArgumentException("金额(amount)不能为0，零金额交易无记账意义: " + amount);
+            }
+            this.amount = amount;
+        }
+        if (description != null && !description.isBlank()) {
+            this.description = description;
+        }
+        if (newStatus != null && newStatus != this.status) {
+            var oldStatus = this.status;
+            this.status = newStatus;
+            this.updatedAt = LocalDateTime.now();
+            this.registerDomainEvent(new FinancialTransactionStatusChangedEvent(
+                    this.transactionId,
+                    oldStatus,
+                    newStatus,
+                    this.updatedAt
+            ));
+        } else {
+            this.updatedAt = LocalDateTime.now();
+        }
     }
 
     // 手动添加toBuilder方法
@@ -256,6 +317,8 @@ public class FinancialTransaction extends BaseAggregateRoot {
                     referenceType,
                     description
             );
+            // builder 字段优先：持久化还原时 createdAt 不得被重置为 now()
+            transaction.createdAt = this.createdAt != null ? this.createdAt : LocalDateTime.now();
             transaction.status = this.status != null ? this.status : TransactionStatus.PENDING;
             transaction.updatedAt = this.updatedAt != null ? this.updatedAt : LocalDateTime.now();
             return transaction;

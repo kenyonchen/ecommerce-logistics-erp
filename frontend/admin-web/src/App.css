@@ -1,42 +1,127 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+/* ==========================================================================
+   布局原语
+   原 Vite 模板的 #root { max-width:1280px; margin:0 auto; padding:2rem;
+   text-align:center } 会让大屏内容被压窄、并把居中样式全局继承给表格与表单，
+   这里改为撑满 + 逐级内边距。
+   ========================================================================== */
+
+/* ---------- 骨架 ---------- */
+
+.app-shell {
+  min-height: 100vh;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+/* Content 内的直接子元素默认撑满，避免 flex 子项被内容撑破 */
+.app-content {
+  flex: 1;
+  /* 关键：flex/grid 子项默认 min-width:auto，表格会把它顶出视口造成整页横向滚动 */
+  min-width: 0;
+  padding: var(--space-4);
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
+@media (min-width: 768px) {
+  .app-content {
+    padding: var(--space-6);
   }
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
+/* ---------- 顶栏 ---------- */
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-header);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  height: 56px;
+  padding: 0 var(--space-4);
+  line-height: normal;
+  background: var(--color-bg-container);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.app-header__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- 侧栏 ---------- */
+
+.app-sider {
+  border-right: 1px solid var(--color-border);
+}
+
+.app-sider__menu {
+  height: 100%;
+  border-inline-end: none !important;
+}
+
+/* ---------- 页面容器 ---------- */
+
+/* 统一所有页面的标题栏与内容间距，页面自身不再各自写内边距 */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.page__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.page__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.page__subtitle {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+/* 窄屏下工具栏占满一行，按钮不再被挤到标题右侧 */
+@media (max-width: 575px) {
+  .page__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .page__header > .ant-space,
+  .page__header > .ant-btn {
+    width: 100%;
   }
 }
 
-.card {
-  padding: 2em;
+/* ---------- 登录页 ---------- */
+
+.login-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--space-4);
+  background: var(--color-bg-layout);
 }
 
-.read-the-docs {
-  color: #888;
+.login-card {
+  width: 100%;
+  max-width: 400px;
 }

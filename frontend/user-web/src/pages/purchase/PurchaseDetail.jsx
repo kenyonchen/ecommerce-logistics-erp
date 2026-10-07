@@ -1,187 +1,199 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Button, Space, Card, Typography, Descriptions, Tag, message, Table, Modal, Input, Select } from 'antd';
-import { ArrowLeftOutlined, EditOutlined, DeleteOutlined, CheckOutlined, InboxOutlined } from '@ant-design/icons';
+import {
+  Button,
+  Space,
+  Card,
+  Typography,
+  Descriptions,
+  Tag,
+  message,
+  Table,
+  Modal,
+  Input,
+  InputNumber,
+  Select,
+  Form,
+  Popconfirm
+} from 'antd';
+import { ArrowLeftOutlined, PlusOutlined, CheckOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { purchaseApi } from "../../services/api";
+import {
+  formatAmount,
+  purchaseActionMap,
+  purchaseApprovalOptions,
+  purchaseItemEditableStatus,
+  purchaseStatusFlow,
+  purchaseStatusMap,
+  purchaseStatusLabel
+} from '../../constants/purchase';
 
 const { Title } = Typography;
 const { Option } = Select;
+
+const closedItemModal = { open: false, mode: 'add', itemId: null };
 
 const PurchaseDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [purchase, setPurchase] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [approvalModalVisible, setApprovalModalVisible] = useState(false);
-  const [inboundModalVisible, setInboundModalVisible] = useState(false);
-  const [approvalStatus, setApprovalStatus] = useState('');
-  const [inboundItems, setInboundItems] = useState([]);
+  const [itemModal, setItemModal] = useState(closedItemModal);
+  const [approvalStatus, setApprovalStatus] = useState('APPROVED');
+  const [approvalForm] = Form.useForm();
+  const [itemForm] = Form.useForm();
 
-  // 采购状态映射
-  const statusMap = {
-    PENDING: { text: '待处理', color: 'processing' },
-    PROCESSING: { text: '处理中', color: 'blue' },
-    COMPLETED: { text: '已完成', color: 'success' },
-    CANCELLED: { text: '已取消', color: 'default' }
-  };
-
-  // 获取采购详情
-  const fetchPurchaseDetail = async () => {
+  const fetchPurchaseDetail = useCallback(async () => {
     setLoading(true);
     try {
-      // 这里简化处理，实际应该调用后端的详情API
-      // 暂时使用模拟数据
-      const mockPurchaseDetail = {
-        id: id,
-        purchaseOrderId: `PO${id.split('-')[1].padStart(8, '0')}`,
-        supplier: `供应商${id.split('-')[1]}`,
-        status: 'PROCESSING',
-        approvalStatus: 'PENDING', // 新增审批状态
-        totalAmount: 28500.00,
-        expectedDeliveryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        actualDeliveryDate: null,
-        createdBy: `采购员${id.split('-')[1]}`,
-        createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-        updatedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-        items: [
-          {
-            id: `item-1`,
-            productId: `PROD-001`,
-            productName: '测试产品1',
-            quantity: 100,
-            unitPrice: 150.00,
-            totalPrice: 15000.00
-          },
-          {
-            id: `item-2`,
-            productId: `PROD-002`,
-            productName: '测试产品2',
-            quantity: 50,
-            unitPrice: 270.00,
-            totalPrice: 13500.00
-          }
-        ]
-      };
-      
-      setPurchase(mockPurchaseDetail);
-      
-      // 初始化入库物品数据
-      setInboundItems(mockPurchaseDetail.items.map(item => ({
-        ...item,
-        inboundQuantity: item.quantity,
-        warehouse: ''
-      })));
+      const data = await purchaseApi.getPurchaseOrderById(id);
+      setPurchase(data || null);
     } catch (error) {
       console.error('获取采购详情失败:', error);
-      message.error('获取采购详情失败');
+      setPurchase(null);
     } finally {
       setLoading(false);
     }
-  };
-
-  // 初始化加载数据
-  useEffect(() => {
-    fetchPurchaseDetail();
   }, [id]);
 
-  // 返回列表页
+  useEffect(() => {
+    fetchPurchaseDetail();
+  }, [fetchPurchaseDetail]);
+
   const handleBack = () => {
     navigate('/purchase');
   };
 
-  // 编辑采购
-  const handleEdit = () => {
-    // 实际应该跳转到编辑页面
-    message.info('编辑功能开发中');
+  // 统一提交：后端业务失败以 400/404 + 具体原因返回，拦截器已弹出提示，这里只需要不再刷新
+  const runRequest = async (request, successText) => {
+    setSubmitting(true);
+    try {
+      await request();
+      message.success(successText);
+      await fetchPurchaseDetail();
+      return true;
+    } catch (error) {
+      console.error('采购单操作失败:', error);
+      return false;
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  // 删除采购
-  const handleDelete = () => {
-    // 实际应该调用后端API删除
-    message.info('删除功能开发中');
+  // 动作按钮由服务端下发的 allowedNextStatuses 决定，字典缺失时回退到本地状态机
+  const allowedNextStatuses = purchase?.allowedNextStatuses?.length
+    ? purchase.allowedNextStatuses
+    : (purchaseStatusFlow[purchase?.status] || []);
+  const canApprove = allowedNextStatuses.includes('APPROVED') || allowedNextStatuses.includes('REJECTED');
+
+  const handleAction = (target) => {
+    const meta = purchaseActionMap[target];
+    return runRequest(() => purchaseApi[meta.api](id), meta.success);
   };
 
-  // 处理采购审批
-  const handleApproval = () => {
+  // 审批确认：APPROVED→approve 接口，REJECTED→reject 接口（拒绝必须填原因）
+  const handleApprovalConfirm = async () => {
+    const values = await approvalForm.validateFields();
+    const meta = purchaseActionMap[approvalStatus];
+    const payload = { approvedBy: values.approvedBy || undefined, comment: values.comment || undefined };
+    const ok = await runRequest(
+      () => purchaseApi[meta.api](id, payload),
+      meta.success
+    );
+    if (ok) {
+      setApprovalModalVisible(false);
+      approvalForm.resetFields();
+    }
+  };
+
+  const openApprovalModal = () => {
+    setApprovalStatus('APPROVED');
+    approvalForm.resetFields();
     setApprovalModalVisible(true);
   };
 
-  // 处理审批确认
-  const handleApprovalConfirm = () => {
-    if (!approvalStatus) {
-      message.error('请选择审批状态');
+  const openAddItemModal = () => {
+    itemForm.resetFields();
+    itemForm.setFieldsValue({ quantity: 1, unitPrice: 0.01 });
+    setItemModal({ ...closedItemModal, open: true });
+  };
+
+  const openEditItemModal = (record) => {
+    itemForm.resetFields();
+    itemForm.setFieldsValue({
+      skuCode: record.skuCode,
+      productName: record.productName,
+      quantity: record.quantity,
+      unitPrice: record.unitPrice
+    });
+    setItemModal({ open: true, mode: 'edit', itemId: record.id });
+  };
+
+  // 采购项：新增提交完整字段，修改只提交数量与单价（SKU 与品名由服务端沿用原行）
+  const handleItemSubmit = async () => {
+    const values = await itemForm.validateFields();
+    if (itemModal.mode === 'edit') {
+      const ok = await runRequest(
+        () => purchaseApi.updatePurchaseOrderItem(id, itemModal.itemId, {
+          quantity: values.quantity,
+          unitPrice: values.unitPrice
+        }),
+        '采购项已更新'
+      );
+      if (ok) closeItemModal();
       return;
     }
-    
-    // 模拟审批成功
-    setPurchase(prev => ({
-      ...prev,
-      approvalStatus,
-      status: approvalStatus === 'APPROVED' ? 'PROCESSING' : 'CANCELLED',
-      updatedAt: new Date().toISOString()
-    }));
-    
-    message.success('采购审批成功');
-    setApprovalModalVisible(false);
+    const ok = await runRequest(
+      () => purchaseApi.addPurchaseOrderItem(id, {
+        skuCode: values.skuCode,
+        productName: values.productName,
+        quantity: values.quantity,
+        unitPrice: values.unitPrice
+      }),
+      '采购项添加成功'
+    );
+    if (ok) closeItemModal();
   };
 
-  // 处理采购入库
-  const handleInbound = () => {
-    if (purchase.approvalStatus !== 'APPROVED') {
-      message.error('采购单尚未审批通过，无法入库');
-      return;
-    }
-    
-    setInboundModalVisible(true);
+  const closeItemModal = () => {
+    setItemModal(closedItemModal);
+    itemForm.resetFields();
   };
 
-  // 处理入库确认
-  const handleInboundConfirm = () => {
-    // 模拟入库成功
-    setPurchase(prev => ({
-      ...prev,
-      status: 'COMPLETED',
-      actualDeliveryDate: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }));
-    
-    message.success('采购入库成功');
-    setInboundModalVisible(false);
-  };
+  const handleRemoveItem = (itemId) =>
+    runRequest(() => purchaseApi.removePurchaseOrderItem(id, itemId), '采购项已删除');
 
-  // 处理入库数量变化
-  const handleInboundQuantityChange = (itemId, value) => {
-    setInboundItems(prev => prev.map(item => 
-      item.id === itemId ? { ...item, inboundQuantity: parseInt(value) || 0 } : item
-    ));
-  };
-
-  // 处理仓库选择变化
-  const handleWarehouseChange = (itemId, value) => {
-    setInboundItems(prev => prev.map(item => 
-      item.id === itemId ? { ...item, warehouse: value } : item
-    ));
-  };
+  const formatDate = (value) => (value ? new Date(value).toLocaleString() : '-');
 
   if (loading) {
     return <div>加载中...</div>;
   }
 
   if (!purchase) {
-    return <div>采购记录不存在</div>;
+    return (
+      <div>
+        <Button icon={<ArrowLeftOutlined />} onClick={handleBack}>返回列表</Button>
+        <div style={{ marginTop: 16 }}>采购记录不存在</div>
+      </div>
+    );
   }
+
+  // 明细行主键由服务端生成（添加后回读带出），改删都以它为准
+  const items = (purchase.items || []).map((item, index) => ({
+    ...item,
+    rowKey: item.id || `${item.skuCode}-${index}`
+  }));
+  const status = purchase.status;
+  const canEditItems = status === purchaseItemEditableStatus;
 
   // 采购物品列配置
   const columns = [
     {
-      title: '物品ID',
-      dataIndex: 'id',
-      key: 'id',
-    },
-    {
-      title: '产品ID',
-      dataIndex: 'productId',
-      key: 'productId',
+      title: 'SKU编码',
+      dataIndex: 'skuCode',
+      key: 'skuCode',
     },
     {
       title: '产品名称',
@@ -197,15 +209,40 @@ const PurchaseDetail = () => {
       title: '单价',
       dataIndex: 'unitPrice',
       key: 'unitPrice',
-      render: (text) => `¥${text.toFixed(2)}`,
+      render: (text) => formatAmount(text),
     },
     {
       title: '总价',
       dataIndex: 'totalPrice',
       key: 'totalPrice',
-      render: (text) => `¥${text.toFixed(2)}`,
+      render: (text) => formatAmount(text),
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 160,
+      render: (_, record) => {
+        if (!canEditItems) return '-';
+        if (!record.id) return <span style={{ color: '#999' }}>保存后才能修改</span>;
+        return (
+          <Space size="small">
+            <Button type="link" icon={<EditOutlined />} onClick={() => openEditItemModal(record)}>编辑</Button>
+            <Popconfirm
+              title="确认删除该采购项？"
+              description="删除后总金额会按剩余明细重算。"
+              okText="确定"
+              cancelText="取消"
+              onConfirm={() => handleRemoveItem(record.id)}
+            >
+              <Button type="link" danger icon={<DeleteOutlined />}>删除</Button>
+            </Popconfirm>
+          </Space>
+        );
+      },
     },
   ];
+
+  const statusInfo = purchaseStatusMap[status] || { color: 'default' };
 
   return (
     <div>
@@ -214,54 +251,67 @@ const PurchaseDetail = () => {
           <Button icon={<ArrowLeftOutlined />} onClick={handleBack}>返回列表</Button>
           <Title level={4}>采购详情</Title>
         </div>
-        <Space>
-          {purchase.approvalStatus === 'PENDING' && (
-            <Button type="primary" icon={<CheckOutlined />} onClick={handleApproval}>采购审批</Button>
+        <Space wrap>
+          {canEditItems && (
+            <Button icon={<PlusOutlined />} onClick={openAddItemModal}>添加采购项</Button>
           )}
-          {purchase.approvalStatus === 'APPROVED' && purchase.status !== 'COMPLETED' && (
-            <Button type="primary" icon={<InboxOutlined />} onClick={handleInbound}>采购入库</Button>
+          {canApprove && (
+            <Button type="primary" icon={<CheckOutlined />} loading={submitting} onClick={openApprovalModal}>采购审批</Button>
           )}
-          <Button icon={<EditOutlined />} onClick={handleEdit}>编辑</Button>
-          <Button danger icon={<DeleteOutlined />} onClick={handleDelete}>删除</Button>
+          {['IN_TRANSIT', 'DELIVERED', 'CANCELLED'].filter(target => allowedNextStatuses.includes(target)).map(target => {
+            const meta = purchaseActionMap[target];
+            if (meta.confirm) {
+              return (
+                <Popconfirm
+                  key={target}
+                  title="操作确认"
+                  description={meta.confirm}
+                  okText="确定"
+                  cancelText="取消"
+                  onConfirm={() => handleAction(target)}
+                >
+                  <Button type={meta.danger ? 'default' : 'primary'} danger={meta.danger} loading={submitting}>
+                    {meta.label}
+                  </Button>
+                </Popconfirm>
+              );
+            }
+            return (
+              <Button key={target} type="primary" loading={submitting} onClick={() => handleAction(target)}>
+                {meta.label}
+              </Button>
+            );
+          })}
         </Space>
       </div>
 
       {/* 采购基本信息 */}
       <Card style={{ marginBottom: 5 }}>
         <Descriptions title="基本信息" column={2}>
-          <Descriptions.Item label="采购ID">{purchase.id}</Descriptions.Item>
-          <Descriptions.Item label="采购订单ID">{purchase.purchaseOrderId}</Descriptions.Item>
-          <Descriptions.Item label="供应商">{purchase.supplier}</Descriptions.Item>
+          <Descriptions.Item label="采购单号">{purchase.purchaseOrderId}</Descriptions.Item>
+          <Descriptions.Item label="租户ID">{purchase.tenantId || '-'}</Descriptions.Item>
+          <Descriptions.Item label="供应商ID">{purchase.supplierId}</Descriptions.Item>
+          <Descriptions.Item label="供应商名称">{purchase.supplierName}</Descriptions.Item>
+          <Descriptions.Item label="收货仓库ID">{purchase.warehouseId}</Descriptions.Item>
           <Descriptions.Item label="采购状态">
-            <Tag color={statusMap[purchase.status].color}>
-              {statusMap[purchase.status].text}
-            </Tag>
+            <Tag color={statusInfo.color}>{purchase.statusLabel || purchaseStatusLabel(status)}</Tag>
           </Descriptions.Item>
-          <Descriptions.Item label="审批状态">
-            <Tag color={
-              purchase.approvalStatus === 'APPROVED' ? 'success' : 
-              purchase.approvalStatus === 'REJECTED' ? 'error' : 'processing'
-            }>
-              {purchase.approvalStatus === 'APPROVED' ? '已通过' : 
-               purchase.approvalStatus === 'REJECTED' ? '已拒绝' : '待审批'}
-            </Tag>
-          </Descriptions.Item>
-          <Descriptions.Item label="总金额">¥{purchase.totalAmount.toFixed(2)}</Descriptions.Item>
-          <Descriptions.Item label="期望交付日期">{new Date(purchase.expectedDeliveryDate).toLocaleString()}</Descriptions.Item>
-          <Descriptions.Item label="实际交付日期">{purchase.actualDeliveryDate ? new Date(purchase.actualDeliveryDate).toLocaleString() : '未交付'}</Descriptions.Item>
-          <Descriptions.Item label="创建人">{purchase.createdBy}</Descriptions.Item>
-          <Descriptions.Item label="创建时间">{new Date(purchase.createdAt).toLocaleString()}</Descriptions.Item>
-          <Descriptions.Item label="更新时间">{new Date(purchase.updatedAt).toLocaleString()}</Descriptions.Item>
+          <Descriptions.Item label="总金额">{formatAmount(purchase.totalAmount)}</Descriptions.Item>
+          <Descriptions.Item label="审批人">{purchase.approvedBy || '-'}</Descriptions.Item>
+          <Descriptions.Item label="审批时间">{formatDate(purchase.approvedAt)}</Descriptions.Item>
+          <Descriptions.Item label="审批意见">{purchase.approvalComment || '-'}</Descriptions.Item>
+          <Descriptions.Item label="创建时间">{formatDate(purchase.createdAt)}</Descriptions.Item>
+          <Descriptions.Item label="更新时间">{formatDate(purchase.updatedAt)}</Descriptions.Item>
         </Descriptions>
       </Card>
 
       {/* 采购物品列表 */}
       <Card style={{ marginBottom: 5 }}>
         <Title level={5}>采购物品</Title>
-        <Table 
-          dataSource={purchase.items} 
-          columns={columns} 
-          rowKey="id" 
+        <Table
+          dataSource={items}
+          columns={columns}
+          rowKey="rowKey"
           pagination={false}
         />
       </Card>
@@ -270,83 +320,64 @@ const PurchaseDetail = () => {
       <Modal
         title="采购审批"
         open={approvalModalVisible}
+        confirmLoading={submitting}
         onOk={handleApprovalConfirm}
         onCancel={() => setApprovalModalVisible(false)}
         okText="确定"
         cancelText="取消"
+        forceRender
       >
         <div style={{ marginBottom: 5 }}>
-          <p>采购订单：{purchase.purchaseOrderId}</p>
-          <p>供应商：{purchase.supplier}</p>
-          <p>总金额：¥{purchase.totalAmount.toFixed(2)}</p>
+          <p>采购单号：{purchase.purchaseOrderId}</p>
+          <p>供应商：{purchase.supplierName}</p>
+          <p>总金额：{formatAmount(purchase.totalAmount)}</p>
         </div>
-        <div style={{ marginBottom: 5 }}>
-          <label style={{ display: 'block', marginBottom: 8 }}>审批状态：</label>
-          <Select style={{ width: '100%' }} value={approvalStatus} onChange={setApprovalStatus} placeholder="请选择审批状态">
-            <Option value="APPROVED">通过</Option>
-            <Option value="REJECTED">拒绝</Option>
-          </Select>
-        </div>
-        <div>
-          <label style={{ display: 'block', marginBottom: 8 }}>审批意见：</label>
-          <Input.TextArea rows={3} placeholder="请输入审批意见" />
-        </div>
+        <Form form={approvalForm} layout="vertical">
+          <Form.Item label="审批结果" required>
+            <Select value={approvalStatus} onChange={setApprovalStatus} placeholder="请选择审批结果">
+              {purchaseApprovalOptions.map(option => (
+                <Option key={option.value} value={option.value}>{option.label}</Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item label="审批人" name="approvedBy" extra="留空则记当前登录账号">
+            <Input placeholder="请输入审批人姓名" maxLength={64} />
+          </Form.Item>
+          <Form.Item
+            label="审批意见"
+            name="comment"
+            rules={approvalStatus === 'REJECTED' ? [{ required: true, message: '拒绝采购单必须填写原因' }] : []}
+          >
+            <Input.TextArea rows={3} placeholder={approvalStatus === 'REJECTED' ? '请填写拒绝原因' : '请填写审批意见'} maxLength={512} />
+          </Form.Item>
+        </Form>
       </Modal>
 
-      {/* 采购入库弹窗 */}
+      {/* 采购项弹窗（新增 / 修改） */}
       <Modal
-        title="采购入库"
-        open={inboundModalVisible}
-        onOk={handleInboundConfirm}
-        onCancel={() => setInboundModalVisible(false)}
-        okText="确定"
+        title={itemModal.mode === 'edit' ? '修改采购项' : '添加采购项'}
+        open={itemModal.open}
+        confirmLoading={submitting}
+        onOk={handleItemSubmit}
+        onCancel={closeItemModal}
+        okText={itemModal.mode === 'edit' ? '保存' : '添加'}
         cancelText="取消"
+        forceRender
       >
-        <div style={{ marginBottom: 5 }}>
-          <p>采购订单：{purchase.purchaseOrderId}</p>
-          <p>供应商：{purchase.supplier}</p>
-          <p>入库日期：{new Date().toLocaleString()}</p>
-        </div>
-        <Table
-          columns={[
-            ...columns,
-            {
-              title: '入库数量',
-              key: 'inboundQuantity',
-              width: 100,
-              render: (_, record) => {
-                const inboundItem = inboundItems.find(item => item.id === record.id);
-                return (
-                  <Input
-                    type="number"
-                    min={0}
-                    max={record.quantity}
-                    value={inboundItem?.inboundQuantity || 0}
-                    onChange={(e) => handleInboundQuantityChange(record.id, e.target.value)}
-                  />
-                );
-              }
-            },
-            {
-              title: '入库仓库',
-              key: 'warehouse',
-              width: 120,
-              render: (_, record) => {
-                const inboundItem = inboundItems.find(item => item.id === record.id);
-                return (
-                  <Select style={{ width: '100%' }} value={inboundItem?.warehouse} onChange={(value) => handleWarehouseChange(record.id, value)} placeholder="请选择仓库">
-                    <Option value="warehouse-001">仓库1</Option>
-                    <Option value="warehouse-002">仓库2</Option>
-                    <Option value="warehouse-003">仓库3</Option>
-                  </Select>
-                );
-              }
-            }
-          ]}
-          dataSource={purchase.items}
-          rowKey="id"
-          pagination={false}
-        />
+        <Form form={itemForm} layout="vertical" initialValues={{ quantity: 1, unitPrice: 0.01 }}>
+          <Form.Item label="SKU编码" name="skuCode" rules={[{ required: true, message: '请输入SKU编码' }]}>
+            <Input placeholder="请输入SKU编码" disabled={itemModal.mode === 'edit'} />
+          </Form.Item>
+          <Form.Item label="产品名称" name="productName" rules={[{ required: true, message: '请输入产品名称' }]}>
+            <Input placeholder="请输入产品名称" disabled={itemModal.mode === 'edit'} />
+          </Form.Item>
+          <Form.Item label="数量" name="quantity" rules={[{ required: true, message: '请输入数量' }]}>
+            <InputNumber min={1} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item label="单价" name="unitPrice" rules={[{ required: true, message: '请输入单价' }]}>
+            <InputNumber min={0.01} step={0.01} style={{ width: '100%' }} />
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   );

@@ -1,201 +1,93 @@
-import React, { useState, useEffect } from 'react';
-import { Table, Button, Space, Input, Select, Typography, Card, Tag, Progress } from 'antd';
-import { PlusOutlined, SearchOutlined, EyeOutlined, EditOutlined } from '@ant-design/icons';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Table, Button, Space, Input, Typography, Card, Tag, Popconfirm, message } from 'antd';
+import { PlusOutlined, SearchOutlined, EyeOutlined, EditOutlined, DeleteOutlined, ShopOutlined } from '@ant-design/icons';
 import { Link, useNavigate } from 'react-router-dom';
 import { warehouseApi } from '../../services/api';
 
 const { Title } = Typography;
-const { Option } = Select;
 
 const WarehouseList = () => {
   const navigate = useNavigate();
   const [warehouses, setWarehouses] = useState([]);
+  const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [pagination, setPagination] = useState({
-    current: 1,
-    pageSize: 10,
-    total: 0
-  });
-
-  // 查询条件
   const [searchParams, setSearchParams] = useState({
     warehouseId: '',
     warehouseName: '',
-    location: '',
-    type: '',
+    address: '',
     status: ''
   });
 
-  // 仓库类型选项
-  const warehouseTypeOptions = [
-    { value: 'PRIMARY', label: '主仓库' },
-    { value: 'SECONDARY', label: '二级仓库' },
-    { value: 'REGIONAL', label: '区域仓库' },
-    { value: 'CROSS_DOCK', label: '跨境仓库' }
-  ];
-
-  // 仓库状态选项
-  const warehouseStatusOptions = [
-    { value: 'ACTIVE', label: '活跃' },
-    { value: 'INACTIVE', label: '不活跃' },
-    { value: 'MAINTENANCE', label: '维护中' }
-  ];
-
   // 获取仓库列表
-  const fetchWarehouses = async () => {
+  const fetchWarehouses = useCallback(async () => {
     setLoading(true);
     try {
-      // 这里简化处理，实际应该调用后端的分页查询API
-      // 暂时使用模拟数据
-      const mockWarehouses = Array.from({ length: 20 }, (_, index) => {
-        const capacity = 10000 + Math.random() * 90000;
-        const usage = Math.random() * capacity;
-        const usageRate = (usage / capacity) * 100;
-        
-        return {
-          id: `wh-${index + 1}`,
-          warehouseName: `仓库${index + 1}`,
-          location: `城市${index + 1}`,
-          type: warehouseTypeOptions[Math.floor(Math.random() * warehouseTypeOptions.length)].value,
-          status: warehouseStatusOptions[Math.floor(Math.random() * warehouseStatusOptions.length)].value,
-          capacity: capacity,
-          usage: usage,
-          usageRate: usageRate,
-          manager: `管理员${index + 1}`,
-          contact: `1380013800${index + 1}`,
-          address: `城市${index + 1} 区${index + 1} 街道${index + 1}号`,
-          createdAt: new Date(Date.now() - Math.random() * 90 * 24 * 60 * 60 * 1000).toISOString(),
-          updatedAt: new Date(Date.now() - Math.random() * 45 * 24 * 60 * 60 * 1000).toISOString()
-        };
-      });
-      
-      setWarehouses(mockWarehouses);
-      setPagination(prev => ({
-        ...prev,
-        total: mockWarehouses.length
-      }));
+      const data = await warehouseApi.getWarehouses();
+      const list = Array.isArray(data) ? data : [];
+      setWarehouses(list);
+      setFiltered(list);
     } catch (error) {
       console.error('获取仓库列表失败:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   // 初始化加载数据
   useEffect(() => {
     fetchWarehouses();
-  }, []);
-
-  // 处理分页变化
-  const handlePaginationChange = (page, pageSize) => {
-    setPagination(prev => ({
-      ...prev,
-      current: page,
-      pageSize
-    }));
-  };
+  }, [fetchWarehouses]);
 
   // 处理查询
   const handleSearch = () => {
-    setPagination(prev => ({
-      ...prev,
-      current: 1
-    }));
-    fetchWarehouses();
+    const { warehouseId, warehouseName, address, status } = searchParams;
+    const result = warehouses.filter(item => {
+      if (warehouseId && !(item.warehouseId || '').toLowerCase().includes(warehouseId.toLowerCase())) return false;
+      if (warehouseName && !(item.warehouseName || '').toLowerCase().includes(warehouseName.toLowerCase())) return false;
+      if (address && !(item.address || '').toLowerCase().includes(address.toLowerCase())) return false;
+      if (status === 'ACTIVE' && !item.active) return false;
+      if (status === 'INACTIVE' && item.active) return false;
+      return true;
+    });
+    setFiltered(result);
   };
 
   // 处理重置
   const handleReset = () => {
-    setSearchParams({
-      warehouseId: '',
-      warehouseName: '',
-      location: '',
-      type: '',
-      status: ''
-    });
-    setPagination(prev => ({
-      ...prev,
-      current: 1
-    }));
-    fetchWarehouses();
+    setSearchParams({ warehouseId: '', warehouseName: '', address: '', status: '' });
+    setFiltered(warehouses);
+  };
+
+  // 删除仓库
+  const handleDelete = async (id) => {
+    try {
+      await warehouseApi.deleteWarehouse(id);
+      message.success('仓库删除成功');
+      fetchWarehouses();
+    } catch (error) {
+      console.error('删除仓库失败:', error);
+    }
   };
 
   // 仓库状态映射
   const statusMap = {
-    ACTIVE: { text: '活跃', color: 'success' },
-    INACTIVE: { text: '不活跃', color: 'default' },
-    MAINTENANCE: { text: '维护中', color: 'warning' }
-  };
-
-  // 仓库类型映射
-  const typeMap = {
-    PRIMARY: '主仓库',
-    SECONDARY: '二级仓库',
-    REGIONAL: '区域仓库',
-    CROSS_DOCK: '跨境仓库'
+    ACTIVE: { text: '启用', color: 'success' },
+    INACTIVE: { text: '停用', color: 'default' }
   };
 
   // 表格列配置
   const columns = [
     {
-      title: '仓库ID',
-      dataIndex: 'id',
-      key: 'id',
-      width: 100
+      title: '仓库编码',
+      dataIndex: 'warehouseCode',
+      key: 'warehouseCode',
+      width: 140
     },
     {
       title: '仓库名称',
       dataIndex: 'warehouseName',
       key: 'warehouseName',
-      width: 120
-    },
-    {
-      title: '位置',
-      dataIndex: 'location',
-      key: 'location',
-      width: 100
-    },
-    {
-      title: '类型',
-      dataIndex: 'type',
-      key: 'type',
-      width: 100,
-      render: (text) => typeMap[text] || text
-    },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 100,
-      render: (text) => (
-        <Tag color={statusMap[text].color}>{statusMap[text].text}</Tag>
-      )
-    },
-    {
-      title: '容量利用率',
-      dataIndex: 'usageRate',
-      key: 'usageRate',
-      width: 120,
-      render: (text, record) => (
-        <div>
-          <Progress percent={Math.round(text)} size="small" status={text > 80 ? 'warning' : text > 90 ? 'error' : 'normal'} />
-          <div style={{ marginTop: 4, fontSize: 12, textAlign: 'center' }}>
-            {Math.round(record.usage)}/{Math.round(record.capacity)} ({Math.round(text)}%)
-          </div>
-        </div>
-      )
-    },
-    {
-      title: '管理员',
-      dataIndex: 'manager',
-      key: 'manager',
-      width: 100
-    },
-    {
-      title: '联系电话',
-      dataIndex: 'contact',
-      key: 'contact',
-      width: 120
+      width: 160
     },
     {
       title: '详细地址',
@@ -204,20 +96,46 @@ const WarehouseList = () => {
       ellipsis: true
     },
     {
+      title: '容量',
+      dataIndex: 'capacity',
+      key: 'capacity',
+      width: 100
+    },
+    {
+      title: '库位数',
+      key: 'locationCount',
+      width: 90,
+      render: (_, record) => (record.locations ? record.locations.length : 0)
+    },
+    {
+      title: '状态',
+      dataIndex: 'active',
+      key: 'active',
+      width: 90,
+      render: (active) => (
+        <Tag color={active ? statusMap.ACTIVE.color : statusMap.INACTIVE.color}>
+          {active ? statusMap.ACTIVE.text : statusMap.INACTIVE.text}
+        </Tag>
+      )
+    },
+    {
       title: '创建时间',
       dataIndex: 'createdAt',
       key: 'createdAt',
-      width: 180,
-      render: (text) => new Date(text).toLocaleString()
+      width: 170,
+      render: (text) => (text ? new Date(text).toLocaleString() : '-')
     },
     {
       title: '操作',
       key: 'action',
-      width: 150,
+      width: 200,
       render: (_, record) => (
         <Space size="middle">
-          <Button type="link" icon={<EyeOutlined />} onClick={() => navigate(`/warehouses/${record.id}`)}>查看</Button>
-          <Button type="link" icon={<EditOutlined />}>编辑</Button>
+          <Button type="link" icon={<EyeOutlined />} onClick={() => navigate(`/warehouses/${record.warehouseId}`)}>查看</Button>
+          <Button type="link" icon={<EditOutlined />} onClick={() => navigate(`/warehouses/${record.warehouseId}`)}>编辑</Button>
+          <Popconfirm title="确认删除该仓库？" onConfirm={() => handleDelete(record.warehouseId)}>
+            <Button type="link" danger icon={<DeleteOutlined />}>删除</Button>
+          </Popconfirm>
         </Space>
       )
     }
@@ -227,71 +145,60 @@ const WarehouseList = () => {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
         <Title level={4}>仓库列表</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/warehouses/create')}>添加仓库</Button>
+        <Space>
+          <Button icon={<ShopOutlined />} onClick={() => navigate('/warehouses/shop')}>店铺仓库对接</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/warehouses/create')}>添加仓库</Button>
+        </Space>
       </div>
 
       {/* 查询条件 */}
       <Card style={{ marginBottom: 5 }}>
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 5 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>仓库ID：</span>
+            <span>仓库编码：</span>
             <Input
-              placeholder="请输入仓库ID"
+              placeholder="请输入仓库编码"
               value={searchParams.warehouseId}
               onChange={(e) => setSearchParams(prev => ({ ...prev, warehouseId: e.target.value }))}
-              style={{ width: 120 }}
+              style={{ width: 140 }}
+              allowClear
             />
           </div>
-          
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>仓库名称：</span>
             <Input
               placeholder="请输入仓库名称"
               value={searchParams.warehouseName}
               onChange={(e) => setSearchParams(prev => ({ ...prev, warehouseName: e.target.value }))}
-              style={{ width: 120 }}
+              style={{ width: 140 }}
+              allowClear
             />
           </div>
-          
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>位置：</span>
+            <span>地址：</span>
             <Input
-              placeholder="请输入位置"
-              value={searchParams.location}
-              onChange={(e) => setSearchParams(prev => ({ ...prev, location: e.target.value }))}
-              style={{ width: 120 }}
+              placeholder="请输入地址"
+              value={searchParams.address}
+              onChange={(e) => setSearchParams(prev => ({ ...prev, address: e.target.value }))}
+              style={{ width: 140 }}
+              allowClear
             />
           </div>
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>类型：</span>
-            <Select
-              placeholder="请选择类型"
-              value={searchParams.type}
-              onChange={(value) => setSearchParams(prev => ({ ...prev, type: value }))}
-              style={{ width: 120 }}
-            >
-              {warehouseTypeOptions.map(option => (
-                <Option key={option.value} value={option.value}>{option.label}</Option>
-              ))}
-            </Select>
-          </div>
-          
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>状态：</span>
-            <Select
-              placeholder="请选择状态"
+            <Input
+              placeholder="ACTIVE / INACTIVE"
               value={searchParams.status}
-              onChange={(value) => setSearchParams(prev => ({ ...prev, status: value }))}
-              style={{ width: 120 }}
-            >
-              {warehouseStatusOptions.map(option => (
-                <Option key={option.value} value={option.value}>{option.label}</Option>
-              ))}
-            </Select>
+              onChange={(e) => setSearchParams(prev => ({ ...prev, status: e.target.value.toUpperCase() }))}
+              style={{ width: 140 }}
+              allowClear
+            />
           </div>
         </div>
-        
+
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <Button onClick={handleReset}>重置</Button>
           <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>查询</Button>
@@ -302,12 +209,11 @@ const WarehouseList = () => {
       <Card>
         <Table
           columns={columns}
-          dataSource={warehouses}
-          rowKey="id"
+          dataSource={filtered}
+          rowKey="warehouseId"
           loading={loading}
-          pagination={pagination}
-          onChange={handlePaginationChange}
-          scroll={{ x: 1200 }}
+          pagination={{ pageSize: 10, showTotal: (total) => `共 ${total} 条` }}
+          scroll={{ x: 1100 }}
         />
       </Card>
     </div>

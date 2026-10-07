@@ -24,6 +24,9 @@ public class FinancialTransactionJpaEntity {
     @Column(name = "transaction_id")
     private String transactionId;
 
+    @Column(name = "tenant_id")
+    private String tenantId;
+
     @Column(name = "type", nullable = false)
     private String type;
 

@@ -20,6 +20,7 @@ public interface FinancialTransactionMapper {
      * 将财务交易领域模型转换为JPA实体
      */
     @Mapping(source = "transactionId", target = "transactionId")
+    @Mapping(source = "tenantId", target = "tenantId")
     @Mapping(source = "type", target = "type", qualifiedByName = "transactionTypeToString")
     @Mapping(source = "amount", target = "amount")
     @Mapping(source = "currency", target = "currency")
@@ -35,6 +36,7 @@ public interface FinancialTransactionMapper {
      * 将JPA实体转换为财务交易领域模型
      */
     @Mapping(source = "transactionId", target = "transactionId")
+    @Mapping(source = "tenantId", target = "tenantId")
     @Mapping(source = "type", target = "type", qualifiedByName = "stringToTransactionType")
     @Mapping(source = "amount", target = "amount")
     @Mapping(source = "currency", target = "currency")

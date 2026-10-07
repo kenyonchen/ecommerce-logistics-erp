@@ -1,304 +1,339 @@
-import React, { useState, useEffect } from 'react';
-import { Table, Button, Space, Input, Select, DatePicker, Typography, Card } from 'antd';
-import { PlusOutlined, SearchOutlined, EyeOutlined, EditOutlined } from '@ant-design/icons';
-import { Link, useNavigate } from 'react-router-dom';
-import { logisticsApi } from '../../services/api';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  Button,
+  Card,
+  DatePicker,
+  Input,
+  Select,
+  Space,
+  Table,
+  Tag,
+  Typography,
+  message
+} from 'antd';
+import {
+  DeleteOutlined,
+  EyeOutlined,
+  ImportOutlined,
+  PlusOutlined,
+  PrinterOutlined,
+  RocketOutlined,
+  SearchOutlined,
+  StopOutlined
+} from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
+import { logisticsApi, logisticsChannelApi } from '../../services/api';
+import {
+  DEFAULT_TENANT_ID,
+  logisticsStatusMap,
+  logisticsStatusOptions,
+  logisticsStatusLabel,
+  logisticsShippableStatuses,
+  formatDateTime,
+  formatAmount
+} from '../../constants/logistics';
+import BatchShipModal from './BatchShipModal.jsx';
 
 const { Title } = Typography;
-const { Option } = Select;
 const { RangePicker } = DatePicker;
 
+/**
+ * 物流单列表：对接后端 GET /api/logistics 条件分页查询，并提供发货、面单、取消、删除与批量发货入口。
+ */
 const LogisticsList = () => {
   const navigate = useNavigate();
-  const [logisticsOrders, setLogisticsOrders] = useState([]);
+  const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [pagination, setPagination] = useState({
-    current: 1,
-    pageSize: 10,
-    total: 0
-  });
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 });
+  const [channels, setChannels] = useState([]);
+  const [statusOptions, setStatusOptions] = useState(logisticsStatusOptions);
+  const [batchShipVisible, setBatchShipVisible] = useState(false);
 
-  // 查询条件
   const [searchParams, setSearchParams] = useState({
-    logisticsNumber: '',
-    orderNumber: '',
-    status: '',
-    channel: '',
+    keyword: '',
+    trackingNumber: '',
+    status: undefined,
+    channelId: undefined,
     dateRange: []
   });
 
-  // 物流状态选项
-  const logisticsStatusOptions = [
-    { value: 'PENDING', label: '待处理' },
-    { value: 'PICKED_UP', label: '已揽收' },
-    { value: 'IN_TRANSIT', label: '运输中' },
-    { value: 'DELIVERED', label: '已送达' },
-    { value: 'FAILED', label: '配送失败' }
-  ];
+  useEffect(() => {
+    loadChannels();
+    loadStatuses();
+  }, []);
 
-  // 物流渠道选项
-  const logisticsChannelOptions = [
-    { value: 'FEDEX', label: 'FedEx' },
-    { value: 'UPS', label: 'UPS' },
-    { value: 'DHL', label: 'DHL' },
-    { value: 'SF', label: '顺丰' },
-    { value: 'STO', label: '申通' },
-    { value: 'YTO', label: '圆通' },
-    { value: 'YUNDA', label: '韵达' },
-    { value: 'ZTO', label: '中通' }
-  ];
+  const loadChannels = async () => {
+    try {
+      const data = await logisticsChannelApi.getChannels();
+      setChannels(data || []);
+    } catch {
+      message.error('加载物流渠道失败');
+    }
+  };
 
-  // 获取物流单列表
-  const fetchLogisticsOrders = async () => {
+  const loadStatuses = async () => {
+    try {
+      const data = await logisticsApi.getStatuses();
+      if (data && data.length) {
+        setStatusOptions(data.map((item) => ({ value: item.code, label: item.label })));
+      }
+    } catch {
+      // 字典接口不可用时使用前端静态兜底
+    }
+  };
+
+  const fetchRows = useCallback(async () => {
     setLoading(true);
     try {
-      // 这里简化处理，实际应该调用后端的分页查询API
-      // 暂时使用模拟数据
-      const mockLogisticsOrders = Array.from({ length: 20 }, (_, index) => ({
-        id: `logistics-${index + 1}`,
-        logisticsNumber: `LOG-${2024}-${String(index + 1).padStart(6, '0')}`,
-        orderNumber: `ORD-${2024}-${String(index + 100).padStart(6, '0')}`,
-        channel: logisticsChannelOptions[Math.floor(Math.random() * logisticsChannelOptions.length)].value,
-        status: logisticsStatusOptions[Math.floor(Math.random() * logisticsStatusOptions.length)].value,
-        recipient: `收件人${Math.floor(Math.random() * 10) + 1}`,
-        recipientPhone: `1380013800${Math.floor(Math.random() * 10)}`,
-        shippingAddress: `北京市朝阳区建国路${Math.floor(Math.random() * 100) + 1}号`,
-        trackingNumber: `TRK-${Math.floor(Math.random() * 900000) + 100000}`,
-        createdAt: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
-        updatedAt: new Date(Date.now() - Math.random() * 3 * 24 * 60 * 60 * 1000).toISOString()
-      }));
-      
-      setLogisticsOrders(mockLogisticsOrders);
-      setPagination(prev => ({
+      const [startDate, endDate] = searchParams.dateRange || [];
+      const data = await logisticsApi.getLogisticsOrders({
+        tenantId: DEFAULT_TENANT_ID,
+        keyword: searchParams.keyword || undefined,
+        trackingNumber: searchParams.trackingNumber || undefined,
+        status: searchParams.status || undefined,
+        channelId: searchParams.channelId || undefined,
+        startDate: startDate ? startDate.format('YYYY-MM-DD') : undefined,
+        endDate: endDate ? endDate.format('YYYY-MM-DD') : undefined,
+        page: (pagination.current || 1) - 1,
+        size: pagination.pageSize || 20
+      });
+      setRows(data?.content || []);
+      setPagination((prev) => ({
         ...prev,
-        total: mockLogisticsOrders.length
+        total: data?.total ?? 0,
+        current: (data?.page ?? 0) + 1
       }));
     } catch (error) {
       console.error('获取物流单列表失败:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [pagination.current, pagination.pageSize, searchParams]);
 
-  // 初始化加载数据
   useEffect(() => {
-    fetchLogisticsOrders();
-  }, []);
+    fetchRows();
+  }, [fetchRows]);
 
-  // 处理分页变化
-  const handlePaginationChange = (page, pageSize) => {
-    setPagination(prev => ({
-      ...prev,
-      current: page,
-      pageSize
-    }));
-  };
+  const handleSearch = () => setPagination((prev) => ({ ...prev, current: 1 }));
 
-  // 处理查询
-  const handleSearch = () => {
-    setPagination(prev => ({
-      ...prev,
-      current: 1
-    }));
-    fetchLogisticsOrders();
-  };
-
-  // 处理重置
   const handleReset = () => {
-    setSearchParams({
-      logisticsNumber: '',
-      orderNumber: '',
-      status: '',
-      channel: '',
-      dateRange: []
-    });
-    setPagination(prev => ({
-      ...prev,
-      current: 1
-    }));
-    fetchLogisticsOrders();
+    setSearchParams({ keyword: '', trackingNumber: '', status: undefined, channelId: undefined, dateRange: [] });
+    setPagination((prev) => ({ ...prev, current: 1 }));
   };
 
-  // 物流状态映射
-  const statusMap = {
-    PENDING: { text: '待处理', color: 'blue' },
-    PICKED_UP: { text: '已揽收', color: 'processing' },
-    IN_TRANSIT: { text: '运输中', color: 'orange' },
-    DELIVERED: { text: '已送达', color: 'success' },
-    FAILED: { text: '配送失败', color: 'error' }
+  const runAction = async (action, successText) => {
+    try {
+      await action();
+      message.success(successText);
+      fetchRows();
+    } catch (error) {
+      message.error(`${successText}失败：${error?.message || '未知错误'}`);
+    }
   };
 
-  // 物流渠道映射
-  const channelMap = {
-    FEDEX: 'FedEx',
-    UPS: 'UPS',
-    DHL: 'DHL',
-    SF: '顺丰',
-    STO: '申通',
-    YTO: '圆通',
-    YUNDA: '韵达',
-    ZTO: '中通'
-  };
-
-  // 表格列配置
   const columns = [
     {
       title: '物流单号',
-      dataIndex: 'logisticsNumber',
-      key: 'logisticsNumber',
-      width: 180
+      dataIndex: 'logisticsOrderNumber',
+      width: 180,
+      render: (value, record) => (
+        <Button type="link" style={{ padding: 0 }} onClick={() => navigate(`/logistics/${record.logisticsOrderId}`)}>
+          {value || record.logisticsOrderId}
+        </Button>
+      )
     },
+    { title: '订单号', dataIndex: 'orderNumber', width: 170, render: (v) => v || '-' },
     {
-      title: '订单编号',
-      dataIndex: 'orderNumber',
-      key: 'orderNumber',
-      width: 180
+      title: '渠道',
+      dataIndex: 'channelName',
+      width: 130,
+      render: (value, record) => value || record.channelCode || '-'
     },
+    { title: '承运商', dataIndex: 'carrier', width: 120, render: (v) => v || '-' },
+    { title: '运单号', dataIndex: 'trackingNumber', width: 170, render: (v) => v || '-' },
     {
-      title: '物流渠道',
-      dataIndex: 'channel',
-      key: 'channel',
-      width: 100,
-      render: (text) => channelMap[text] || text
-    },
-    {
-      title: '物流状态',
+      title: '状态',
       dataIndex: 'status',
-      key: 'status',
       width: 100,
-      render: (text) => {
-        return <span style={{ color: statusMap[text].color }}>{statusMap[text].text}</span>;
+      render: (value, record) => {
+        const meta = logisticsStatusMap[value];
+        return <Tag color={meta?.color}>{record.statusLabel || logisticsStatusLabel(value)}</Tag>;
       }
     },
     {
-      title: '收件人',
-      dataIndex: 'recipient',
-      key: 'recipient',
-      width: 100
+      title: '运费',
+      dataIndex: 'totalFee',
+      width: 110,
+      render: (value, record) => (value == null ? '-' : `${record.currency || ''} ${formatAmount(value)}`)
     },
+    { title: '收件人', dataIndex: 'recipient', width: 100, render: (v) => v || '-' },
     {
-      title: '联系电话',
-      dataIndex: 'recipientPhone',
-      key: 'recipientPhone',
-      width: 120
+      title: '平台来源',
+      dataIndex: 'platform',
+      width: 120,
+      render: (value, record) =>
+        value ? (
+          <Space size={4}>
+            <Tag>{value}</Tag>
+            {record.externalLogisticsId ? (
+              <span style={{ color: '#8c8c8c', fontSize: 12 }}>{record.externalLogisticsId}</span>
+            ) : null}
+          </Space>
+        ) : (
+          '系统内'
+        )
     },
-    {
-      title: '收货地址',
-      dataIndex: 'shippingAddress',
-      key: 'shippingAddress',
-      ellipsis: true
-    },
-    {
-      title: '追踪单号',
-      dataIndex: 'trackingNumber',
-      key: 'trackingNumber',
-      width: 150
-    },
-    {
-      title: '创建时间',
-      dataIndex: 'createdAt',
-      key: 'createdAt',
-      width: 180,
-      render: (text) => new Date(text).toLocaleString()
-    },
+    { title: '发货时间', dataIndex: 'shippedAt', width: 170, render: (v) => formatDateTime(v) },
+    { title: '创建时间', dataIndex: 'createdAt', width: 170, render: (v) => formatDateTime(v) },
     {
       title: '操作',
       key: 'action',
-      width: 150,
-      render: (_, record) => (
-        <Space size="middle">
-          <Button type="link" icon={<EyeOutlined />} onClick={() => navigate(`/logistics/${record.id}`)}>查看</Button>
-          <Button type="link" icon={<EditOutlined />}>编辑</Button>
-        </Space>
-      )
+      fixed: 'right',
+      width: 230,
+      render: (_, record) => {
+        const canShip = logisticsShippableStatuses.includes(record.status);
+        const isFinal = record.status === 'DELIVERED' || record.status === 'CANCELLED';
+        return (
+          <Space size={0} wrap>
+            <Button
+              type="link"
+              size="small"
+              icon={<EyeOutlined />}
+              onClick={() => navigate(`/logistics/${record.logisticsOrderId}`)}
+            >
+              查看
+            </Button>
+            {canShip && (
+              <Button
+                type="link"
+                size="small"
+                icon={<RocketOutlined />}
+                onClick={() => runAction(() => logisticsApi.ship(record.logisticsOrderId), '发货成功')}
+              >
+                发货
+              </Button>
+            )}
+            <Button
+              type="link"
+              size="small"
+              icon={<PrinterOutlined />}
+              onClick={() => runAction(() => logisticsApi.generateLabel(record.logisticsOrderId), '面单生成成功')}
+            >
+              面单
+            </Button>
+            {!isFinal && (
+              <Button
+                type="link"
+                size="small"
+                icon={<StopOutlined />}
+                onClick={() => runAction(() => logisticsApi.cancel(record.logisticsOrderId), '已取消')}
+              >
+                取消
+              </Button>
+            )}
+            <Button
+              type="link"
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+              onClick={() => runAction(() => logisticsApi.deleteLogistics(record.logisticsOrderId), '删除成功')}
+            >
+              删除
+            </Button>
+          </Space>
+        );
+      }
     }
   ];
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
-        <Title level={4}>物流单列表</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/logistics/create')}>创建物流单</Button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <Title level={4} style={{ margin: 0 }}>物流单列表</Title>
+        <Space>
+          <Button icon={<ImportOutlined />} onClick={() => navigate('/logistics/import')}>平台物流导入</Button>
+          <Button icon={<RocketOutlined />} onClick={() => setBatchShipVisible(true)}>批量发货</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/logistics/create')}>
+            创建物流单
+          </Button>
+        </Space>
       </div>
 
-      {/* 查询条件 */}
-      <Card style={{ marginBottom: 5 }}>
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 5 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>物流单号：</span>
-            <Input
-              placeholder="请输入物流单号"
-              value={searchParams.logisticsNumber}
-              onChange={(e) => setSearchParams(prev => ({ ...prev, logisticsNumber: e.target.value }))}
-              style={{ width: 200 }}
-            />
-          </div>
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>订单编号：</span>
-            <Input
-              placeholder="请输入订单编号"
-              value={searchParams.orderNumber}
-              onChange={(e) => setSearchParams(prev => ({ ...prev, orderNumber: e.target.value }))}
-              style={{ width: 200 }}
-            />
-          </div>
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>物流状态：</span>
-            <Select
-              placeholder="请选择状态"
-              value={searchParams.status}
-              onChange={(value) => setSearchParams(prev => ({ ...prev, status: value }))}
-              style={{ width: 120 }}
-            >
-              {logisticsStatusOptions.map(option => (
-                <Option key={option.value} value={option.value}>{option.label}</Option>
-              ))}
-            </Select>
-          </div>
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>物流渠道：</span>
-            <Select
-              placeholder="请选择渠道"
-              value={searchParams.channel}
-              onChange={(value) => setSearchParams(prev => ({ ...prev, channel: value }))}
-              style={{ width: 120 }}
-            >
-              {logisticsChannelOptions.map(option => (
-                <Option key={option.value} value={option.value}>{option.label}</Option>
-              ))}
-            </Select>
-          </div>
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>创建时间：</span>
-            <RangePicker
-              value={searchParams.dateRange}
-              onChange={(dateRange) => setSearchParams(prev => ({ ...prev, dateRange }))}
-            />
-          </div>
-        </div>
-        
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+      <Card size="small" style={{ marginBottom: 8 }}>
+        <Space wrap size={12}>
+          <Input
+            placeholder="物流单号/运单号/承运商"
+            allowClear
+            style={{ width: 220 }}
+            value={searchParams.keyword}
+            onChange={(e) => setSearchParams((prev) => ({ ...prev, keyword: e.target.value }))}
+            onPressEnter={handleSearch}
+          />
+          <Input
+            placeholder="运单号"
+            allowClear
+            style={{ width: 180 }}
+            value={searchParams.trackingNumber}
+            onChange={(e) => setSearchParams((prev) => ({ ...prev, trackingNumber: e.target.value }))}
+            onPressEnter={handleSearch}
+          />
+          <Select
+            placeholder="物流状态"
+            allowClear
+            style={{ width: 140 }}
+            value={searchParams.status}
+            onChange={(value) => setSearchParams((prev) => ({ ...prev, status: value }))}
+            options={statusOptions}
+          />
+          <Select
+            placeholder="物流渠道"
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            style={{ width: 180 }}
+            value={searchParams.channelId}
+            onChange={(value) => setSearchParams((prev) => ({ ...prev, channelId: value }))}
+            options={channels.map((item) => ({
+              value: item.channelCode,
+              label: `${item.channelName}（${item.channelCode}）`
+            }))}
+          />
+          <RangePicker
+            value={searchParams.dateRange}
+            onChange={(dateRange) => setSearchParams((prev) => ({ ...prev, dateRange }))}
+          />
+          <Button icon={<SearchOutlined />} type="primary" onClick={handleSearch}>查询</Button>
           <Button onClick={handleReset}>重置</Button>
-          <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>查询</Button>
-        </div>
+        </Space>
       </Card>
 
-      {/* 物流单表格 */}
-      <Card>
+      <Card size="small">
         <Table
-          columns={columns}
-          dataSource={logisticsOrders}
-          rowKey="id"
+          rowKey="logisticsOrderId"
+          size="small"
           loading={loading}
-          pagination={pagination}
-          onChange={handlePaginationChange}
-          scroll={{ x: 1200 }}
+          dataSource={rows}
+          columns={columns}
+          scroll={{ x: 1700 }}
+          pagination={{
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+            total: pagination.total,
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 条`
+          }}
+          onChange={(pageInfo) =>
+            setPagination((prev) => ({ ...prev, current: pageInfo.current, pageSize: pageInfo.pageSize }))
+          }
         />
       </Card>
+
+      <BatchShipModal
+        open={batchShipVisible}
+        channels={channels}
+        onCancel={() => setBatchShipVisible(false)}
+        onShipped={() => fetchRows()}
+      />
     </div>
   );
 };

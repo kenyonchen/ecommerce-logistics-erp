@@ -4,10 +4,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
-import site.hexaarch.ecommerce.logistics.application.service.LogisticsApplicationService;
-import site.hexaarch.ecommerce.logistics.application.service.WarehouseApplicationService;
 import site.hexaarch.ecommerce.logistics.application.service.finance.FinanceApplicationService;
+import site.hexaarch.ecommerce.logistics.application.service.logistics.LogisticsApplicationService;
 import site.hexaarch.ecommerce.logistics.application.service.purchase.PurchaseApplicationService;
+import site.hexaarch.ecommerce.logistics.application.service.warehouse.WarehouseApplicationService;
 import site.hexaarch.ecommerce.logistics.domain.logistics.event.LogisticsCompletedEvent;
 import site.hexaarch.ecommerce.logistics.domain.order.event.OrderCreatedEvent;
 import site.hexaarch.ecommerce.logistics.domain.order.event.OrderStatusChangedEvent;
@@ -97,7 +97,7 @@ public class EventHandler {
         // 库存不足时自动生成采购单
         try {
             // 使用正确的参数调用createPurchaseOrder方法，使用默认的tenantId
-            purchaseApplicationService.createPurchaseOrder("DEFAULT_TENANT", "DEFAULT_SUPPLIER", "Default Supplier", event.getWarehouseId());
+            purchaseApplicationService.createPurchaseOrder("default-tenant", "DEFAULT_SUPPLIER", "Default Supplier", event.getWarehouseId());
             log.info("为产品 {} 自动创建采购单成功", event.getProductId());
         } catch (Exception e) {
             log.error("为产品 {} 自动创建采购单失败", event.getProductId(), e);

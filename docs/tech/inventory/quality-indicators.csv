@@ -1,0 +1,20 @@
+area,indicator,value,note
+main,Java 主源文件数 / 行数,513 / 54858,"2026-03-22 复核：与旧值一致，未变。口径须与 project-statistics-report.md 头部一致——「末行无换行符仍计 1 行」，故 python 逐行计为 54,858；`wc -l` 计换行符得 54,787（差 71 = 末行无换行的文件数）。引用数字前先对齐口径"
+main,@Entity / @Service / @Repository / @RestController / @Component,40 / 42 / 42 / 20 / 69,"2026-03-22 复测：@Component 67 → 69（新增平台 fetcher/registry 相关 bean）；其余四项与旧值一致。注意 @Service 42 含 domain 20 处（领域层泄漏 Spring 注解，见 architecture.md §7 第 2 条），@Repository 标注在 42 个文件上 = 21 个 *RepositoryImpl（26 个 Impl 里另有 5 个不标注、只靠 PersistenceConfig 的 9 个 @Bean 注册，双注册面见 architecture.md §7 第 6 条）+ 21 个 *JpaRepository 接口"
+main,@Transactional,116,"2026-03-22 复测：115 → 116（application 96 / infrastructure 20 / domain 0 / interfaces 0）。readOnly = true 仅 9 处（UserRepositoryImpl 4 + RoleRepositoryImpl 3 + PurchaseApplicationService 2），rollbackFor 仍 0 处——默认不回滚 checked 异常"
+main,@PreAuthorize,29,"2026-03-22 复测：grep 命中 32 处，但其中 3 处在 javadoc 里（CustomUserDetailsService:23、JwtAuthenticationFilter:22、GlobalExceptionHandler:142），真实注解 29 = 方法级 21（Finance 9 + Purchase 12）+ 类级 8（6 个 *ImportController + Role + User）。202 端点中 111 个受保护 / 91 个不受保护（TD-01 口径成立）；且测试用 standaloneSetup 不启用方法级安全，这 29 处从未被断言过"
+main,@Valid / @NotNull,0 / 0,未引入 spring-boot-starter-validation（2026-03-22 三测仍为 0，GlobalExceptionHandler 的 MethodArgumentNotValidException 分支仍是死代码）
+main,catch 块,252,"空 catch 0 处，其余为记录日志后返回/重抛。控制器层占 54 处 / 10 个类（PlatformIntegration 23、Finance 8、LogisticsImport 4、Customer 与各 Import 各 3、Logistics 1，PurchaseController 已归零）"
+main,throw BusinessException / ValidationException / IllegalArgumentException,105 / 132 / 27,"三套异常家族混用。2026-03-22 复测一致；另有 InvalidOperationException 6、IllegalStateException 9、UnsupportedOperationException 0。new IllegalArgumentException( 共 40 处（throw 27 + orElseThrow 13，domain 占 36）；new BusinessException( 共 111 处 = 带 errorCode 101 + 无码单参 10，按层：infrastructure/platform 87 / domain 16 / interfaces 7 / infra 其他 1 / application 0"
+main,new RuntimeException,8,绕过异常家族，其中 6 处表达 not-found（应换 EntityNotFoundException）
+main,TODO / FIXME / printStackTrace / System.out,0 / 0 / 0 / 0,后端无遗留调试标记（2026-03-22 复测仍为 0）
+main,Javadoc 块,2185,"约 4.0 块/百行（2026-03-22 复测：`/**` 计数 2185，与行数变化同步后仍 ≈4.0/百行）"
+main,Lombok 引用文件,278,
+main,@Autowired 字段注入 / private final 构造注入,11 / 647,以构造注入为主（2026-03-22 复测一致）
+main,>300 行 / >500 行的类,34 / 8,
+test,测试文件 / @Test / when() / @Mock,54 / 494 / 154 / 37,"494 例全绿（mvn -o test → Tests run: 494, Failures: 0, Errors: 0, Skipped: 0）"
+test,断言与交互校验,assert* 1776 / verify( 55 处·9 类,"2026-03-22 新增指标：54 个测试类全部 ≥3 个断言点，无 assertTrue(true)（0 处）。但 verify() 只集中在 9 个类（PurchaseApplicationServiceTest 19、DomainEventPublisherTest 8、PurchaseOrderRepositoryImplTest 6、OrderProcessingServiceTest 6、LogisticsChannelControllerTest 5、PurchaseControllerTest 5、CustomerImportPipelineTest 4、其余 2 类各 1）；@SpringBootTest 0 处 = 无一条集成/上下文级断言"
+frontend,JS/JSX 文件 / 行数,69 / 17303,"两端 src/ 下的 js+jsx（user 59/15,794 + admin 10/1,509）。与 project-statistics-report.md §7 的「62 / 15,842」不矛盾：那行按 src 全部文件计（含 2 个 css + 1 个 svg）。另有 8 个工程配置文件（vite.config.js / eslint.config.js 等）合计 8,574 行未计入；全量 js/jsx（含配置）为 77 文件 / 25,877 行"
+frontend,console.* / localStorage.*,49 / 31,
+frontend,>500 行组件,6,"5 个导入页 + 1 个仓库同步页：LogisticsImport 824、OrderImport 794、FinanceImport 794、ProductImport 725、CustomerImport 722、ShopWarehouseSync 532"
+frontend,api.js 中 tenantId 出现次数,83,"user-web 79 + admin-web 4（2026-03-22 复测：78 → 79），跨租户隐患"

@@ -1,19 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Menu, Typography, Button } from 'antd';
-import { Link, useLocation, useNavigate } from 'react-router-dom';  // 添加useNavigate
+import { Layout, Menu, Typography, Button, Dropdown, Space } from 'antd';
+import { useLocation, useNavigate } from 'react-router-dom';  // 添加useNavigate
 import {
-  HomeOutlined,
-  ShoppingCartOutlined,
-  TruckOutlined,
-  ProductOutlined,
-  ContainerOutlined,
-  UserOutlined,
-  DollarOutlined,
-  ShoppingOutlined,
-  LinkOutlined,
   MenuFoldOutlined,
-  MenuUnfoldOutlined
+  MenuUnfoldOutlined,
+  UserOutlined,
+  LogoutOutlined
 } from '@ant-design/icons';
+import { useAuth } from '../context/AuthContext.jsx';
+import { MENU_GROUPS, buildMenuItems, findSelectedKeys, findOpenGroupKeys } from '../constants/menus.js';
 
 const { Header, Sider, Content } = Layout;
 const { Title } = Typography;
@@ -21,6 +16,7 @@ const { Title } = Typography;
 const AppLayout = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();  // 使用navigate进行编程式导航
+  const { user, logout, hasRole } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [siderWidth, setSiderWidth] = useState(200);
 
@@ -63,54 +59,35 @@ const AppLayout = ({ children }) => {
     navigate(e.key);
   };
 
-  // 导航菜单配置
-  const menuItems = [
+  // 一级分组默认收起。路由变化时在渲染期同步展开当前页所属分组，
+  // 避免用 effect + setState 触发级联渲染（用户手动展开的分组也会保留到下次切页）。
+  const [menuState, setMenuState] = useState(() => ({
+    pathname: location.pathname,
+    openKeys: findOpenGroupKeys(location.pathname)
+  }));
+  if (menuState.pathname !== location.pathname) {
+    setMenuState({ pathname: location.pathname, openKeys: findOpenGroupKeys(location.pathname) });
+  }
+
+  // 处理登出
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
+
+  // 用户下拉菜单
+  const userMenuItems = [
     {
-      key: '/',
-      icon: <HomeOutlined />,
-      label: '首页'
-    },
-    {
-      key: '/orders',
-      icon: <ShoppingCartOutlined />,
-      label: '订单管理'
-    },
-    {
-      key: '/logistics',
-      icon: <TruckOutlined />,
-      label: '物流管理'
-    },
-    {
-      key: '/products',
-      icon: <ProductOutlined />,
-      label: '产品管理'
-    },
-    {
-      key: '/warehouses',
-      icon: <ContainerOutlined />,
-      label: '仓储管理'
-    },
-    {
-      key: '/customers',
-      icon: <UserOutlined />,
-      label: '客户管理'
-    },
-    {
-      key: '/finance',
-      icon: <DollarOutlined />,
-      label: '财务管理'
-    },
-    {
-      key: '/purchase',
-      icon: <ShoppingOutlined />,
-      label: '采购管理'
-    },
-    {
-      key: '/platform-integration',
-      icon: <LinkOutlined />,
-      label: '平台集成'
+      key: 'logout',
+      icon: <LogoutOutlined />,
+      label: '退出登录',
+      onClick: handleLogout
     }
   ];
+
+  // 导航菜单：由 constants/menus.js 按业务域分组并按角色过滤
+  const menuItems = buildMenuItems(hasRole);
+  const selectedKeys = findSelectedKeys(location.pathname);
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -132,6 +109,17 @@ const AppLayout = ({ children }) => {
           />
           <Title level={3} style={{ margin: 0, color: '#1890ff' }}>跨境大卖ERP系统</Title>
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingRight: 16 }}>
+          {user && (
+            <Space size={4}>
+              <UserOutlined />
+              <span>{user.username}{user.roles && user.roles.length > 0 ? `（${user.roles.join('、')}）` : ''}</span>
+            </Space>
+          )}
+          <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
+            <Button type="text" icon={<LogoutOutlined />} />
+          </Dropdown>
+        </div>
       </Header>
       
       <Layout>
@@ -150,7 +138,9 @@ const AppLayout = ({ children }) => {
           <Menu
             mode="inline"
             onClick={handleMenuClick}  /* 添加点击处理 */
-            selectedKeys={[location.pathname]}
+            selectedKeys={selectedKeys}
+            openKeys={collapsed ? undefined : menuState.openKeys}
+            onOpenChange={openKeys => setMenuState(prev => ({ ...prev, openKeys }))}
             style={{ height: '100%', borderRight: 0 }}
             items={menuItems}
           />

@@ -37,6 +37,15 @@ public interface InventoryRecordRepository {
     Optional<InventoryRecord> findByProductId(String productId);
 
     /**
+     * 根据仓库ID与SKU查找库存记录。
+     *
+     * @param warehouseId 仓库ID
+     * @param sku         SKU编码
+     * @return 库存记录实体，如果不存在则返回Optional.empty()
+     */
+    Optional<InventoryRecord> findByWarehouseIdAndSku(String warehouseId, String sku);
+
+    /**
      * 根据仓库ID查找库存记录。
      *
      * @param warehouseId 仓库ID

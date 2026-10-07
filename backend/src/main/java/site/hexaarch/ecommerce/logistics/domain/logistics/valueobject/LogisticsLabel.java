@@ -17,9 +17,11 @@ public class LogisticsLabel {
     private final RecipientInfo recipientInfo;
     private final PackageInfo packageInfo;
     private final String barcode;
+    private final String labelUrl;
+    private final String labelFormat;
 
     /**
-     * 构造函数，确保所有必填字段都不为空。
+     * 构造函数。运单号为必填，其余信息在平台回传数据缺失时允许为空。
      *
      * @param labelId        标签ID
      * @param trackingNumber 运单号
@@ -27,14 +29,18 @@ public class LogisticsLabel {
      * @param recipientInfo  收件人信息
      * @param packageInfo    包裹信息
      * @param barcode        条形码
+     * @param labelUrl       面单文件下载地址
+     * @param labelFormat    面单格式（PDF/PNG/ZPL）
      */
-    private LogisticsLabel(String labelId, String trackingNumber, ShipperInfo shipperInfo, RecipientInfo recipientInfo, PackageInfo packageInfo, String barcode) {
+    private LogisticsLabel(String labelId, String trackingNumber, ShipperInfo shipperInfo, RecipientInfo recipientInfo, PackageInfo packageInfo, String barcode, String labelUrl, String labelFormat) {
         this.labelId = labelId;
         this.trackingNumber = Objects.requireNonNull(trackingNumber, "Tracking number cannot be null");
-        this.shipperInfo = Objects.requireNonNull(shipperInfo, "Shipper info cannot be null");
-        this.recipientInfo = Objects.requireNonNull(recipientInfo, "Recipient info cannot be null");
-        this.packageInfo = Objects.requireNonNull(packageInfo, "Package info cannot be null");
+        this.shipperInfo = shipperInfo;
+        this.recipientInfo = recipientInfo;
+        this.packageInfo = packageInfo;
         this.barcode = barcode;
+        this.labelUrl = labelUrl;
+        this.labelFormat = labelFormat;
     }
 
     // Builder class
@@ -88,6 +94,8 @@ public class LogisticsLabel {
         private RecipientInfo recipientInfo;
         private PackageInfo packageInfo;
         private String barcode;
+        private String labelUrl;
+        private String labelFormat;
 
         public Builder labelId(String labelId) {
             this.labelId = labelId;
@@ -119,8 +127,19 @@ public class LogisticsLabel {
             return this;
         }
 
+        public Builder labelUrl(String labelUrl) {
+            this.labelUrl = labelUrl;
+            return this;
+        }
+
+        public Builder labelFormat(String labelFormat) {
+            this.labelFormat = labelFormat;
+            return this;
+        }
+
         public LogisticsLabel build() {
-            return new LogisticsLabel(labelId, trackingNumber, shipperInfo, recipientInfo, packageInfo, barcode);
+            return new LogisticsLabel(labelId, trackingNumber, shipperInfo, recipientInfo, packageInfo, barcode,
+                    labelUrl, labelFormat);
         }
 
         public Builder toBuilder() {
@@ -140,10 +159,10 @@ public class LogisticsLabel {
         private final String email;
 
         private ShipperInfo(String name, String address, String contact, String phone, String email) {
-            this.name = Objects.requireNonNull(name, "Shipper name cannot be null");
-            this.address = Objects.requireNonNull(address, "Shipper address cannot be null");
+            this.name = name;
+            this.address = address;
             this.contact = contact;
-            this.phone = Objects.requireNonNull(phone, "Shipper phone cannot be null");
+            this.phone = phone;
             this.email = email;
         }
 
@@ -206,10 +225,10 @@ public class LogisticsLabel {
         private final String email;
 
         private RecipientInfo(String name, String address, String contact, String phone, String email) {
-            this.name = Objects.requireNonNull(name, "Recipient name cannot be null");
-            this.address = Objects.requireNonNull(address, "Recipient address cannot be null");
+            this.name = name;
+            this.address = address;
             this.contact = contact;
-            this.phone = Objects.requireNonNull(phone, "Recipient phone cannot be null");
+            this.phone = phone;
             this.email = email;
         }
 

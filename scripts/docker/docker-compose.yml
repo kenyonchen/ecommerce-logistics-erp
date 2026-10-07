@@ -1,42 +1,88 @@
-version: '3.8'
+# 跨境大卖ERP —— 依赖中间件统一编排
+#
+# 依赖：MySQL 8.0（业务库） + RocketMQ 5.3.2（领域事件，namesrv + broker[内嵌 proxy]）
+# 方案对齐官方文档：https://rocketmq.apache.org/docs/quickStart/02quickstartWithDocker
+#
+# 网络：所有服务挂在 erp-net，容器间用服务名互访；对外端口映射宿主机，
+#       后端 application.yml 直接连 localhost:<port> 即可。
+# 数据：MySQL 通过命名卷持久化；RocketMQ 按官方示例不挂载数据卷（消息为开发期事件，重启清空可接受）。
+#
+# 统一管理见同目录 erp-services.sh。
+
 services:
-  namesrv:
+  # ───────────────────────── 数据库 MySQL 8.0 ─────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: erp-mysql
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+      - --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: "123456"
+      # 允许 root 从容器外（宿主机经端口映射，对 MySQL 是非 localhost 来源）登录。
+      # 默认 root@localhost 只能容器内连，宿主机 Spring Boot 连入会在握手阶段被断，
+      # 表现为 Communications link failure。注意：数据卷已初始化后此变量被忽略，
+      # 需 reset 重来，或对现有卷手动执行下方授权（见脚本/README 说明）。
+      MYSQL_ROOT_HOST: "%"
+      MYSQL_DATABASE: "ecommerce_logistics_erp"
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - erp-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p123456"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ──────────────────── 消息中间件 RocketMQ 5.3.2 ────────────────────
+  # 名称服务
+  rmqnamesrv:
     image: apache/rocketmq:5.3.2
     container_name: rmqnamesrv
+    restart: unless-stopped
     ports:
-      - 9876:9876
+      - "9876:9876"
+    # 默认堆约 2g，开发机容易 OOM；统一收紧
+    environment:
+      JAVA_OPT_EXT: "-Xms512m -Xmx512m"
     networks:
-      - rocketmq
+      - erp-net
     command: sh mqnamesrv
-  broker:
+
+  # Broker（--enable-proxy 在同一容器内启动 5.x Proxy，无需独立 proxy 容器）
+  rmqbroker:
     image: apache/rocketmq:5.3.2
     container_name: rmqbroker
+    restart: unless-stopped
     ports:
-      - 10909:10909
-      - 10911:10911
-      - 10912:10912
+      - "10909:10909"
+      - "10911:10911"
+      - "10912:10912"
+      - "8080:8080"   # proxy gRPC/remoting 接入（5.x）
+      - "8081:8081"   # proxy 管理端口
     environment:
-      - NAMESRV_ADDR=rmqnamesrv:9876
+      NAMESRV_ADDR: "rmqnamesrv:9876"
+      JAVA_OPT_EXT: "-Xms512m -Xmx512m -Xmn256m"
+    volumes:
+      # 官方路径（带版本号），覆盖镜像默认 broker.conf
+      - ./broker.conf:/home/rocketmq/rocketmq-5.3.2/conf/broker.conf:ro
     depends_on:
-      - namesrv
+      rmqnamesrv:
+        condition: service_started
     networks:
-      - rocketmq
-    command: sh mqbroker
-  proxy:
-    image: apache/rocketmq:5.3.2
-    container_name: rmqproxy
-    networks:
-      - rocketmq
-    depends_on:
-      - broker
-      - namesrv
-    ports:
-      - 8088:8080
-      - 8089:8081
-    restart: on-failure
-    environment:
-      - NAMESRV_ADDR=rmqnamesrv:9876
-    command: sh mqproxy
+      - erp-net
+    command: sh mqbroker --enable-proxy -c /home/rocketmq/rocketmq-5.3.2/conf/broker.conf
+
 networks:
-  rocketmq:
+  erp-net:
     driver: bridge
+
+volumes:
+  mysql-data:

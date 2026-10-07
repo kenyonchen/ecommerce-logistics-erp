@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: 8082
 
 spring:
   application:
@@ -12,6 +12,13 @@ spring:
       additional-paths: src/main/java
       exclude: META-INF/maven/**,META-INF/resources/**,resources/**,static/**,public/**,templates/**,**/test/**
   
+  # 文件上传配置（商品批量导入）
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 20MB
+      max-request-size: 20MB
+
   # 数据库配置
   datasource:
     url: jdbc:mysql://localhost:3306/ecommerce_logistics_erp?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
@@ -25,18 +32,55 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: true
-  
-  # RocketMQ配置
-  rocketmq:
-    name-server: localhost:9876
-    producer:
-      group: ecommerce-logistics-producer-group
-      send-message-timeout: 3000
-      retry-times-when-send-failed: 2
-      retry-times-when-send-async-failed: 2
-      compress-message-body-threshold: 4096
-      max-message-size: 4194304
-      retry-next-server: true
+
+# RocketMQ配置
+# 前缀必须是顶层 rocketmq.（starter 的 @ConfigurationProperties 绑定该前缀；写在 spring.rocketmq. 下不生效）
+# enabled=false 时不装配 RocketMQTemplate 与消费者容器，领域事件只走进程内 EventHandler 通道，本机无需 broker
+rocketmq:
+  enabled: true
+  name-server: localhost:9876
+  producer:
+    group: ecommerce-logistics-producer-group
+    send-message-timeout: 3000
+    retry-times-when-send-failed: 2
+    retry-times-when-send-async-failed: 2
+    compress-message-body-threshold: 4096
+    max-message-size: 4194304
+    retry-next-server: true
+
+# 第三方平台外呼超时（JDK HttpClient 默认不超时，平台挂起会占住导入线程与数据库连接）
+platform:
+  http:
+    connect-timeout: 5s
+    read-timeout: 15s
+  credential:
+    # 平台凭据信封加密主密钥（AES-256-GCM）。只从环境变量注入，不写默认值、不入库、不入 Git（ADR-0009）。
+    # 未配置时加密关闭、凭据按明文读写并发 WARN —— 即 ISS-011 只有在部署环境注入该变量后才算关闭。
+    # 取值方式：openssl rand -base64 32
+    master-key: ${PLATFORM_CREDENTIAL_MASTER_KEY:}
+  shopify:
+    # Admin API 版本号（形如 2026-01）。故意不给默认值：版本有 12 个月支持窗口，写死会随时间静默失效。
+    # 可在此全局配置，也可在平台集成记录的 apiVersion 上单独指定（集成记录优先）。
+    api-version: ${SHOPIFY_API_VERSION:}
+    cursor:
+      max-pages: 20
+    retry:
+      max-attempts: 3
+      max-wait: 30s
+
+# API 请求/响应日志（调试用，打印所有接口的入参与出参；生产建议 enabled: false）
+app:
+  api-logging:
+    enabled: true
+    include-headers: true
+    max-body-length: 4096
+    exclude-patterns:
+      - /actuator/**
+      - /swagger-ui/**
+      - /swagger-ui.html
+      - /v3/api-docs/**
+      - /favicon.ico
+      - /error
 
 # Swagger配置
 springdoc:
@@ -53,8 +97,13 @@ springdoc:
 
 # 日志配置
 logging:
+  # 控制台带上 MDC 里的 traceId，便于把同一请求的业务日志/SQL 串起来
+  pattern:
+    console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faded} %clr(%5p) %clr([%X{traceId:-}]){faded} %clr(%-40.40logger{39}){cyan} %clr(:){faded} %m%n%wEx"
   level:
     site.hexaarch.ecommerce.logistics: INFO
+    # 请求/响应日志在 DEBUG 输出，改成 INFO 或以上即可静音
+    site.hexaarch.ecommerce.logistics.infrastructure.logging: DEBUG
     org.springframework: INFO
     org.hibernate: INFO
     org.springdoc: INFO

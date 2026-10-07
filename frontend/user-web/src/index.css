@@ -36,3 +36,17 @@ body {
   width: 100%;
   height: 100vh;
 }
+
+/* 侧边栏底部折叠条：AntD 默认为深蓝底(#002140) + 白色箭头，与本项目白色顶栏/侧栏不统一。
+   改为白底 + 深色箭头，hover 时整条变主蓝作为可点击提示。
+   AntD 的 CSS-in-JS 样式带 hash 前缀、特异性更高，故需 !important 才能覆盖；
+   过渡动画直接复用 AntD 自带的 transition: all。 */
+.ant-layout-sider-trigger {
+  background: #fff !important;
+  color: rgba(0, 0, 0, 0.65) !important;
+}
+
+.ant-layout-sider-trigger:hover {
+  background: #1890ff !important;
+  color: #fff !important;
+}

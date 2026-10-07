@@ -2,6 +2,8 @@ package site.hexaarch.ecommerce.logistics.domain.order.service;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import site.hexaarch.ecommerce.logistics.domain.common.exception.EntityNotFoundException;
+import site.hexaarch.ecommerce.logistics.domain.common.exception.InvalidOperationException;
 import site.hexaarch.ecommerce.logistics.domain.order.aggregate.Order;
 import site.hexaarch.ecommerce.logistics.domain.order.entity.OrderItem;
 import site.hexaarch.ecommerce.logistics.domain.order.repository.OrderRepository;
@@ -33,11 +35,21 @@ public class OrderProcessingService {
      * @return 创建的订单
      */
     public Order createOrder(String tenantId, String customerId, List<OrderItem> orderItems, ShippingAddress shippingAddress, PaymentInfo paymentInfo) {
+        return createOrder(tenantId, null, customerId, null, null, orderItems, shippingAddress, paymentInfo);
+    }
+
+    /**
+     * 创建订单（完整参数）。订单号缺省时由聚合自动生成。
+     */
+    public Order createOrder(String tenantId, String orderNumber, String customerId, String customerName,
+                             String customerEmail, List<OrderItem> orderItems, ShippingAddress shippingAddress,
+                             PaymentInfo paymentInfo) {
         // 业务逻辑：验证订单信息
         validateOrderInfo(customerId, orderItems, shippingAddress, paymentInfo);
 
         // 创建订单
-        Order order = Order.create(tenantId, customerId, orderItems, shippingAddress, paymentInfo);
+        Order order = Order.create(tenantId, customerId, customerName, customerEmail, orderNumber, orderItems,
+                shippingAddress, paymentInfo, OrderStatus.PENDING, null, null);
 
         // 保存订单
         return orderRepository.save(order);
@@ -51,8 +63,7 @@ public class OrderProcessingService {
      */
     public Order processOrder(String orderId) {
         // 查找订单
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new IllegalArgumentException("Order not found: " + orderId));
+        Order order = findOrderOrThrow(orderId);
 
         // 更新订单状态为处理中
         order.updateStatus(OrderStatus.PROCESSING);
@@ -69,12 +80,11 @@ public class OrderProcessingService {
      */
     public Order cancelOrder(String orderId) {
         // 查找订单
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new IllegalArgumentException("Order not found: " + orderId));
+        Order order = findOrderOrThrow(orderId);
 
         // 检查订单状态是否可以取消
         if (order.getOrderStatus().isShipped() || order.getOrderStatus().isCompleted()) {
-            throw new IllegalStateException("Cannot cancel order that has been shipped or completed");
+            throw new InvalidOperationException("已发货或已完成的订单不允许取消");
         }
 
         // 更新订单状态为已取消
@@ -92,12 +102,11 @@ public class OrderProcessingService {
      */
     public Order shipOrder(String orderId) {
         // 查找订单
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new IllegalArgumentException("Order not found: " + orderId));
+        Order order = findOrderOrThrow(orderId);
 
         // 检查订单状态是否可以发货
-        if (!order.getOrderStatus().isProcessing()) {
-            throw new IllegalStateException("Cannot ship order that is not in processing status");
+        if (!order.getOrderStatus().isProcessing() && !order.getOrderStatus().isConfirmed()) {
+            throw new InvalidOperationException("只有处理中或已确认的订单才能发货");
         }
 
         // 更新订单状态为已发货
@@ -115,18 +124,29 @@ public class OrderProcessingService {
      */
     public Order completeOrder(String orderId) {
         // 查找订单
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new IllegalArgumentException("Order not found: " + orderId));
+        Order order = findOrderOrThrow(orderId);
 
         // 检查订单状态是否可以完成
         if (!order.getOrderStatus().isShipped()) {
-            throw new IllegalStateException("Cannot complete order that has not been shipped");
+            throw new InvalidOperationException("只有已发货的订单才能完成");
         }
 
         // 更新订单状态为已完成
         order.updateStatus(OrderStatus.COMPLETED);
 
         // 保存订单
+        return orderRepository.save(order);
+    }
+
+    /**
+     * 确认订单。
+     *
+     * @param orderId 订单ID
+     * @return 确认后的订单
+     */
+    public Order confirmOrder(String orderId) {
+        Order order = findOrderOrThrow(orderId);
+        order.updateStatus(OrderStatus.CON_FIRMED);
         return orderRepository.save(order);
     }
 
@@ -164,8 +184,13 @@ public class OrderProcessingService {
                 .map(OrderItem::getTotalPrice)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        if (totalAmount.compareTo(paymentInfo.getAmount()) != 0) {
+        if (paymentInfo.getAmount() != null && totalAmount.compareTo(paymentInfo.getAmount()) != 0) {
             throw new IllegalArgumentException("Order total amount does not match payment amount");
         }
+    }
+
+    private Order findOrderOrThrow(String orderId) {
+        return orderRepository.findById(orderId)
+                .orElseThrow(() -> new EntityNotFoundException("Order", orderId));
     }
 }

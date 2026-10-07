@@ -1,0 +1,53 @@
+scope_area,name,artifact,version,scope,notes
+backend,org.springframework.boot-spring-boot-starter-web,spring-boot-starter-web,managed by spring-boot-parent,compile,
+backend,org.springframework.boot-spring-boot-starter-data-jpa,spring-boot-starter-data-jpa,managed by spring-boot-parent,compile,
+backend,org.springframework.boot-spring-boot-starter-security,spring-boot-starter-security,managed by spring-boot-parent,compile,
+backend,org.springframework.boot-spring-boot-starter-aop,spring-boot-starter-aop,managed by spring-boot-parent,compile,
+backend,io.jsonwebtoken-jjwt-api,jjwt-api,0.12.5,compile,JWT 签发与校验
+backend,io.jsonwebtoken-jjwt-impl,jjwt-impl,0.12.5,runtime,JWT 签发与校验
+backend,io.jsonwebtoken-jjwt-jackson,jjwt-jackson,0.12.5,runtime,JWT 签发与校验
+backend,org.springframework.boot-spring-boot-devtools,spring-boot-devtools,managed by spring-boot-parent,runtime,仅开发期热重载
+backend,org.apache.rocketmq-rocketmq-spring-boot-starter,rocketmq-spring-boot-starter,2.2.3,compile,领域事件外发通道
+backend,com.mysql-mysql-connector-j,mysql-connector-j,managed by spring-boot-parent,runtime,
+backend,org.projectlombok-lombok,lombok,${lombok.version},provided,样板代码生成（278 个文件引用）
+backend,org.springframework.boot-spring-boot-starter-test,spring-boot-starter-test,managed by spring-boot-parent,test,
+backend,org.springdoc-springdoc-openapi-starter-webmvc-ui,springdoc-openapi-starter-webmvc-ui,2.6.0,compile,OpenAPI/Swagger UI
+backend,org.junit.jupiter-junit-jupiter-api,junit-jupiter-api,managed by spring-boot-parent,test,
+backend,org.junit.jupiter-junit-jupiter-engine,junit-jupiter-engine,managed by spring-boot-parent,test,
+backend,org.mockito-mockito-core,mockito-core,managed by spring-boot-parent,test,
+backend,org.apache.poi-poi-ooxml,poi-ooxml,5.2.5,compile,Excel 批量导入
+backend,org.mapstruct-mapstruct,mapstruct,${mapstruct.version},compile,领域模型 <-> JPA 实体映射
+backend,org.mapstruct-mapstruct-processor,mapstruct-processor,${mapstruct.version},provided,领域模型 <-> JPA 实体映射
+backend-property,java.version,,17,,
+backend-property,lombok.version,,1.18.34,,
+backend-property,mapstruct.version,,1.5.5.Final,,
+user-web,runtime,@ant-design/icons,^6.1.0,,
+user-web,runtime,antd,^6.2.0,,
+user-web,runtime,axios,^1.13.2,,
+user-web,runtime,react,^19.2.0,,
+user-web,runtime,react-dom,^19.2.0,,
+user-web,runtime,react-router-dom,^7.12.0,,
+user-web,dev,@eslint/js,^9.39.1,,
+user-web,dev,@types/react,^19.2.5,,
+user-web,dev,@types/react-dom,^19.2.3,,
+user-web,dev,@vitejs/plugin-react,^5.1.1,,
+user-web,dev,eslint,^9.39.1,,
+user-web,dev,eslint-plugin-react-hooks,^7.0.1,,
+user-web,dev,eslint-plugin-react-refresh,^0.4.24,,
+user-web,dev,globals,^16.5.0,,
+user-web,dev,vite,^7.2.4,,
+admin-web,runtime,@ant-design/icons,^6.1.0,,
+admin-web,runtime,antd,^6.2.0,,
+admin-web,runtime,axios,^1.13.2,,
+admin-web,runtime,react,^19.2.0,,
+admin-web,runtime,react-dom,^19.2.0,,
+admin-web,runtime,react-router-dom,^7.12.0,,
+admin-web,dev,@eslint/js,^9.39.1,,
+admin-web,dev,@types/react,^19.2.5,,
+admin-web,dev,@types/react-dom,^19.2.3,,
+admin-web,dev,@vitejs/plugin-react,^5.1.1,,
+admin-web,dev,eslint,^9.39.1,,
+admin-web,dev,eslint-plugin-react-hooks,^7.0.1,,
+admin-web,dev,eslint-plugin-react-refresh,^0.4.24,,
+admin-web,dev,globals,^16.5.0,,
+admin-web,dev,vite,^7.2.4,,

@@ -1,8 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { Table, Button, Space, Input, Select, DatePicker, Typography, Card, Tag } from 'antd';
-import { PlusOutlined, SearchOutlined, EyeOutlined, EditOutlined } from '@ant-design/icons';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Table, Button, Space, Input, Select, DatePicker, Typography, Card, Tag, Popconfirm, message } from 'antd';
+import { PlusOutlined, SearchOutlined, EyeOutlined, ImportOutlined } from '@ant-design/icons';
 import { Link, useNavigate } from 'react-router-dom';
 import { financeApi } from '../../services/api';
+import {
+  DEFAULT_TENANT_ID,
+  transactionTypeOptions,
+  transactionTypeMap,
+  transactionStatusOptions,
+  transactionStatusMap,
+  formatAmount
+} from '../../constants/finance';
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -14,201 +22,189 @@ const FinanceList = () => {
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState({
     current: 1,
-    pageSize: 10,
+    pageSize: 20,
     total: 0
   });
 
-  // 查询条件
+  // 查询条件（与后端 GET /finance/transactions 参数对齐；金额区间后端不支持，不提供筛选）
   const [searchParams, setSearchParams] = useState({
-    transactionId: '',
-    orderNumber: '',
-    amount: '',
-    type: '',
-    status: '',
+    type: undefined,
+    status: undefined,
+    referenceId: '',
     dateRange: []
   });
 
-  // 交易类型选项
-  const transactionTypeOptions = [
-    { value: 'PAYMENT', label: '付款' },
-    { value: 'REFUND', label: '退款' },
-    { value: 'FEE', label: '费用' },
-    { value: 'REVENUE', label: '收入' }
-  ];
-
-  // 交易状态选项
-  const transactionStatusOptions = [
-    { value: 'PENDING', label: '待处理' },
-    { value: 'COMPLETED', label: '已完成' },
-    { value: 'FAILED', label: '失败' },
-    { value: 'REFUNDED', label: '已退款' }
-  ];
-
-  // 获取交易列表
-  const fetchTransactions = async () => {
+  // 获取交易列表（服务端分页：antd current 从 1 映射为后端 page 从 0）
+  const fetchTransactions = useCallback(async () => {
     setLoading(true);
     try {
-      // 这里简化处理，实际应该调用后端的分页查询API
-      // 暂时使用模拟数据
-      const mockTransactions = Array.from({ length: 20 }, (_, index) => ({
-        id: `trans-${index + 1}`,
-        orderNumber: `ORD-${2024}-${String(index + 100).padStart(6, '0')}`,
-        amount: 100 + Math.random() * 9900,
-        type: transactionTypeOptions[Math.floor(Math.random() * transactionTypeOptions.length)].value,
-        status: transactionStatusOptions[Math.floor(Math.random() * transactionStatusOptions.length)].value,
-        paymentMethod: ['支付宝', '微信支付', '银行卡', 'PayPal'][Math.floor(Math.random() * 4)],
-        transactionDate: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString(),
-        customerId: `cust-${Math.floor(Math.random() * 20) + 1}`,
-        customerName: `客户${Math.floor(Math.random() * 20) + 1}`,
-        notes: `交易备注信息${index + 1}`
-      }));
-      
-      setTransactions(mockTransactions);
-      setPagination(prev => ({
+      const [startDate, endDate] = searchParams.dateRange || [];
+      const params = {
+        tenantId: DEFAULT_TENANT_ID,
+        page: (pagination.current || 1) - 1,
+        size: pagination.pageSize || 20,
+        type: searchParams.type || undefined,
+        status: searchParams.status || undefined,
+        referenceId: searchParams.referenceId || undefined,
+        // 后端 LocalDateTime + ISO.DATE_TIME 绑定，不能带 Z 偏移后缀，传本地日界
+        from: startDate ? startDate.startOf('day').format('YYYY-MM-DDTHH:mm:ss') : undefined,
+        to: endDate ? endDate.endOf('day').format('YYYY-MM-DDTHH:mm:ss') : undefined
+      };
+      const result = await financeApi.getTransactions(params);
+      setTransactions(result?.content || []);
+      setPagination((prev) => ({
         ...prev,
-        total: mockTransactions.length
+        total: result?.total || 0,
+        current: (result?.page ?? 0) + 1
       }));
     } catch (error) {
       console.error('获取交易列表失败:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [pagination.current, pagination.pageSize, searchParams]);
 
-  // 初始化加载数据
+  // 初始化与条件变化加载数据
   useEffect(() => {
     fetchTransactions();
-  }, []);
+  }, [fetchTransactions]);
 
   // 处理分页变化
-  const handlePaginationChange = (page, pageSize) => {
-    setPagination(prev => ({
+  const handleTableChange = (pageInfo) => {
+    setPagination((prev) => ({
       ...prev,
-      current: page,
-      pageSize
+      current: pageInfo.current || 1,
+      pageSize: pageInfo.pageSize || 20
     }));
   };
 
   // 处理查询
   const handleSearch = () => {
-    setPagination(prev => ({
-      ...prev,
-      current: 1
-    }));
+    setPagination((prev) => ({ ...prev, current: 1 }));
     fetchTransactions();
   };
 
   // 处理重置
   const handleReset = () => {
     setSearchParams({
-      transactionId: '',
-      orderNumber: '',
-      amount: '',
-      type: '',
-      status: '',
+      type: undefined,
+      status: undefined,
+      referenceId: '',
       dateRange: []
     });
-    setPagination(prev => ({
-      ...prev,
-      current: 1
-    }));
-    fetchTransactions();
+    setPagination((prev) => ({ ...prev, current: 1 }));
   };
 
-  // 交易类型映射
-  const typeMap = {
-    PAYMENT: { text: '付款', color: 'green' },
-    REFUND: { text: '退款', color: 'red' },
-    FEE: { text: '费用', color: 'orange' },
-    REVENUE: { text: '收入', color: 'blue' }
-  };
-
-  // 交易状态映射
-  const statusMap = {
-    PENDING: { text: '待处理', color: 'blue' },
-    COMPLETED: { text: '已完成', color: 'green' },
-    FAILED: { text: '失败', color: 'red' },
-    REFUNDED: { text: '已退款', color: 'orange' }
+  // PENDING 状态推进：完成 / 失败 / 取消
+  const handleStatusAction = async (action, transactionId) => {
+    try {
+      await financeApi[`${action}Transaction`](transactionId);
+      message.success('状态更新成功');
+      fetchTransactions();
+    } catch (error) {
+      console.error('状态更新失败:', error);
+    }
   };
 
   // 表格列配置
   const columns = [
     {
       title: '交易ID',
-      dataIndex: 'id',
-      key: 'id',
-      width: 120
+      dataIndex: 'transactionId',
+      key: 'transactionId',
+      width: 260,
+      ellipsis: true
     },
     {
-      title: '订单编号',
-      dataIndex: 'orderNumber',
-      key: 'orderNumber',
-      width: 150
+      title: '交易类型',
+      dataIndex: 'type',
+      key: 'type',
+      width: 100,
+      render: (text) => {
+        const matched = transactionTypeMap[text];
+        return matched ? <Tag color={matched.color}>{matched.text}</Tag> : text || '-';
+      }
     },
     {
       title: '金额',
       dataIndex: 'amount',
       key: 'amount',
-      width: 100,
-      render: (text) => `¥${text.toFixed(2)}`
+      width: 120,
+      render: (text, record) => formatAmount(text, record.currency)
     },
     {
-      title: '类型',
-      dataIndex: 'type',
-      key: 'type',
-      width: 80,
-      render: (text) => (
-        <Tag color={typeMap[text].color}>{typeMap[text].text}</Tag>
-      )
+      title: '币种',
+      dataIndex: 'currency',
+      key: 'currency',
+      width: 80
+    },
+    {
+      title: '关联单据',
+      dataIndex: 'referenceId',
+      key: 'referenceId',
+      width: 180,
+      render: (text, record) =>
+        text ? `${text}${record.referenceType ? `（${record.referenceType}）` : ''}` : '-'
     },
     {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: 80,
-      render: (text) => (
-        <Tag color={statusMap[text].color}>{statusMap[text].text}</Tag>
-      )
+      width: 100,
+      render: (text) => {
+        const matched = transactionStatusMap[text];
+        return matched ? <Tag color={matched.color}>{matched.text}</Tag> : text || '-';
+      }
     },
     {
-      title: '支付方式',
-      dataIndex: 'paymentMethod',
-      key: 'paymentMethod',
-      width: 100
-    },
-    {
-      title: '交易日期',
-      dataIndex: 'transactionDate',
-      key: 'transactionDate',
-      width: 150,
-      render: (text) => new Date(text).toLocaleString()
-    },
-    {
-      title: '客户ID',
-      dataIndex: 'customerId',
-      key: 'customerId',
-      width: 100
-    },
-    {
-      title: '客户名称',
-      dataIndex: 'customerName',
-      key: 'customerName',
-      width: 120
-    },
-    {
-      title: '备注',
-      dataIndex: 'notes',
-      key: 'notes',
-      ellipsis: true
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
+      width: 180,
+      render: (text) => (text ? new Date(text).toLocaleString() : '-')
     },
     {
       title: '操作',
       key: 'action',
-      width: 150,
+      width: 230,
+      fixed: 'right',
       render: (_, record) => (
-        <Space size="middle">
-          <Button type="link" icon={<EyeOutlined />} onClick={() => navigate(`/finance/${record.id}`)}>查看</Button>
-          <Button type="link" icon={<EditOutlined />}>编辑</Button>
+        <Space size="small">
+          <Button type="link" icon={<EyeOutlined />} onClick={() => navigate(`/finance/${record.transactionId}`)}>
+            查看
+          </Button>
+          {['PENDING', 'FAILED'].includes(record.status) && (
+            <>
+              {record.status === 'PENDING' && (
+                <>
+                  <Popconfirm
+                    title="确认将该笔交易标记为成功？"
+                    okText="确定"
+                    cancelText="取消"
+                    onConfirm={() => handleStatusAction('complete', record.transactionId)}
+                  >
+                    <Button type="link">完成</Button>
+                  </Popconfirm>
+                  <Popconfirm
+                    title="确认将该笔交易标记为失败？"
+                    okText="确定"
+                    cancelText="取消"
+                    onConfirm={() => handleStatusAction('fail', record.transactionId)}
+                  >
+                    <Button type="link" danger>失败</Button>
+                  </Popconfirm>
+                </>
+              )}
+              <Popconfirm
+                title="确认取消该笔交易？"
+                okText="确定"
+                cancelText="取消"
+                onConfirm={() => handleStatusAction('cancel', record.transactionId)}
+              >
+                <Button type="link">取消</Button>
+              </Popconfirm>
+            </>
+          )}
         </Space>
       )
     }
@@ -218,94 +214,94 @@ const FinanceList = () => {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
         <Title level={4}>财务交易列表</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/finance/create')}>添加交易</Button>
+        <Space>
+          <Button icon={<ImportOutlined />}>
+            <Link to="/finance/import">财务导入</Link>
+          </Button>
+          <Button type="primary" icon={<PlusOutlined />}>
+            <Link to="/finance/create">添加交易</Link>
+          </Button>
+        </Space>
       </div>
 
       {/* 查询条件 */}
-      <Card style={{ marginBottom: 5 }}>
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 5 }}>
+      <Card style={{ marginBottom: 5 }} styles={{ body: { padding: 16 } }}>
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>交易ID：</span>
-            <Input
-              placeholder="请输入交易ID"
-              value={searchParams.transactionId}
-              onChange={(e) => setSearchParams(prev => ({ ...prev, transactionId: e.target.value }))}
-              style={{ width: 120 }}
-            />
-          </div>
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>订单编号：</span>
-            <Input
-              placeholder="请输入订单编号"
-              value={searchParams.orderNumber}
-              onChange={(e) => setSearchParams(prev => ({ ...prev, orderNumber: e.target.value }))}
-              style={{ width: 150 }}
-            />
-          </div>
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>金额：</span>
-            <Input
-              placeholder="请输入金额"
-              value={searchParams.amount}
-              onChange={(e) => setSearchParams(prev => ({ ...prev, amount: e.target.value }))}
-              style={{ width: 100 }}
-            />
-          </div>
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>类型：</span>
+            <span>交易类型：</span>
             <Select
               placeholder="请选择类型"
+              allowClear
               value={searchParams.type}
-              onChange={(value) => setSearchParams(prev => ({ ...prev, type: value }))}
-              style={{ width: 100 }}
+              onChange={(value) => setSearchParams((prev) => ({ ...prev, type: value }))}
+              style={{ width: 130 }}
             >
-              {transactionTypeOptions.map(option => (
-                <Option key={option.value} value={option.value}>{option.label}</Option>
+              {transactionTypeOptions.map((option) => (
+                <Option key={option.value} value={option.value}>
+                  {option.label}
+                </Option>
               ))}
             </Select>
           </div>
-          
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>状态：</span>
             <Select
               placeholder="请选择状态"
+              allowClear
               value={searchParams.status}
-              onChange={(value) => setSearchParams(prev => ({ ...prev, status: value }))}
-              style={{ width: 100 }}
+              onChange={(value) => setSearchParams((prev) => ({ ...prev, status: value }))}
+              style={{ width: 130 }}
             >
-              {transactionStatusOptions.map(option => (
-                <Option key={option.value} value={option.value}>{option.label}</Option>
+              {transactionStatusOptions.map((option) => (
+                <Option key={option.value} value={option.value}>
+                  {option.label}
+                </Option>
               ))}
             </Select>
           </div>
-          
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>交易时间：</span>
+            <span>关联单据号：</span>
+            <Input
+              placeholder="订单号/关联单据号"
+              allowClear
+              value={searchParams.referenceId}
+              onChange={(e) => setSearchParams((prev) => ({ ...prev, referenceId: e.target.value }))}
+              style={{ width: 180 }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>创建时间：</span>
             <RangePicker
               value={searchParams.dateRange}
-              onChange={(dateRange) => setSearchParams(prev => ({ ...prev, dateRange }))}
+              onChange={(dateRange) => setSearchParams((prev) => ({ ...prev, dateRange: dateRange || [] }))}
             />
           </div>
         </div>
-        
+
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <Button onClick={handleReset}>重置</Button>
-          <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>查询</Button>
+          <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
+            查询
+          </Button>
         </div>
       </Card>
 
       {/* 交易表格 */}
-      <Card>
+      <Card styles={{ body: { padding: 16 } }}>
         <Table
           columns={columns}
           dataSource={transactions}
-          rowKey="id"
+          rowKey="transactionId"
           loading={loading}
-          pagination={pagination}
-          onChange={handlePaginationChange}
+          pagination={{
+            ...pagination,
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 条`
+          }}
+          onChange={handleTableChange}
           scroll={{ x: 1200 }}
         />
       </Card>

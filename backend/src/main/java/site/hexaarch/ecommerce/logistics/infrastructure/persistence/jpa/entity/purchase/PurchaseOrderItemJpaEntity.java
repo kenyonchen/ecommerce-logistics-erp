@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -20,7 +21,9 @@ import java.math.BigDecimal;
  * @author kenyon
  */
 @Entity
-@Table(name = "purchase_order_items")
+@Table(name = "purchase_order_items",
+        uniqueConstraints = @UniqueConstraint(name = "uk_po_item",
+                columnNames = {"purchase_order_id", "sku_code"}))
 @Getter
 @Setter
 public class PurchaseOrderItemJpaEntity {

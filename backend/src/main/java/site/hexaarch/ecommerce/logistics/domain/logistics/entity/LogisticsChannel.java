@@ -1,99 +1,161 @@
 package site.hexaarch.ecommerce.logistics.domain.logistics.entity;
 
-import lombok.Builder;
 import lombok.Getter;
-import site.hexaarch.ecommerce.logistics.domain.logistics.valueobject.PriceRule;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
 /**
- * 物流渠道实体，物流服务提供商，如FedEx、UPS等。
+ * 物流渠道实体，物流服务提供商，如顺丰、京东物流、FedEx、UPS等。
  *
  * @author kenyon
  */
 @Getter
-@Builder(toBuilder = true)
 public class LogisticsChannel {
     private final String channelId;
+    /**
+     * 渠道编码，第三方平台/物流商侧的稳定标识（如 SF、YTO、JD），导入时按该编码匹配渠道
+     */
+    private final String channelCode;
     private final String channelName;
     private final String description;
     private final List<String> countries;
-    private final List<PriceRule> priceRules;
+    /**
+     * 首重基础费用
+     */
+    private final BigDecimal basePrice;
+    /**
+     * 每克续重费用
+     */
+    private final BigDecimal pricePerGram;
+    /**
+     * 计费币种
+     */
+    private final String currency;
     private final boolean active;
 
-    /**
-     * 构造函数，确保所有必填字段都不为空。
-     *
-     * @param channelId   渠道ID
-     * @param channelName 渠道名称
-     * @param description 渠道描述
-     * @param countries   支持的国家列表
-     * @param priceRules  价格规则列表
-     * @param active      是否激活
-     */
-    public LogisticsChannel(String channelId, String channelName, String description, List<String> countries, List<PriceRule> priceRules, boolean active) {
+    public LogisticsChannel(String channelId, String channelCode, String channelName, String description,
+                            List<String> countries, BigDecimal basePrice, BigDecimal pricePerGram, String currency,
+                            boolean active) {
         this.channelId = channelId != null ? channelId : UUID.randomUUID().toString();
+        this.channelCode = channelCode;
         this.channelName = channelName;
         this.description = description;
         this.countries = countries != null ? countries : List.of();
-        this.priceRules = priceRules != null ? priceRules : List.of();
+        this.basePrice = basePrice == null ? BigDecimal.ZERO : basePrice;
+        this.pricePerGram = pricePerGram == null ? BigDecimal.ZERO : pricePerGram;
+        this.currency = currency == null ? "CNY" : currency;
         this.active = active;
     }
 
+    public static LogisticsChannel create(String channelCode, String channelName, String description,
+                                          List<String> countries, BigDecimal basePrice, BigDecimal pricePerGram,
+                                          String currency, boolean active) {
+        return new LogisticsChannel(null, channelCode, channelName, description, countries, basePrice, pricePerGram,
+                currency, active);
+    }
+
     /**
-     * 检查渠道是否支持指定国家。
+     * 检查渠道是否支持指定国家。国家列表为空视为全球可用。
      *
      * @param country 国家代码
      * @return 如果支持则返回true，否则返回false
      */
     public boolean supportsCountry(String country) {
-        return this.countries.contains(country);
+        if (countries.isEmpty()) {
+            return true;
+        }
+        return countries.contains(country);
     }
 
-    /**
-     * 激活渠道。
-     *
-     * @return 激活后的渠道
-     */
     public LogisticsChannel activate() {
-        return new LogisticsChannel(
-                this.channelId,
-                this.channelName,
-                this.description,
-                this.countries,
-                this.priceRules,
-                true
-        );
+        return toBuilder().active(true).build();
     }
 
-    /**
-     * 停用渠道。
-     *
-     * @return 停用后的渠道
-     */
     public LogisticsChannel deactivate() {
-        return new LogisticsChannel(
-                this.channelId,
-                this.channelName,
-                this.description,
-                this.countries,
-                this.priceRules,
-                false
-        );
+        return toBuilder().active(false).build();
+    }
+
+    public Builder toBuilder() {
+        return new Builder()
+                .channelId(channelId)
+                .channelCode(channelCode)
+                .channelName(channelName)
+                .description(description)
+                .countries(countries)
+                .basePrice(basePrice)
+                .pricePerGram(pricePerGram)
+                .currency(currency)
+                .active(active);
+    }
+
+    public static Builder builder() {
+        return new Builder();
     }
 
     /**
-     * 获取渠道ID
+     * 物流渠道构建器。
      */
-    public String getChannelId() {
-        return channelId;
-    }
+    public static class Builder {
+        private String channelId;
+        private String channelCode;
+        private String channelName;
+        private String description;
+        private List<String> countries;
+        private BigDecimal basePrice;
+        private BigDecimal pricePerGram;
+        private String currency;
+        private boolean active = true;
 
-    /**
-     * 获取价格规则列表
-     */
-    public List<PriceRule> getPriceRules() {
-        return priceRules;
+        public Builder channelId(String channelId) {
+            this.channelId = channelId;
+            return this;
+        }
+
+        public Builder channelCode(String channelCode) {
+            this.channelCode = channelCode;
+            return this;
+        }
+
+        public Builder channelName(String channelName) {
+            this.channelName = channelName;
+            return this;
+        }
+
+        public Builder description(String description) {
+            this.description = description;
+            return this;
+        }
+
+        public Builder countries(List<String> countries) {
+            this.countries = countries;
+            return this;
+        }
+
+        public Builder basePrice(BigDecimal basePrice) {
+            this.basePrice = basePrice;
+            return this;
+        }
+
+        public Builder pricePerGram(BigDecimal pricePerGram) {
+            this.pricePerGram = pricePerGram;
+            return this;
+        }
+
+        public Builder currency(String currency) {
+            this.currency = currency;
+            return this;
+        }
+
+        public Builder active(boolean active) {
+            this.active = active;
+            return this;
+        }
+
+        public LogisticsChannel build() {
+            return new LogisticsChannel(channelId, channelCode, channelName, description, countries, basePrice,
+                    pricePerGram, currency, active);
+        }
     }
 }

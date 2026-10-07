@@ -1,17 +1,33 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Table, Button, Space, Input, Select, DatePicker, Typography, Card, Tag } from 'antd';
-import { PlusOutlined, SearchOutlined, EyeOutlined, EditOutlined } from '@ant-design/icons';
-import { Link, useNavigate } from 'react-router-dom';
+import { PlusOutlined, SearchOutlined, EyeOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { purchaseApi } from '../../services/api';
+import {
+  formatAmount,
+  purchaseStatusMap,
+  purchaseStatusOptions,
+  purchaseStatusLabel
+} from '../../constants/purchase';
 
 const { Title } = Typography;
 const { Option } = Select;
 const { RangePicker } = DatePicker;
 
+const emptySearchParams = {
+  purchaseOrderId: '',
+  supplierId: '',
+  supplierName: '',
+  minTotalAmount: '',
+  status: undefined,
+  dateRange: []
+};
+
 const PurchaseList = () => {
   const navigate = useNavigate();
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [statusOptions, setStatusOptions] = useState(purchaseStatusOptions);
   const [pagination, setPagination] = useState({
     current: 1,
     pageSize: 10,
@@ -19,194 +35,151 @@ const PurchaseList = () => {
   });
 
   // 查询条件
-  const [searchParams, setSearchParams] = useState({
-    purchaseOrderId: '',
-    supplierId: '',
-    supplierName: '',
-    amount: '',
-    status: '',
-    dateRange: []
-  });
+  const [searchParams, setSearchParams] = useState(emptySearchParams);
 
-  // 采购订单状态选项
-  const purchaseStatusOptions = [
-    { value: 'PENDING', label: '待处理' },
-    { value: 'APPROVED', label: '已批准' },
-    { value: 'REJECTED', label: '已拒绝' },
-    { value: 'IN_TRANSIT', label: '运输中' },
-    { value: 'DELIVERED', label: '已送达' },
-    { value: 'CANCELLED', label: '已取消' }
-  ];
+  // 状态下拉取服务端字典，避免与 PurchaseStatus 枚举漂移
+  useEffect(() => {
+    const loadStatuses = async () => {
+      try {
+        const data = await purchaseApi.getStatuses();
+        if (data && data.length) {
+          setStatusOptions(data.map((item) => ({ value: item.code, label: item.label })));
+        }
+      } catch {
+        // 字典接口不可用时使用前端静态兜底
+      }
+    };
+    loadStatuses();
+  }, []);
 
-  // 获取采购订单列表
-  const fetchPurchaseOrders = async () => {
+  // 获取采购订单列表（服务端分页 + 条件查询，不再在前端过滤全量数组）
+  const fetchPurchaseOrders = useCallback(async () => {
     setLoading(true);
     try {
-      // 这里简化处理，实际应该调用后端的分页查询API
-      // 暂时使用模拟数据
-      const mockPurchaseOrders = Array.from({ length: 20 }, (_, index) => ({
-        id: `po-${index + 1}`,
-        supplierId: `supp-${Math.floor(Math.random() * 10) + 1}`,
-        supplierName: `供应商${Math.floor(Math.random() * 10) + 1}`,
-        amount: 1000 + Math.random() * 99000,
-        status: purchaseStatusOptions[Math.floor(Math.random() * purchaseStatusOptions.length)].value,
-        orderDate: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString(),
-        expectedDeliveryDate: new Date(Date.now() + Math.random() * 15 * 24 * 60 * 60 * 1000).toISOString(),
-        actualDeliveryDate: Math.random() > 0.5 ? new Date(Date.now() - Math.random() * 10 * 24 * 60 * 60 * 1000).toISOString() : null,
-        paymentStatus: ['PENDING', 'COMPLETED', 'PARTIAL'][Math.floor(Math.random() * 3)],
-        itemsCount: Math.floor(Math.random() * 10) + 1,
-        notes: `采购订单备注信息${index + 1}`
-      }));
-      
-      setPurchaseOrders(mockPurchaseOrders);
-      setPagination(prev => ({
+      const [startDate, endDate] = searchParams.dateRange || [];
+      // 不下发 tenantId：后端按 JWT 租户上下文解析，避免非平台管理员用户被 TenantIsolationAspect 判越权
+      const result = await purchaseApi.getPurchaseOrders({
+        page: (pagination.current || 1) - 1,
+        size: pagination.pageSize || 10,
+        purchaseOrderId: searchParams.purchaseOrderId || undefined,
+        supplierId: searchParams.supplierId || undefined,
+        supplierName: searchParams.supplierName || undefined,
+        minTotalAmount: searchParams.minTotalAmount || undefined,
+        status: searchParams.status || undefined,
+        startDate: startDate ? startDate.format('YYYY-MM-DD') : undefined,
+        endDate: endDate ? endDate.format('YYYY-MM-DD') : undefined
+      });
+      setPurchaseOrders(result?.content || []);
+      setPagination((prev) => ({
         ...prev,
-        total: mockPurchaseOrders.length
+        total: result?.total || 0,
+        current: (result?.page ?? 0) + 1
       }));
     } catch (error) {
       console.error('获取采购订单列表失败:', error);
+      setPurchaseOrders([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [pagination.current, pagination.pageSize, searchParams]);
 
-  // 初始化加载数据
   useEffect(() => {
     fetchPurchaseOrders();
-  }, []);
+  }, [fetchPurchaseOrders]);
 
-  // 处理分页变化
-  const handlePaginationChange = (page, pageSize) => {
-    setPagination(prev => ({
+  const handleTableChange = (pageInfo) => {
+    setPagination((prev) => ({
       ...prev,
-      current: page,
-      pageSize
+      current: pageInfo.current || 1,
+      pageSize: pageInfo.pageSize || 10
     }));
   };
 
-  // 处理查询
+  // 处理查询：条件变化后回到第一页，交给服务端重新分页
   const handleSearch = () => {
-    setPagination(prev => ({
-      ...prev,
-      current: 1
-    }));
-    fetchPurchaseOrders();
+    setPagination((prev) => ({ ...prev, current: 1 }));
   };
 
   // 处理重置
   const handleReset = () => {
-    setSearchParams({
-      purchaseOrderId: '',
-      supplierId: '',
-      supplierName: '',
-      amount: '',
-      status: '',
-      dateRange: []
-    });
-    setPagination(prev => ({
-      ...prev,
-      current: 1
-    }));
-    fetchPurchaseOrders();
+    setSearchParams(emptySearchParams);
+    setPagination((prev) => ({ ...prev, current: 1 }));
   };
 
-  // 采购订单状态映射
-  const statusMap = {
-    PENDING: { text: '待处理', color: 'blue' },
-    APPROVED: { text: '已批准', color: 'green' },
-    REJECTED: { text: '已拒绝', color: 'red' },
-    IN_TRANSIT: { text: '运输中', color: 'orange' },
-    DELIVERED: { text: '已送达', color: 'purple' },
-    CANCELLED: { text: '已取消', color: 'default' }
-  };
-
-  // 付款状态映射
-  const paymentStatusMap = {
-    PENDING: { text: '待付款', color: 'blue' },
-    COMPLETED: { text: '已付款', color: 'green' },
-    PARTIAL: { text: '部分付款', color: 'orange' }
-  };
-
-  // 表格列配置
+  // 表格列配置（字段与后端 PurchaseOrderDto 一一对应）
   const columns = [
     {
-      title: '采购订单ID',
-      dataIndex: 'id',
-      key: 'id',
-      width: 120
+      title: '采购单号',
+      dataIndex: 'purchaseOrderId',
+      key: 'purchaseOrderId',
+      width: 200
     },
     {
       title: '供应商ID',
       dataIndex: 'supplierId',
       key: 'supplierId',
-      width: 100
+      width: 140,
+      render: (text) => text || '-'
     },
     {
       title: '供应商名称',
       dataIndex: 'supplierName',
       key: 'supplierName',
-      width: 120
+      width: 160,
+      render: (text) => text || '-'
     },
     {
-      title: '金额',
-      dataIndex: 'amount',
-      key: 'amount',
-      width: 100,
-      render: (text) => `¥${text.toFixed(2)}`
+      title: '收货仓库ID',
+      dataIndex: 'warehouseId',
+      key: 'warehouseId',
+      width: 160,
+      render: (text) => text || '-'
+    },
+    {
+      title: '采购项数',
+      key: 'itemsCount',
+      width: 90,
+      render: (_, record) => (record.items ? record.items.length : 0)
+    },
+    {
+      title: '总金额',
+      dataIndex: 'totalAmount',
+      key: 'totalAmount',
+      width: 120,
+      render: (text) => formatAmount(text)
     },
     {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
       width: 100,
-      render: (text) => (
-        <Tag color={statusMap[text].color}>{statusMap[text].text}</Tag>
-      )
+      render: (text, record) => {
+        const status = purchaseStatusMap[text] || { color: 'default' };
+        return <Tag color={status.color}>{record.statusLabel || purchaseStatusLabel(text)}</Tag>;
+      }
     },
     {
-      title: '付款状态',
-      dataIndex: 'paymentStatus',
-      key: 'paymentStatus',
-      width: 100,
-      render: (text) => (
-        <Tag color={paymentStatusMap[text].color}>{paymentStatusMap[text].text}</Tag>
-      )
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
+      width: 170,
+      render: (text) => (text ? new Date(text).toLocaleString() : '-')
     },
     {
-      title: '订单日期',
-      dataIndex: 'orderDate',
-      key: 'orderDate',
-      width: 150,
-      render: (text) => new Date(text).toLocaleDateString()
-    },
-    {
-      title: '预计送达日期',
-      dataIndex: 'expectedDeliveryDate',
-      key: 'expectedDeliveryDate',
-      width: 150,
-      render: (text) => new Date(text).toLocaleDateString()
-    },
-    {
-      title: '实际送达日期',
-      dataIndex: 'actualDeliveryDate',
-      key: 'actualDeliveryDate',
-      width: 150,
-      render: (text) => text ? new Date(text).toLocaleDateString() : '未送达'
-    },
-    {
-      title: '商品数量',
-      dataIndex: 'itemsCount',
-      key: 'itemsCount',
-      width: 80
+      title: '更新时间',
+      dataIndex: 'updatedAt',
+      key: 'updatedAt',
+      width: 170,
+      render: (text) => (text ? new Date(text).toLocaleString() : '-')
     },
     {
       title: '操作',
       key: 'action',
-      width: 150,
+      width: 90,
+      fixed: 'right',
       render: (_, record) => (
         <Space size="middle">
-          <Button type="link" icon={<EyeOutlined />} onClick={() => navigate(`/purchase/${record.id}`)}>查看</Button>
-          <Button type="link" icon={<EditOutlined />}>编辑</Button>
+          <Button type="link" icon={<EyeOutlined />} onClick={() => navigate(`/purchase/${record.purchaseOrderId}`)}>查看</Button>
         </Space>
       )
     }
@@ -220,71 +193,76 @@ const PurchaseList = () => {
       </div>
 
       {/* 查询条件 */}
-      <Card style={{ marginBottom: 5 }}>
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 5 }}>
+      <Card style={{ marginBottom: 5 }} styles={{ body: { padding: 16 } }}>
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>采购订单ID：</span>
+            <span>采购单号：</span>
             <Input
-              placeholder="请输入采购订单ID"
+              placeholder="请输入采购单号"
+              allowClear
               value={searchParams.purchaseOrderId}
               onChange={(e) => setSearchParams(prev => ({ ...prev, purchaseOrderId: e.target.value }))}
-              style={{ width: 120 }}
+              style={{ width: 160 }}
             />
           </div>
-          
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>供应商ID：</span>
             <Input
               placeholder="请输入供应商ID"
+              allowClear
               value={searchParams.supplierId}
               onChange={(e) => setSearchParams(prev => ({ ...prev, supplierId: e.target.value }))}
-              style={{ width: 100 }}
+              style={{ width: 140 }}
             />
           </div>
-          
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>供应商名称：</span>
             <Input
               placeholder="请输入供应商名称"
+              allowClear
               value={searchParams.supplierName}
               onChange={(e) => setSearchParams(prev => ({ ...prev, supplierName: e.target.value }))}
+              style={{ width: 140 }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>总金额≥：</span>
+            <Input
+              placeholder="请输入金额下限"
+              allowClear
+              value={searchParams.minTotalAmount}
+              onChange={(e) => setSearchParams(prev => ({ ...prev, minTotalAmount: e.target.value }))}
               style={{ width: 120 }}
             />
           </div>
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>金额：</span>
-            <Input
-              placeholder="请输入金额"
-              value={searchParams.amount}
-              onChange={(e) => setSearchParams(prev => ({ ...prev, amount: e.target.value }))}
-              style={{ width: 100 }}
-            />
-          </div>
-          
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>状态：</span>
             <Select
               placeholder="请选择状态"
+              allowClear
               value={searchParams.status}
               onChange={(value) => setSearchParams(prev => ({ ...prev, status: value }))}
-              style={{ width: 100 }}
+              style={{ width: 120 }}
             >
-              {purchaseStatusOptions.map(option => (
+              {statusOptions.map(option => (
                 <Option key={option.value} value={option.value}>{option.label}</Option>
               ))}
             </Select>
           </div>
-          
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>订单时间：</span>
+            <span>创建时间：</span>
             <RangePicker
               value={searchParams.dateRange}
-              onChange={(dateRange) => setSearchParams(prev => ({ ...prev, dateRange }))}
+              onChange={(dateRange) => setSearchParams(prev => ({ ...prev, dateRange: dateRange || [] }))}
             />
           </div>
         </div>
-        
+
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <Button onClick={handleReset}>重置</Button>
           <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>查询</Button>
@@ -292,15 +270,19 @@ const PurchaseList = () => {
       </Card>
 
       {/* 采购订单表格 */}
-      <Card>
+      <Card styles={{ body: { padding: 16 } }}>
         <Table
           columns={columns}
           dataSource={purchaseOrders}
-          rowKey="id"
+          rowKey="purchaseOrderId"
           loading={loading}
-          pagination={pagination}
-          onChange={handlePaginationChange}
-          scroll={{ x: 1200 }}
+          pagination={{
+            ...pagination,
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 条`
+          }}
+          onChange={handleTableChange}
+          scroll={{ x: 1500 }}
         />
       </Card>
     </div>

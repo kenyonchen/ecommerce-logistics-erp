@@ -12,5 +12,10 @@ public enum PlatformName {
     ALIEXPRESS,
     WISH,
     MAGENTO,
+    TEMU,
+    TIKTOK_SHOP,
+    SHOPEE,
+    MERCADO_LIBRE,
+    OZON,
     OTHER
 }

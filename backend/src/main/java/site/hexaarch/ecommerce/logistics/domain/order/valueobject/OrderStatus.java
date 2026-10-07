@@ -2,6 +2,8 @@ package site.hexaarch.ecommerce.logistics.domain.order.valueobject;
 
 import lombok.Getter;
 
+import java.util.List;
+
 /**
  * 订单状态值对象，表示订单的当前状态。
  *
@@ -23,6 +25,59 @@ public enum OrderStatus {
     OrderStatus(String code, String description) {
         this.code = code;
         this.description = description;
+    }
+
+    /**
+     * 获取状态的中文描述（同时作为前端展示文案）
+     */
+    public String getLabel() {
+        return description;
+    }
+
+    /**
+     * 允许的下一状态集合。终态（已完成/已取消）不允许再流转；
+     * 已发货订单不可取消（与 {@code OrderProcessingService.cancelOrder} 同一口径，spec/order.md BR 状态机）。
+     */
+    public List<OrderStatus> allowedNextStatuses() {
+        return switch (this) {
+            case PENDING -> List.of(PROCESSING, CON_FIRMED, CANCELLED);
+            case PROCESSING -> List.of(CON_FIRMED, SHIPPED, CANCELLED);
+            case CON_FIRMED -> List.of(PROCESSING, SHIPPED, CANCELLED);
+            case SHIPPED -> List.of(COMPLETED);
+            case COMPLETED, CANCELLED -> List.of();
+        };
+    }
+
+    /**
+     * 判断当前状态是否可以流转到目标状态。
+     * <p>
+     * 规则：相同状态视为无变化（允许，幂等）；终态不可再流转。
+     * </p>
+     */
+    public boolean canTransitionTo(OrderStatus target) {
+        if (target == null) {
+            return false;
+        }
+        if (this == target) {
+            return true;
+        }
+        return allowedNextStatuses().contains(target);
+    }
+
+    /**
+     * 根据状态编码解析枚举，兼容 "confirmed" 与 "CON_FIRMED" 两种写法。
+     */
+    public static java.util.Optional<OrderStatus> fromCode(String code) {
+        if (code == null || code.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        String normalized = code.trim();
+        for (OrderStatus status : values()) {
+            if (status.name().equalsIgnoreCase(normalized) || status.code.equalsIgnoreCase(normalized)) {
+                return java.util.Optional.of(status);
+            }
+        }
+        return java.util.Optional.empty();
     }
 
     /**

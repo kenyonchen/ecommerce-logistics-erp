@@ -1,64 +1,108 @@
-import React from 'react';
-import { Layout, Menu, Button } from 'antd';
-import { Outlet, Link, useNavigate } from 'react-router-dom';
-import { DashboardOutlined, SettingOutlined, TeamOutlined, UserOutlined, LogoutOutlined } from '@ant-design/icons';
+import React, { useState, useMemo } from 'react';
+import { Layout, Menu, Button, Space, Grid, Typography } from 'antd';
+import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import {
+  DashboardOutlined,
+  SettingOutlined,
+  TeamOutlined,
+  UserOutlined,
+  LogoutOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
+} from '@ant-design/icons';
+import { useAuth } from './context/AuthContext';
 import './App.css';
 
 const { Header, Sider, Content } = Layout;
+const { Text } = Typography;
+
+/** 菜单项与路由一一对应，避免用 window.location 造成的高亮失效 */
+const MENU_ITEMS = [
+  { key: '/', icon: <DashboardOutlined />, label: '平台仪表盘' },
+  { key: '/platform/config', icon: <SettingOutlined />, label: '系统配置' },
+  { key: '/tenants', icon: <TeamOutlined />, label: '租户管理' },
+  { key: '/users', icon: <UserOutlined />, label: '用户管理' },
+];
 
 function App() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { user, logout } = useAuth();
+  const screens = Grid.useBreakpoint();
 
-  const handleLogout = () => {
-    // 实际应用中应该清除认证信息
-    console.log('Logout');
+  // 桌面端展开、窄屏折叠为抽屉式（collapsedWidth=0）
+  const [collapsed, setCollapsed] = useState(false);
+  const isDesktop = screens.lg;
+
+  // /platform/dashboard 与 / 指向同一页面，高亮到「平台仪表盘」
+  const selectedKey = useMemo(() => {
+    const match = MENU_ITEMS.find(
+      (item) => item.key !== '/' && location.pathname.startsWith(item.key),
+    );
+    return match ? match.key : '/';
+  }, [location.pathname]);
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login', { replace: true });
   };
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', background: '#fff', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)' }}>
-        <div style={{ display: 'flex', alignItems: 'center' }}>
-          <h1 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: '#1890ff' }}>
-            物流ERP管理系统
-          </h1>
+    <Layout className="app-shell">
+      <Header className="app-header">
+        <div className="app-header__brand">
+          {/* 折叠按钮仅在窄屏出现，桌面端常驻展开侧栏 */}
+          {!isDesktop && (
+            <Button
+              type="text"
+              aria-label={collapsed ? '展开菜单' : '收起菜单'}
+              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              onClick={() => setCollapsed((prev) => !prev)}
+            />
+          )}
+          <span>物流ERP管理系统</span>
         </div>
-        <div>
+
+        <Space size={12}>
+          {/* 窄屏隐藏用户名，避免顶栏把品牌名挤掉 */}
+          {user && isDesktop && (
+            <Text type="secondary">
+              {user.username}
+              {user.roles && user.roles.length > 0 ? `（${user.roles.join('、')}）` : ''}
+            </Text>
+          )}
           <Button type="link" icon={<LogoutOutlined />} onClick={handleLogout}>
             退出登录
           </Button>
-        </div>
+        </Space>
       </Header>
+
       <Layout>
-        <Sider width={200} style={{ background: '#fff', borderRight: '1px solid #f0f0f0' }}>
+        <Sider
+          className="app-sider"
+          width={200}
+          theme="light"
+          trigger={null}
+          collapsible
+          collapsed={collapsed}
+          collapsedWidth={0}
+          breakpoint="lg"
+          onBreakpoint={(broken) => setCollapsed(broken)}
+        >
           <Menu
+            className="app-sider__menu"
             mode="inline"
-            style={{ height: '100%', borderRight: 0 }}
-            selectedKeys={[window.location.pathname]}
-            items={[
-              {
-                key: '/',
-                icon: <DashboardOutlined />,
-                label: <Link to="/">平台仪表盘</Link>
-              },
-              {
-                key: '/platform/config',
-                icon: <SettingOutlined />,
-                label: <Link to="/platform/config">系统配置</Link>
-              },
-              {
-                key: '/tenants',
-                icon: <TeamOutlined />,
-                label: <Link to="/tenants">租户管理</Link>
-              },
-              {
-                key: '/users',
-                icon: <UserOutlined />,
-                label: <Link to="/users">用户管理</Link>
-              }
-            ]}
+            selectedKeys={[selectedKey]}
+            items={MENU_ITEMS}
+            onClick={({ key }) => {
+              navigate(key);
+              // 窄屏点完菜单自动收起，避免遮住内容
+              if (!isDesktop) setCollapsed(true);
+            }}
           />
         </Sider>
-        <Content style={{ padding: '24px', background: '#f0f2f5', minHeight: 280 }}>
+
+        <Content className="app-content">
           <Outlet />
         </Content>
       </Layout>

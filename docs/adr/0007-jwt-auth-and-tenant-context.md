@@ -1,0 +1,58 @@
+# ADR-0007：JWT 无状态认证 + ThreadLocal 多租户上下文
+
+- 状态：Accepted（~~**校验与鉴权实现被桩化，当前不成立**~~ → 🟡 **2026-01-25 复测：认证与鉴权链路已成立，"不成立"的范围收窄到只剩读路径隔离**。逐条对账见文末「复测对账」节）
+- 日期记录：2026-01-25
+- 相关：[api.md §6](../api/api.md)、[security-findings.md S-01/S-02/S-03/M-01~M-06](../security-findings.md)
+
+## 背景
+
+前后端分离 + 双 SPA（user-web / admin-web），需要无会话的水平扩展能力；同时系统按「租户」组织数据（`tenants`/`users.tenant_id`/`roles.tenant_id`），要求每个请求都知道自己属于哪个租户，并据此隔离数据。
+
+## 决策
+
+1. 令牌：JJWT 0.12.5，HS512，`Authorization: Bearer <token>`；secret/expiration 在 `application.yml`（`jwt.expiration=86400000`，`jwt.refresh.expiration=86400000`）。
+2. 认证：`JwtAuthenticationFilter` + `JwtTokenProvider`；登出仅 `SecurityContextHolder.clearContext()`（**无服务端黑名单**）。
+3. 授权：`SecurityConfig` URL 级规则 —— `/api/auth/**` permitAll、`/api/platform/**` 与 `/api/tenants/**` 需 `PLATFORM_ADMIN`、`/api/**` 需 `authenticated`。
+4. 租户：`TenantContext`（ThreadLocal）由 filter 写入，`TenantIsolationAspect` 拦截 `domain..*Repository.*` 与 `application.service..*` 做隔离。
+
+## 后果：设计可用，但实现有 6 处使保护失效
+
+| # | 事实 | 直接后果 |
+|---|---|---|
+| 1 | `JwtTokenProvider.validateToken()` 恒 `true`、`getUsernameFromToken()` 恒 `""`、`getTenantIdFromToken()` 恒 `"default-tenant"` | 任意 `Authorization` 串即"已认证"；`/api/**` 保护被绕过 |
+| 2 | `CustomUserDetailsService` 权限集合恒空 + filter 中角色提取被注释 | 任何 `hasRole` 永不满足 ⇒ `/api/tenants/**` 恒 403，角色模型整体失效 |
+| 3 | 规则写 `/api/platform/**`，真实路径 `/api/platform-integrations/**` | 平台管理降级为 `authenticated()`（叠加 #1 ⇒ 实际公开） |
+| 4 | filter 内 `new JwtTokenProvider()` 绕过注入；类又标 `@Component`、`SecurityConfig` 还 `@Bean` new 一次 | 多实例并存，yml 里的 secret 在实际校验路径上不生效 |
+| 5 | 读取 header 后未 `substring(7)` 去掉 `Bearer ` | 令牌解析口径错误（被 #1 掩盖） |
+| 6 | `TenantIsolationAspect` 过滤逻辑全部注释、仅 `System.out`，且从不 `clearTenantId` | 隔离未实现；线程池下有串租户风险 |
+| — | 全仓无 `@PreAuthorize`/`@Secured`/`@EnableMethodSecurity`；业务表**无 `tenant_id` 列** | 授权只有 URL 一层；库层面无法兜底越权 |
+
+另外三点属于设计层面的取舍，需要显式承认：
+- **登出不使令牌失效**：24h 内旧令牌仍可被使用（无黑名单/无 jti 撤销表）。
+- **`POST /api/auth/refresh` 只凭 username 换发**，不校验旧令牌 ⇒ 等同于「知道用户名即可取新令牌」。
+- **access 与 refresh 同为 24h**，无短期 access + 长期 refresh 的分层。
+
+## 建议
+
+按顺序：先修 #1~#5（同一链路，一起修才有意义）→ 打开 `@EnableMethodSecurity` 并为提权面（`/users/{id}/roles`、`/roles/{id}/permissions`、`/users/{id}/password`）加 `@PreAuthorize` → 业务表补 `tenant_id` 后启用真实的 `TenantIsolationAspect`（并在 filter `finally` 中 `clear`）→ `SecurityConfig` 升级到 `authorizeHttpRequests` 且加 `.anyRequest().denyAll()` 兜底 → 引入令牌撤销（jti 黑名单或短期 access + 轮换 refresh）。
+
+---
+
+## 复测对账（2026-01-25，逐条按当前工作树实测）
+
+本 ADR 上表的 6 个失效点 + 3 个设计取舍，现状如下：
+
+| 本 ADR 条目 | 现状 | 证据 |
+|---|---|---|
+| #1 校验恒真 | ✅ 已修 | `JwtTokenProvider:189-191` = `parseClaims(token) != null`；`getTenantIdFromToken` 从 claim 取（`:141-144`）（ISS-007） |
+| #2 authorities 恒空 | ✅ 已修 | 令牌带 `roles`/`permissions` 两个 claim，过滤器 `:46-72` 重建 authorities；`CustomUserDetailsService:57-73` 口径一致（ISS-041）。<br>⚠️ 但**修复后一度仍恒 403**，根因是种子初始化在非 Web 线程读 `@ElementCollection` 被 `catch` 吞掉（**ISS-061**），不是本表任何一条 |
+| #3 `/api/platform/**` 规则写错 | ✅ 已删该规则 | `SecurityConfig:64-67` 现为 login/refresh/logout `permitAll` → `/api/auth/me` `authenticated` → `/api/tenants/**` `hasRole(PLATFORM_ADMIN)` → `/api/**` `authenticated`；平台集成改由**类级 `@PreAuthorize`** 保护（`PlatformIntegrationController:46`）（S-03 已修） |
+| #4 filter 内 new + 双实例 | 🟡 部分 | 过滤器已改**构造注入**（`:31-35`，M-01 已修）。<br>❌ 但「同一类型两个 Bean 定义」的形态在**仓储层**反而增加了：`User/Role/Tenant/Product` 的 `*RepositoryImpl` 既标 `@Repository` 又被 `PersistenceConfig` `@Bean`（9 个 `@Bean`，其中 `productRepository:86-88` 只是转发别名）→ 靠注入点参数名消歧，见 [tech/backend-standards.md §8](../tech/backend-standards.md) |
+| #5 未剥 `Bearer ` 前缀 | ✅ **核实为误报** | `getJwtFromRequest` 一直有 `startsWith("Bearer ")` + `substring(7)`（M-02） |
+| #6 切面全注释 + 不 clear | 🟡 一半 | 切面已落地（`TenantIsolationAspect:55-86`，不一致抛 `TENANT_ACCESS_DENIED`，`PLATFORM_ADMIN` 放行）、`clearTenantId()` 已在 `finally`（filter `:82`）。<br>❌ **「隔离未实现」对读路径仍成立**：`:91-97` 的仓储切面只打 trace，注释写明"隔离由服务层参数校验保障" → **ISS-050** |
+| 表末「无 `@PreAuthorize`／业务表无 `tenant_id`」 | 🟡 大幅推进但未收口 | `@EnableMethodSecurity` 已开（`SecurityConfig:35`），`@PreAuthorize` **17 处 / 9 个控制器**（另 11 个控制器仍无）；`tenant_id` 从 2 张 → **23/42 张**。⚠️ 22 个种子权限点只有 **10 个**真被检查 |
+| 取舍① 登出不使令牌失效 | ❌ 未改 | `AuthController:137-139` 仍只有 `clearContext()`，无 jti 黑名单 |
+| 取舍② refresh 只凭 username | ✅ 已修 | `AuthController:93-129`：`:99` 校验旧 refresh token、`:103` 取 username、`:108` 重载用户、`:126` 重签 roles/permissions<br>❌ 但 `:128` **把同一个 refreshToken 原样回给客户端** → 无轮换、无一次性使用，旧 refresh 在 24h 内始终可复用 |
+| 取舍③ access/refresh 同 24h | ❌ 未改 | `application.yml:80-82` 均为 `86400000` |
+
+📌 **本 ADR 的决策本身仍然成立**（无状态 JWT + ThreadLocal 租户上下文），"不成立"的只剩读路径隔离与令牌生命周期治理。本节的「建议」段第 1、2、3、4 步已完成，**第 5 步（令牌撤销/轮换）与 `.anyRequest().denyAll()` 兜底未做**；新增的未完成项是 ISS-050（让查询真正带租户条件）与 ISS-051（把 `tenantId` 从客户端传参改为令牌来源，涉及 10 个 `DEFAULT_TENANT_ID` 常量 + 15 处兜底）。

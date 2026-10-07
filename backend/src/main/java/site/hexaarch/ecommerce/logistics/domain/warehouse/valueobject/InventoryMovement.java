@@ -12,6 +12,10 @@ import java.util.UUID;
 public class InventoryMovement {
     private final String movementId;
     private final String warehouseId;
+    /**
+     * 调拨(TRANSFER)时的目标仓库ID，其他类型可为null
+     */
+    private final String targetWarehouseId;
     private final String productId;
     private final String sku;
     private final int quantity;
@@ -22,24 +26,47 @@ public class InventoryMovement {
     /**
      * 构造函数，确保所有必填字段都不为空。
      *
-     * @param movementId   变动ID
-     * @param warehouseId  仓库ID
-     * @param productId    产品ID
-     * @param sku          SKU
-     * @param quantity     变动数量
-     * @param movementType 变动类型
-     * @param reason       变动原因
-     * @param movedAt      变动时间
+     * @param movementId       变动ID
+     * @param warehouseId      仓库ID
+     * @param targetWarehouseId 调拨目标仓库ID（仅TRANSFER使用）
+     * @param productId        产品ID
+     * @param sku              SKU
+     * @param quantity         变动数量
+     * @param movementType     变动类型
+     * @param reason           变动原因
+     * @param movedAt          变动时间
      */
-    private InventoryMovement(String movementId, String warehouseId, String productId, String sku, int quantity, MovementType movementType, String reason, LocalDateTime movedAt) {
+    @com.fasterxml.jackson.annotation.JsonCreator
+    private InventoryMovement(
+            @com.fasterxml.jackson.annotation.JsonProperty("movementId") String movementId,
+            @com.fasterxml.jackson.annotation.JsonProperty("warehouseId") String warehouseId,
+            @com.fasterxml.jackson.annotation.JsonProperty("targetWarehouseId") String targetWarehouseId,
+            @com.fasterxml.jackson.annotation.JsonProperty("productId") String productId,
+            @com.fasterxml.jackson.annotation.JsonProperty("sku") String sku,
+            @com.fasterxml.jackson.annotation.JsonProperty("quantity") int quantity,
+            @com.fasterxml.jackson.annotation.JsonProperty("movementType") MovementType movementType,
+            @com.fasterxml.jackson.annotation.JsonProperty("reason") String reason,
+            @com.fasterxml.jackson.annotation.JsonProperty("movedAt") LocalDateTime movedAt) {
         this.movementId = movementId != null ? movementId : UUID.randomUUID().toString();
         this.warehouseId = Objects.requireNonNull(warehouseId, "Warehouse ID cannot be null");
+        this.targetWarehouseId = targetWarehouseId;
         this.productId = Objects.requireNonNull(productId, "Product ID cannot be null");
         this.sku = Objects.requireNonNull(sku, "SKU cannot be null");
         this.quantity = quantity;
         this.movementType = Objects.requireNonNull(movementType, "Movement type cannot be null");
+        if (movementType == MovementType.TRANSFER) {
+            Objects.requireNonNull(targetWarehouseId, "Target warehouse ID is required for TRANSFER");
+            if (targetWarehouseId.equals(warehouseId)) {
+                throw new IllegalArgumentException("Target warehouse must differ from source warehouse for TRANSFER");
+            }
+        }
         this.reason = reason;
         this.movedAt = movedAt != null ? movedAt : LocalDateTime.now();
+    }
+
+    /** 兼容旧调用的构造入口（无目标仓库） */
+    private InventoryMovement(String movementId, String warehouseId, String productId, String sku, int quantity, MovementType movementType, String reason, LocalDateTime movedAt) {
+        this(movementId, warehouseId, null, productId, sku, quantity, movementType, reason, movedAt);
     }
 
     // Builder class
@@ -54,6 +81,10 @@ public class InventoryMovement {
 
     public String getWarehouseId() {
         return warehouseId;
+    }
+
+    public String getTargetWarehouseId() {
+        return targetWarehouseId;
     }
 
     public String getProductId() {
@@ -109,6 +140,7 @@ public class InventoryMovement {
     public static class Builder {
         private String movementId;
         private String warehouseId;
+        private String targetWarehouseId;
         private String productId;
         private String sku;
         private int quantity;
@@ -123,6 +155,11 @@ public class InventoryMovement {
 
         public Builder warehouseId(String warehouseId) {
             this.warehouseId = warehouseId;
+            return this;
+        }
+
+        public Builder targetWarehouseId(String targetWarehouseId) {
+            this.targetWarehouseId = targetWarehouseId;
             return this;
         }
 
@@ -157,7 +194,7 @@ public class InventoryMovement {
         }
 
         public InventoryMovement build() {
-            return new InventoryMovement(movementId, warehouseId, productId, sku, quantity, movementType, reason, movedAt);
+            return new InventoryMovement(movementId, warehouseId, targetWarehouseId, productId, sku, quantity, movementType, reason, movedAt);
         }
 
         public Builder toBuilder() {

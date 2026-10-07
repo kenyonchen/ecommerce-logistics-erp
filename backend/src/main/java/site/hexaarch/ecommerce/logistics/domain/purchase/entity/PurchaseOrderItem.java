@@ -2,6 +2,7 @@ package site.hexaarch.ecommerce.logistics.domain.purchase.entity;
 
 import lombok.Getter;
 import site.hexaarch.ecommerce.logistics.domain.common.BaseEntity;
+import site.hexaarch.ecommerce.logistics.domain.common.exception.ValidationException;
 
 import java.math.BigDecimal;
 
@@ -39,7 +40,32 @@ public class PurchaseOrderItem extends BaseEntity {
      * @return 采购单项实例
      */
     public static PurchaseOrderItem create(String skuCode, String productName, Integer quantity, BigDecimal unitPrice) {
-        return new PurchaseOrderItem(skuCode, productName, quantity, unitPrice);
+        if (skuCode == null || skuCode.isBlank()) {
+            throw new ValidationException("SKU编码(skuCode)不能为空");
+        }
+        if (productName == null || productName.isBlank()) {
+            throw new ValidationException("产品名称(productName)不能为空");
+        }
+        if (quantity == null || quantity <= 0) {
+            throw new ValidationException("采购数量必须大于0");
+        }
+        if (unitPrice == null || unitPrice.signum() <= 0) {
+            throw new ValidationException("采购单价必须大于0");
+        }
+        return new PurchaseOrderItem(skuCode.trim(), productName.trim(), quantity, unitPrice);
+    }
+
+    /**
+     * 以新的数量/单价复制出同一条采购项（保留主键，供明细行修改使用）。
+     *
+     * @param newQuantity 新数量
+     * @param newUnitPrice 新单价
+     * @return 重新计算小计后的采购项
+     */
+    public PurchaseOrderItem updatedCopy(Integer newQuantity, BigDecimal newUnitPrice) {
+        PurchaseOrderItem updated = create(skuCode, productName, newQuantity, newUnitPrice);
+        updated.setId(getId());
+        return updated;
     }
 
     // 手动添加builder方法
@@ -50,6 +76,7 @@ public class PurchaseOrderItem extends BaseEntity {
     // 手动添加toBuilder方法
     public Builder toBuilder() {
         return new Builder()
+                .id(getId())
                 .skuCode(this.skuCode)
                 .productName(this.productName)
                 .quantity(this.quantity)

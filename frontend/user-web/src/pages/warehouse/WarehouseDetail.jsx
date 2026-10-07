@@ -1,7 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Button, Space, Card, Typography, Descriptions, Tag, Progress, message, Table, Modal, Input, Select, DatePicker } from 'antd';
-import { ArrowLeftOutlined, EditOutlined, DeleteOutlined, InboxOutlined, EnvironmentOutlined, FileSearchOutlined } from '@ant-design/icons';
+import {
+  Button, Space, Card, Typography, Descriptions, Tag, message, Table, Modal, Input, InputNumber, Select, Form, Popconfirm
+} from 'antd';
+import {
+  ArrowLeftOutlined, EditOutlined, DeleteOutlined, InboxOutlined, EnvironmentOutlined,
+  PlusOutlined, ImportOutlined, ExportOutlined
+} from '@ant-design/icons';
 import { warehouseApi } from '../../services/api';
 
 const { Title } = Typography;
@@ -12,256 +17,217 @@ const WarehouseDetail = () => {
   const navigate = useNavigate();
   const [warehouse, setWarehouse] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [inventoryData, setInventoryData] = useState([]);
   const [inventoryModalVisible, setInventoryModalVisible] = useState(false);
   const [locationModalVisible, setLocationModalVisible] = useState(false);
-  const [inventoryData, setInventoryData] = useState([]);
-  const [locationData, setLocationData] = useState([]);
-  const [inventoryCheckModalVisible, setInventoryCheckModalVisible] = useState(false);
+  const [locationAddModalVisible, setLocationAddModalVisible] = useState(false);
+  const [inventoryFormModalVisible, setInventoryFormModalVisible] = useState(false);
+  const [inventoryFormType, setInventoryFormType] = useState('IN');
+  const [inventoryForm] = Form.useForm();
+  const [locationForm] = Form.useForm();
+  const [editForm] = Form.useForm();
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  // 仓库状态映射
-  const statusMap = {
-    ACTIVE: { text: '活跃', color: 'success' },
-    INACTIVE: { text: '不活跃', color: 'default' },
-    MAINTENANCE: { text: '维护中', color: 'warning' }
+  // 状态映射
+  const inventoryStatusMap = {
+    NORMAL: { text: '正常', color: 'success' },
+    SHORTAGE: { text: '不足', color: 'warning' },
+    EXCESS: { text: '过剩', color: 'blue' },
+    OUT_OF_STOCK: { text: '缺货', color: 'error' }
   };
 
-  // 仓库类型映射
-  const typeMap = {
-    PRIMARY: '主仓库',
-    SECONDARY: '二级仓库',
-    REGIONAL: '区域仓库',
-    CROSS_DOCK: '跨境仓库'
+  const locationTypeMap = {
+    SHELF: '货架',
+    PALLET: '托盘',
+    BIN: '料箱',
+    AREA: '存储区'
   };
 
-  // 获取仓库详情
-  const fetchWarehouseDetail = async () => {
+  // 获取仓库详情与库存
+  const fetchWarehouseDetail = useCallback(async () => {
     setLoading(true);
     try {
-      // 这里简化处理，实际应该调用后端的详情API
-      // 暂时使用模拟数据
-      const capacity = 50000;
-      const usage = 35000;
-      const usageRate = (usage / capacity) * 100;
-      
-      const mockWarehouseDetail = {
-        id: id,
-        warehouseName: `仓库${id.split('-')[1]}`,
-        location: `城市${id.split('-')[1]}`,
-        type: 'PRIMARY',
-        status: 'ACTIVE',
-        capacity: capacity,
-        usage: usage,
-        usageRate: usageRate,
-        manager: `管理员${id.split('-')[1]}`,
-        contact: `1380013800${id.split('-')[1]}`,
-        address: `城市${id.split('-')[1]} 区${id.split('-')[1]} 街道${id.split('-')[1]}号`,
-        description: '这是一个测试仓库，用于展示仓库详情页面。',
-        createdAt: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
-        updatedAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString()
-      };
-      
-      setWarehouse(mockWarehouseDetail);
-      
-      // 模拟库存数据
-      setInventoryData([
-        {
-          id: 'inv-001',
-          productId: 'prod-001',
-          productName: 'iPhone 15 Pro',
-          sku: 'SKU001',
-          quantity: 100,
-          location: 'A-01-01',
-          lastUpdated: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString()
-        },
-        {
-          id: 'inv-002',
-          productId: 'prod-002',
-          productName: 'AirPods Pro 2',
-          sku: 'SKU002',
-          quantity: 200,
-          location: 'A-01-02',
-          lastUpdated: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
-        }
-      ]);
-      
-      // 模拟库位数据
-      setLocationData([
-        {
-          id: 'loc-001',
-          code: 'A-01-01',
-          type: 'SHELF',
-          status: 'OCCUPIED',
-          capacity: 500,
-          usage: 100,
-          usageRate: 20
-        },
-        {
-          id: 'loc-002',
-          code: 'A-01-02',
-          type: 'SHELF',
-          status: 'OCCUPIED',
-          capacity: 500,
-          usage: 200,
-          usageRate: 40
-        },
-        {
-          id: 'loc-003',
-          code: 'A-01-03',
-          type: 'SHELF',
-          status: 'EMPTY',
-          capacity: 500,
-          usage: 0,
-          usageRate: 0
-        }
-      ]);
+      const data = await warehouseApi.getWarehouseById(id);
+      setWarehouse(data);
+      const inventory = await warehouseApi.getInventory(id);
+      setInventoryData(Array.isArray(inventory) ? inventory : []);
     } catch (error) {
       console.error('获取仓库详情失败:', error);
-      message.error('获取仓库详情失败');
     } finally {
       setLoading(false);
     }
-  };
-
-  // 初始化加载数据
-  useEffect(() => {
-    fetchWarehouseDetail();
   }, [id]);
 
-  // 返回列表页
-  const handleBack = () => {
-    navigate('/warehouses');
-  };
+  useEffect(() => {
+    fetchWarehouseDetail();
+  }, [fetchWarehouseDetail]);
+
+  const handleBack = () => navigate('/warehouses');
 
   // 编辑仓库
   const handleEdit = () => {
-    // 实际应该跳转到编辑页面
-    message.info('编辑功能开发中');
+    editForm.setFieldsValue({
+      warehouseName: warehouse.warehouseName,
+      warehouseCode: warehouse.warehouseCode,
+      address: warehouse.address,
+      capacity: warehouse.capacity
+    });
+    setEditModalVisible(true);
+  };
+
+  const handleEditSubmit = async () => {
+    try {
+      const values = await editForm.validateFields();
+      setSubmitting(true);
+      await warehouseApi.updateWarehouse(id, values);
+      message.success('仓库更新成功');
+      setEditModalVisible(false);
+      fetchWarehouseDetail();
+    } catch {
+      // 表单校验失败或接口错误
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   // 删除仓库
-  const handleDelete = () => {
-    // 实际应该调用后端API删除
-    message.info('删除功能开发中');
+  const handleDelete = async () => {
+    try {
+      await warehouseApi.deleteWarehouse(id);
+      message.success('仓库删除成功');
+      navigate('/warehouses');
+    } catch (error) {
+      console.error('删除仓库失败:', error);
+    }
   };
 
-  // 处理库存管理
-  const handleInventoryManagement = () => {
-    setInventoryModalVisible(true);
+  // 变更状态
+  const handleToggleStatus = async () => {
+    try {
+      const data = await warehouseApi.changeStatus(id, !warehouse.active);
+      message.success(data.active ? '仓库已启用' : '仓库已停用');
+      fetchWarehouseDetail();
+    } catch (error) {
+      console.error('变更状态失败:', error);
+    }
   };
 
-  // 处理库位管理
-  const handleLocationManagement = () => {
-    setLocationModalVisible(true);
+  // 添加库位
+  const handleAddLocation = async () => {
+    try {
+      const values = await locationForm.validateFields();
+      setSubmitting(true);
+      await warehouseApi.addLocation(id, values);
+      message.success('库位添加成功');
+      setLocationModalVisible(false);
+      locationForm.resetFields();
+      fetchWarehouseDetail();
+    } catch {
+      // 表单校验失败或接口错误
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  // 处理库存盘点
-  const handleInventoryCheck = () => {
-    message.loading('正在生成库存盘点表...');
-    
-    // 模拟生成成功
-    setTimeout(() => {
-      message.success('库存盘点表生成成功');
-      setInventoryCheckModalVisible(true);
-    }, 1000);
+  // 打开出入库弹窗
+  const openInventoryForm = (type) => {
+    setInventoryFormType(type);
+    inventoryForm.resetFields();
+    setInventoryFormModalVisible(true);
+  };
+
+  // 提交出入库
+  const handleInventorySubmit = async () => {
+    try {
+      const values = await inventoryForm.validateFields();
+      setSubmitting(true);
+      const payload = { sku: values.sku, quantity: values.quantity };
+      if (inventoryFormType === 'IN') {
+        await warehouseApi.inventoryIn(id, payload);
+        message.success('入库成功');
+      } else {
+        await warehouseApi.inventoryOut(id, payload);
+        message.success('出库成功');
+      }
+      setInventoryFormModalVisible(false);
+      setInventoryModalVisible(true);
+      fetchWarehouseDetail();
+    } catch {
+      // 表单校验失败或接口错误
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // 单条盘点
+  const handleCount = async (record) => {
+    const actualQuantity = window.prompt(`输入 SKU [${record.sku}] 的实际盘点数量：`, String(record.quantity));
+    if (actualQuantity === null) return;
+    const parsed = parseInt(actualQuantity, 10);
+    if (Number.isNaN(parsed) || parsed < 0) {
+      message.error('请输入有效的非负整数');
+      return;
+    }
+    try {
+      await warehouseApi.countInventory(id, record.productId || record.sku, parsed);
+      message.success('盘点完成');
+      fetchWarehouseDetail();
+    } catch (error) {
+      console.error('盘点失败:', error);
+    }
   };
 
   // 库存表格列
   const inventoryColumns = [
+    { title: 'SKU', dataIndex: 'sku', key: 'sku', width: 140 },
+    { title: '产品ID', dataIndex: 'productId', key: 'productId', width: 140, render: (t) => t || '-' },
+    { title: '数量', dataIndex: 'quantity', key: 'quantity', width: 80 },
     {
-      title: '产品名称',
-      dataIndex: 'productName',
-      key: 'productName'
+      title: '状态',
+      dataIndex: 'inventoryStatus',
+      key: 'inventoryStatus',
+      width: 90,
+      render: (text) => {
+        const status = inventoryStatusMap[text] || { text, color: 'default' };
+        return <Tag color={status.color}>{status.text}</Tag>;
+      }
     },
-    {
-      title: 'SKU',
-      dataIndex: 'sku',
-      key: 'sku',
-      width: 100
-    },
-    {
-      title: '数量',
-      dataIndex: 'quantity',
-      key: 'quantity',
-      width: 80
-    },
-    {
-      title: '库位',
-      dataIndex: 'location',
-      key: 'location',
-      width: 100
-    },
+    { title: '库位', dataIndex: 'locationId', key: 'locationId', width: 120, render: (t) => t || '-' },
     {
       title: '最后更新',
       dataIndex: 'lastUpdated',
       key: 'lastUpdated',
-      width: 180,
-      render: (text) => new Date(text).toLocaleString()
+      width: 170,
+      render: (text) => (text ? new Date(text).toLocaleString() : '-')
     },
     {
       title: '操作',
       key: 'action',
-      width: 120,
-      render: () => (
-        <Space size="middle">
-          <Button type="link">编辑</Button>
-          <Button type="link">调整</Button>
-        </Space>
-      )
+      width: 90,
+      render: (_, record) => <Button type="link" onClick={() => handleCount(record)}>盘点</Button>
     }
   ];
 
   // 库位表格列
   const locationColumns = [
-    {
-      title: '库位编码',
-      dataIndex: 'code',
-      key: 'code',
-      width: 120
-    },
+    { title: '库位编码', dataIndex: 'locationCode', key: 'locationCode', width: 120 },
     {
       title: '类型',
-      dataIndex: 'type',
-      key: 'type',
+      dataIndex: 'locationType',
+      key: 'locationType',
       width: 100,
-      render: (text) => {
-        const typeMap = {
-          SHELF: '货架',
-          PALLET: '托盘',
-          BIN: '料箱'
-        };
-        return typeMap[text] || text;
-      }
+      render: (text) => locationTypeMap[text] || text
     },
+    { title: '容量', dataIndex: 'capacity', key: 'capacity', width: 80 },
+    { title: '已占用', dataIndex: 'occupied', key: 'occupied', width: 80 },
     {
       title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 100,
-      render: (text) => {
-        const statusMap = {
-          OCCUPIED: <Tag color="blue">已占用</Tag>,
-          EMPTY: <Tag color="green">空</Tag>,
-          MAINTENANCE: <Tag color="orange">维护中</Tag>
-        };
-        return statusMap[text] || text;
-      }
-    },
-    {
-      title: '容量利用率',
-      dataIndex: 'usageRate',
-      key: 'usageRate',
-      width: 120,
-      render: (text) => <Progress percent={text} size="small" />
-    },
-    {
-      title: '操作',
-      key: 'action',
-      width: 120,
-      render: () => (
-        <Space size="middle">
-          <Button type="link">编辑</Button>
-          <Button type="link">查看</Button>
-        </Space>
+      dataIndex: 'active',
+      key: 'active',
+      width: 90,
+      render: (active) => (
+        <Tag color={active ? 'green' : 'default'}>{active ? '启用' : '停用'}</Tag>
       )
     }
   ];
@@ -271,8 +237,15 @@ const WarehouseDetail = () => {
   }
 
   if (!warehouse) {
-    return <div>仓库不存在</div>;
+    return (
+      <div style={{ textAlign: 'center', padding: 40 }}>
+        <p>仓库不存在</p>
+        <Button onClick={handleBack}>返回列表</Button>
+      </div>
+    );
   }
+
+  const locations = warehouse.locations || [];
 
   return (
     <div>
@@ -282,55 +255,46 @@ const WarehouseDetail = () => {
           <Title level={4}>仓库详情</Title>
         </div>
         <Space>
-          <Button icon={<InboxOutlined />} onClick={handleInventoryManagement}>库存管理</Button>
-          <Button icon={<EnvironmentOutlined />} onClick={handleLocationManagement}>库位管理</Button>
-          <Button icon={<FileSearchOutlined />} onClick={handleInventoryCheck}>库存盘点</Button>
-          <Button type="primary" icon={<EditOutlined />} onClick={handleEdit}>编辑</Button>
-          <Button danger icon={<DeleteOutlined />} onClick={handleDelete}>删除</Button>
+          <Button icon={<InboxOutlined />} onClick={() => setInventoryModalVisible(true)}>库存管理</Button>
+          <Button icon={<EnvironmentOutlined />} onClick={() => setLocationModalVisible(true)}>库位管理</Button>
+          <Button icon={<EditOutlined />} onClick={handleEdit}>编辑</Button>
+          <Button onClick={handleToggleStatus}>{warehouse.active ? '停用' : '启用'}</Button>
+          <Popconfirm title="确认删除该仓库？" onConfirm={handleDelete}>
+            <Button danger icon={<DeleteOutlined />}>删除</Button>
+          </Popconfirm>
         </Space>
       </div>
 
       {/* 仓库基本信息 */}
       <Card style={{ marginBottom: 5 }}>
         <Descriptions title="基本信息" column={2}>
-          <Descriptions.Item label="仓库ID">{warehouse.id}</Descriptions.Item>
+          <Descriptions.Item label="仓库ID">{warehouse.warehouseId}</Descriptions.Item>
+          <Descriptions.Item label="仓库编码">{warehouse.warehouseCode}</Descriptions.Item>
           <Descriptions.Item label="仓库名称">{warehouse.warehouseName}</Descriptions.Item>
-          <Descriptions.Item label="位置">{warehouse.location}</Descriptions.Item>
-          <Descriptions.Item label="类型">{typeMap[warehouse.type]}</Descriptions.Item>
+          <Descriptions.Item label="租户ID">{warehouse.tenantId || '-'}</Descriptions.Item>
           <Descriptions.Item label="状态">
-            <Tag color={statusMap[warehouse.status].color}>
-              {statusMap[warehouse.status].text}
-            </Tag>
+            <Tag color={warehouse.active ? 'success' : 'default'}>{warehouse.active ? '启用' : '停用'}</Tag>
           </Descriptions.Item>
-          <Descriptions.Item label="管理员">{warehouse.manager}</Descriptions.Item>
-          <Descriptions.Item label="联系电话">{warehouse.contact}</Descriptions.Item>
-          <Descriptions.Item label="创建时间">{new Date(warehouse.createdAt).toLocaleString()}</Descriptions.Item>
-          <Descriptions.Item label="更新时间">{new Date(warehouse.updatedAt).toLocaleString()}</Descriptions.Item>
-        </Descriptions>
-      </Card>
-
-      {/* 仓库容量信息 */}
-      <Card style={{ marginBottom: 5 }}>
-        <Descriptions title="容量信息" column={1}>
           <Descriptions.Item label="总容量">{warehouse.capacity}</Descriptions.Item>
-          <Descriptions.Item label="已使用">{warehouse.usage}</Descriptions.Item>
-          <Descriptions.Item label="容量利用率">
-            <div>
-              <Progress percent={Math.round(warehouse.usageRate)} status={warehouse.usageRate > 80 ? 'warning' : warehouse.usageRate > 90 ? 'error' : 'normal'} />
-              <div style={{ marginTop: 8, fontSize: 14 }}>
-                {Math.round(warehouse.usage)}/{warehouse.capacity} ({Math.round(warehouse.usageRate)}%)
-              </div>
-            </div>
+          <Descriptions.Item label="详细地址" span={2}>{warehouse.address || '-'}</Descriptions.Item>
+          <Descriptions.Item label="创建时间">
+            {warehouse.createdAt ? new Date(warehouse.createdAt).toLocaleString() : '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label="更新时间">
+            {warehouse.updatedAt ? new Date(warehouse.updatedAt).toLocaleString() : '-'}
           </Descriptions.Item>
         </Descriptions>
       </Card>
 
-      {/* 仓库地址和描述 */}
-      <Card style={{ marginBottom: 5 }}>
-        <Descriptions title="地址和描述" column={1}>
-          <Descriptions.Item label="详细地址">{warehouse.address}</Descriptions.Item>
-          <Descriptions.Item label="描述">{warehouse.description}</Descriptions.Item>
-        </Descriptions>
+      {/* 库存概览 */}
+      <Card style={{ marginBottom: 5 }} title={`库存概览（${inventoryData.length} 条记录）`}>
+        <Table
+          columns={inventoryColumns}
+          dataSource={inventoryData}
+          rowKey="inventoryId"
+          pagination={{ pageSize: 5 }}
+          size="small"
+        />
       </Card>
 
       {/* 库存管理弹窗 */}
@@ -339,17 +303,48 @@ const WarehouseDetail = () => {
         open={inventoryModalVisible}
         onCancel={() => setInventoryModalVisible(false)}
         footer={null}
-        width={800}
+        width={900}
       >
-        <div style={{ marginBottom: 5 }}>
-          <Button type="primary">添加库存</Button>
+        <div style={{ marginBottom: 8 }}>
+          <Space>
+            <Button type="primary" icon={<ImportOutlined />} onClick={() => openInventoryForm('IN')}>入库</Button>
+            <Button icon={<ExportOutlined />} onClick={() => openInventoryForm('OUT')}>出库</Button>
+          </Space>
         </div>
         <Table
           columns={inventoryColumns}
           dataSource={inventoryData}
-          rowKey="id"
+          rowKey="inventoryId"
           pagination={{ pageSize: 10 }}
+          size="small"
         />
+      </Modal>
+
+      {/* 出入库弹窗 */}
+      <Modal
+        title={inventoryFormType === 'IN' ? '库存入库' : '库存出库'}
+        open={inventoryFormModalVisible}
+        onCancel={() => setInventoryFormModalVisible(false)}
+        onOk={handleInventorySubmit}
+        confirmLoading={submitting}
+        destroyOnClose
+      >
+        <Form form={inventoryForm} layout="vertical">
+          <Form.Item
+            label="SKU编码"
+            name="sku"
+            rules={[{ required: true, message: '请输入SKU编码' }]}
+          >
+            <Input placeholder="请输入SKU编码" />
+          </Form.Item>
+          <Form.Item
+            label={inventoryFormType === 'IN' ? '入库数量' : '出库数量'}
+            name="quantity"
+            rules={[{ required: true, message: '请输入数量' }]}
+          >
+            <InputNumber style={{ width: '100%' }} min={1} placeholder="请输入数量" />
+          </Form.Item>
+        </Form>
       </Modal>
 
       {/* 库位管理弹窗 */}
@@ -360,52 +355,84 @@ const WarehouseDetail = () => {
         footer={null}
         width={800}
       >
-        <div style={{ marginBottom: 5 }}>
-          <Button type="primary">添加库位</Button>
+        <div style={{ marginBottom: 8 }}>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setLocationAddModalVisible(true)}>添加库位</Button>
         </div>
         <Table
           columns={locationColumns}
-          dataSource={locationData}
-          rowKey="id"
+          dataSource={locations}
+          rowKey="locationId"
           pagination={{ pageSize: 10 }}
+          size="small"
         />
       </Modal>
 
-      {/* 库存盘点弹窗 */}
+      {/* 编辑仓库弹窗 */}
       <Modal
-        title="库存盘点"
-        open={inventoryCheckModalVisible}
-        onCancel={() => setInventoryCheckModalVisible(false)}
-        footer={null}
-        width={800}
+        title="编辑仓库"
+        open={editModalVisible}
+        onCancel={() => setEditModalVisible(false)}
+        onOk={handleEditSubmit}
+        confirmLoading={submitting}
+        destroyOnClose
       >
-        <div style={{ marginBottom: 5 }}>
-          <p>库存盘点表已生成，包含以下信息：</p>
-          <ul>
-            <li>盘点时间：{new Date().toLocaleString()}</li>
-            <li>盘点仓库：{warehouse.warehouseName}</li>
-            <li>盘点项目数：{inventoryData.length}</li>
-            <li>盘点状态：待确认</li>
-          </ul>
-        </div>
-        <Table
-          columns={[
-            ...inventoryColumns,
-            {
-              title: '盘点数量',
-              key: 'checkQuantity',
-              width: 100,
-              render: () => <Input style={{ width: 80 }} placeholder="实际数量" />
-            }
-          ]}
-          dataSource={inventoryData}
-          rowKey="id"
-          pagination={{ pageSize: 10 }}
-        />
-        <div style={{ marginTop: 16, textAlign: 'right' }}>
-          <Button>导出盘点表</Button>
-          <Button type="primary" style={{ marginLeft: 8 }}>确认盘点</Button>
-        </div>
+        <Form form={editForm} layout="vertical">
+          <Form.Item
+            label="仓库名称"
+            name="warehouseName"
+            rules={[{ required: true, message: '请输入仓库名称' }]}
+          >
+            <Input placeholder="请输入仓库名称" />
+          </Form.Item>
+          <Form.Item
+            label="仓库编码"
+            name="warehouseCode"
+            rules={[{ required: true, message: '请输入仓库编码' }]}
+          >
+            <Input placeholder="请输入仓库编码" />
+          </Form.Item>
+          <Form.Item
+            label="详细地址"
+            name="address"
+            rules={[{ required: true, message: '请输入详细地址' }]}
+          >
+            <Input.TextArea rows={2} placeholder="请输入详细地址" />
+          </Form.Item>
+          <Form.Item
+            label="总容量"
+            name="capacity"
+            rules={[{ required: true, message: '请输入总容量' }]}
+          >
+            <InputNumber style={{ width: '100%' }} min={1} placeholder="请输入总容量" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 添加库位弹窗 */}
+      <Modal
+        title="添加库位"
+        open={locationAddModalVisible}
+        onCancel={() => setLocationAddModalVisible(false)}
+        onOk={handleAddLocation}
+        confirmLoading={submitting}
+        destroyOnClose
+      >
+        <Form form={locationForm} layout="vertical">
+          <Form.Item label="库位编码" name="locationCode" rules={[{ required: true, message: '请输入库位编码' }]}>
+            <Input placeholder="例如：A-01-01" />
+          </Form.Item>
+          <Form.Item label="库位类型" name="locationType" initialValue="SHELF">
+            <Select>
+              <Option value="SHELF">货架</Option>
+              <Option value="PALLET">托盘</Option>
+              <Option value="BIN">料箱</Option>
+              <Option value="AREA">存储区</Option>
+            </Select>
+          </Form.Item>
+          <Form.Item label="容量" name="capacity" initialValue={100}>
+            <InputNumber style={{ width: '100%' }} min={1} />
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   );

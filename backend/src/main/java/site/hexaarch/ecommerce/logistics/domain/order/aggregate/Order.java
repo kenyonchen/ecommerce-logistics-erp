@@ -12,8 +12,10 @@ import site.hexaarch.ecommerce.logistics.domain.order.valueobject.ShippingAddres
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * 订单聚合根，是订单聚合的核心实体，负责管理订单行项、收货地址、付款信息和订单状态。
@@ -22,10 +24,21 @@ import java.util.List;
  */
 @Getter
 public class Order {
+    /**
+     * 系统内手工创建订单的来源标识
+     */
+    public static final String MANUAL_PLATFORM = "MANUAL";
+    /**
+     * 文件导入订单的来源标识
+     */
+    public static final String FILE_PLATFORM = "FILE";
+
     protected List<Object> domainEvents;
     private String id;
     private String tenantId;
     private String customerId;
+    private String customerName;
+    private String customerEmail;
     private String orderNumber;
     private List<OrderItem> orderItems;
     private ShippingAddress shippingAddress;
@@ -33,6 +46,14 @@ public class Order {
     private LocalDateTime createdAt;
     private OrderStatus orderStatus;
     private LocalDateTime updatedAt;
+    /**
+     * 来源平台（PlatformName 名称字符串；手工创建或文件导入时为 FILE / MANUAL）
+     */
+    private String platform;
+    /**
+     * 第三方平台的订单号，用于导入幂等去重
+     */
+    private String platformOrderId;
 
     /**
      * 受保护的无参构造函数，用于JPA和MapStruct。
@@ -56,10 +77,15 @@ public class Order {
      * @param orderStatus     订单状态
      * @param updatedAt       更新时间
      */
-    private Order(String id, String tenantId, String customerId, String orderNumber, List<OrderItem> orderItems, ShippingAddress shippingAddress, PaymentInfo paymentInfo, LocalDateTime createdAt, OrderStatus orderStatus, LocalDateTime updatedAt) {
+    private Order(String id, String tenantId, String customerId, String customerName, String customerEmail,
+                  String orderNumber, List<OrderItem> orderItems, ShippingAddress shippingAddress,
+                  PaymentInfo paymentInfo, LocalDateTime createdAt, OrderStatus orderStatus,
+                  LocalDateTime updatedAt, String platform, String platformOrderId) {
         this.id = id != null ? id : java.util.UUID.randomUUID().toString();
         this.tenantId = tenantId;
         this.customerId = customerId;
+        this.customerName = customerName;
+        this.customerEmail = customerEmail;
         this.orderNumber = orderNumber;
         this.orderItems = orderItems != null ? orderItems : new ArrayList<>();
         this.shippingAddress = shippingAddress;
@@ -67,11 +93,13 @@ public class Order {
         this.createdAt = createdAt != null ? createdAt : LocalDateTime.now();
         this.orderStatus = orderStatus != null ? orderStatus : OrderStatus.PENDING;
         this.updatedAt = updatedAt != null ? updatedAt : LocalDateTime.now();
+        this.platform = platform;
+        this.platformOrderId = platformOrderId;
         this.domainEvents = new ArrayList<>(); // 初始化domainEvents
     }
 
     /**
-     * 创建新订单。
+     * 创建新订单（系统内手工创建）。
      *
      * @param tenantId        租户ID
      * @param customerId      客户ID
@@ -81,17 +109,31 @@ public class Order {
      * @return 新的订单
      */
     public static Order create(String tenantId, String customerId, List<OrderItem> orderItems, ShippingAddress shippingAddress, PaymentInfo paymentInfo) {
+        return create(tenantId, customerId, null, null, null, orderItems, shippingAddress, paymentInfo,
+                OrderStatus.PENDING, MANUAL_PLATFORM, null);
+    }
+
+    /**
+     * 创建新订单（完整参数，供导入等场景使用）。
+     */
+    public static Order create(String tenantId, String customerId, String customerName, String customerEmail,
+                               String orderNumber, List<OrderItem> orderItems, ShippingAddress shippingAddress,
+                               PaymentInfo paymentInfo, OrderStatus status, String platform, String platformOrderId) {
         Order order = new Order(
                 java.util.UUID.randomUUID().toString(), // id
                 tenantId, // tenantId
                 customerId, // customerId
-                null, // orderNumber
+                customerName,
+                customerEmail,
+                hasText(orderNumber) ? orderNumber.trim() : generateOrderNumber(), // orderNumber
                 orderItems, // orderItems
                 shippingAddress, // shippingAddress
                 paymentInfo, // paymentInfo
                 LocalDateTime.now(), // createdAt
-                OrderStatus.PENDING, // orderStatus
-                LocalDateTime.now() // updatedAt
+                status != null ? status : OrderStatus.PENDING, // orderStatus
+                LocalDateTime.now(), // updatedAt
+                hasText(platform) ? platform.trim() : MANUAL_PLATFORM,
+                hasText(platformOrderId) ? platformOrderId.trim() : null
         );
 
         // 注册订单创建事件
@@ -107,6 +149,52 @@ public class Order {
         order.registerDomainEvent(orderCreatedEvent);
 
         return order;
+    }
+
+    /**
+     * 由第三方平台数据创建订单。订单号优先取平台订单号，缺失时按规则生成。
+     */
+    public static Order createFromPlatform(String tenantId, String platform, String platformOrderId,
+                                           String orderNumber, String customerId, String customerName,
+                                           String customerEmail, List<OrderItem> orderItems,
+                                           ShippingAddress shippingAddress, PaymentInfo paymentInfo,
+                                           OrderStatus status, LocalDateTime createdAt) {
+        String finalOrderNumber = hasText(orderNumber) ? orderNumber.trim()
+                : (hasText(platformOrderId) ? platformOrderId.trim() : generateOrderNumber());
+        Order order = new Order(
+                java.util.UUID.randomUUID().toString(),
+                tenantId,
+                customerId,
+                customerName,
+                customerEmail,
+                finalOrderNumber,
+                orderItems,
+                shippingAddress,
+                paymentInfo,
+                createdAt != null ? createdAt : LocalDateTime.now(),
+                status != null ? status : OrderStatus.PENDING,
+                LocalDateTime.now(),
+                hasText(platform) ? platform.trim() : FILE_PLATFORM,
+                hasText(platformOrderId) ? platformOrderId.trim() : null
+        );
+        order.registerDomainEvent(OrderCreatedEvent.builder()
+                .orderId(order.getId())
+                .tenantId(order.getTenantId())
+                .customerId(order.getCustomerId())
+                .orderItems(order.getOrderItems())
+                .shippingAddress(order.getShippingAddress())
+                .paymentInfo(order.getPaymentInfo())
+                .createdAt(order.getCreatedAt())
+                .build());
+        return order;
+    }
+
+    /**
+     * 生成系统内部订单号：ORD + 日期 + 8位随机串
+     */
+    public static String generateOrderNumber() {
+        return "ORD" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"))
+                + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
     }
 
     public static OrderBuilder builder() {
@@ -156,7 +244,16 @@ public class Order {
      * @param newStatus 新的订单状态
      */
     public void updateStatus(OrderStatus newStatus) {
+        if (newStatus == null) {
+            throw new site.hexaarch.ecommerce.logistics.domain.common.exception.ValidationException("订单状态不能为空");
+        }
         OrderStatus oldStatus = this.orderStatus;
+        if (oldStatus != null && !oldStatus.canTransitionTo(newStatus)) {
+            throw new site.hexaarch.ecommerce.logistics.domain.common.exception.InvalidOperationException(
+                    "订单状态不允许从 " + oldStatus.getLabel() + " 变更为 " + newStatus.getLabel()
+                            + "，允许的下一状态: " + oldStatus.allowedNextStatuses().stream()
+                            .map(OrderStatus::getLabel).reduce((a, b) -> a + "、" + b).orElse("无"));
+        }
         this.orderStatus = newStatus;
         this.updatedAt = LocalDateTime.now();
 
@@ -224,6 +321,38 @@ public class Order {
         this.customerId = customerId;
     }
 
+    public String getCustomerName() {
+        return customerName;
+    }
+
+    protected void setCustomerName(String customerName) {
+        this.customerName = customerName;
+    }
+
+    public String getCustomerEmail() {
+        return customerEmail;
+    }
+
+    protected void setCustomerEmail(String customerEmail) {
+        this.customerEmail = customerEmail;
+    }
+
+    public String getPlatform() {
+        return platform;
+    }
+
+    protected void setPlatform(String platform) {
+        this.platform = platform;
+    }
+
+    public String getPlatformOrderId() {
+        return platformOrderId;
+    }
+
+    protected void setPlatformOrderId(String platformOrderId) {
+        this.platformOrderId = platformOrderId;
+    }
+
     public String getOrderNumber() {
         return orderNumber;
     }
@@ -284,6 +413,8 @@ public class Order {
         private String id;
         private String tenantId;
         private String customerId;
+        private String customerName;
+        private String customerEmail;
         private String orderNumber;
         private List<OrderItem> orderItems;
         private ShippingAddress shippingAddress;
@@ -291,6 +422,8 @@ public class Order {
         private LocalDateTime createdAt;
         private OrderStatus orderStatus;
         private LocalDateTime updatedAt;
+        private String platform;
+        private String platformOrderId;
 
         public OrderBuilder id(String id) {
             this.id = id;
@@ -304,6 +437,26 @@ public class Order {
 
         public OrderBuilder customerId(String customerId) {
             this.customerId = customerId;
+            return this;
+        }
+
+        public OrderBuilder customerName(String customerName) {
+            this.customerName = customerName;
+            return this;
+        }
+
+        public OrderBuilder customerEmail(String customerEmail) {
+            this.customerEmail = customerEmail;
+            return this;
+        }
+
+        public OrderBuilder platform(String platform) {
+            this.platform = platform;
+            return this;
+        }
+
+        public OrderBuilder platformOrderId(String platformOrderId) {
+            this.platformOrderId = platformOrderId;
             return this;
         }
 
@@ -347,14 +500,25 @@ public class Order {
                     id != null ? id : java.util.UUID.randomUUID().toString(),
                     tenantId,
                     customerId,
-                    orderNumber,
+                    customerName,
+                    customerEmail,
+                    orderNumber != null ? orderNumber : generateOrderNumber(),
                     orderItems != null ? orderItems : new ArrayList<>(),
                     shippingAddress,
                     paymentInfo,
                     createdAt != null ? createdAt : java.time.LocalDateTime.now(),
                     orderStatus != null ? orderStatus : OrderStatus.PENDING,
-                    updatedAt != null ? updatedAt : java.time.LocalDateTime.now()
+                    updatedAt != null ? updatedAt : java.time.LocalDateTime.now(),
+                    platform,
+                    platformOrderId
             );
         }
+    }
+
+    /**
+     * 判断字符串是否有实际内容（避免领域层依赖 Spring 工具类）
+     */
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

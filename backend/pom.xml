@@ -135,6 +135,13 @@
             <artifactId>mockito-core</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Apache POI for Excel(.xlsx) import parsing -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.2.5</version>
+        </dependency>
+
         <!-- MapStruct for object mapping -->
         <dependency>
             <groupId>org.mapstruct</groupId>

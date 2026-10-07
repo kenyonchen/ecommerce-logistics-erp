@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Form, Input, Button, Switch, message, Tabs } from 'antd';
-import { platformApi } from '../../services/api';
+import { Card, Form, Input, Button, Switch, Space, message, Tabs } from 'antd';
 
 const { TabPane } = Tabs;
 
@@ -60,17 +59,26 @@ const SystemConfig = () => {
   };
 
   return (
-    <Card title="系统配置" style={{ margin: '20px' }}>
-      <Form
-        form={form}
-        name="systemConfig"
-        labelCol={{ span: 6 }}
-        wrapperCol={{ span: 14 }}
-        onFinish={onFinish}
-        autoComplete="off"
-      >
-        <Tabs defaultActiveKey="general" tabPosition="left" style={{ minHeight: 400 }}>
-          <TabPane tab="常规设置" key="general">
+    <div className="page">
+      <div className="page__header">
+        <div>
+          <h1 className="page__title">系统配置</h1>
+          <p className="page__subtitle">站点信息、邮件服务与安全策略</p>
+        </div>
+      </div>
+
+      <Card>
+        <Form
+          form={form}
+          name="systemConfig"
+          // 窄屏纵向堆叠，避免 labelCol/wrapperCol 固定栅格把输入框挤窄
+          layout="vertical"
+          onFinish={onFinish}
+          autoComplete="off"
+        >
+          {/* 标签页改为顶部排列：左侧竖排在窄屏会把表单压到不足 200px 宽 */}
+          <Tabs defaultActiveKey="general">
+            <TabPane tab="常规设置" key="general">
             <Form.Item
               label="站点名称"
               name={['general', 'siteName']}
@@ -162,13 +170,17 @@ const SystemConfig = () => {
           </TabPane>
         </Tabs>
 
-        <Form.Item wrapperCol={{ offset: 6, span: 14 }}>
-          <Button type="primary" htmlType="submit" loading={loading}>
-            保存配置
-          </Button>
+        <Form.Item>
+          <Space>
+            <Button type="primary" htmlType="submit" loading={loading}>
+              保存配置
+            </Button>
+            <Button onClick={fetchSystemConfig}>重置</Button>
+          </Space>
         </Form.Item>
       </Form>
-    </Card>
+      </Card>
+    </div>
   );
 };
 

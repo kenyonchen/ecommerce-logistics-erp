@@ -1,0 +1,50 @@
+package site.hexaarch.ecommerce.logistics.interfaces.dto.warehouseimport;
+
+import lombok.Data;
+
+/**
+ * 店铺仓库导入预览请求：
+ * <ul>
+ *     <li>来自第三方平台店铺：提供 integrationId（或 platform + useSampleData）拉取原始数据</li>
+ *     <li>来自上传文件：提供 content（JSON/CSV文本）</li>
+ * </ul>
+ *
+ * @author kenyon
+ */
+@Data
+public class ShopWarehouseImportPreviewRequest {
+    private String tenantId;
+    /**
+     * 第三方平台集成ID
+     */
+    private String integrationId;
+    /**
+     * 平台名称，文件上传导入时可传 FILE
+     */
+    private String platform;
+    /**
+     * 拉取时的店铺/仓库关键字过滤
+     */
+    private String keyword;
+    /**
+     * 拉取条数，默认50
+     */
+    private Integer limit;
+    /**
+     * 是否使用平台示例数据（未联调真实接口时使用）
+     */
+    private Boolean useSampleData;
+    /**
+     * 上传文件内容（JSON/CSV）
+     */
+    private String content;
+    private String fileName;
+    /**
+     * 覆盖默认的字段映射关系（用户在UI上手工调整后预览）
+     */
+    private java.util.List<ShopWarehouseFieldMappingDto> mappings;
+    /**
+     * 原始行（用于二次预览，避免重复拉取平台数据）
+     */
+    private java.util.List<java.util.Map<String, Object>> rawRows;
+}

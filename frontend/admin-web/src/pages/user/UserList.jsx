@@ -1,46 +1,66 @@
 import React, { useState, useEffect } from 'react';
 import { Button, Table, Space, Modal, Form, Input, Select, message, Popconfirm, Tag } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, InfoCircleOutlined } from '@ant-design/icons';
-import { userApi, roleApi } from '../../services/api';
-
-const { Option } = Select;
+import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { userApi, tenantApi } from '../../services/api';
 
 const UserList = () => {
   const [users, setUsers] = useState([]);
-  const [roles, setRoles] = useState([]);
+  const [tenants, setTenants] = useState([]);
+  const [selectedTenantId, setSelectedTenantId] = useState('');
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [form] = Form.useForm();
 
-  // 加载用户列表和角色列表
+  /** 未选租户时回落到第一个租户，保证列表始终有数据来源 */
+  const effectiveTenantId = selectedTenantId || tenants[0]?.id || '';
+
+  // 平台管理员按租户筛选用户：先加载租户下拉
   useEffect(() => {
-    fetchUsers();
-    fetchRoles();
+    tenantApi.getTenants()
+      .then((data) => setTenants(Array.isArray(data) ? data : []))
+      .catch(() => setTenants([]));
   }, []);
 
+  // 租户列表就绪或筛选变化时重新加载用户
+  useEffect(() => {
+    if (!effectiveTenantId) {
+      setUsers([]);
+      return undefined;
+    }
+    let cancelled = false;
+    setLoading(true);
+    userApi.getUsers(effectiveTenantId)
+      .then((data) => {
+        if (!cancelled) setUsers(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setUsers([]);
+          message.error('加载用户列表失败');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveTenantId]);
+
   const fetchUsers = async () => {
+    if (!effectiveTenantId) {
+      setUsers([]);
+      return;
+    }
     setLoading(true);
     try {
-      // 获取当前租户ID（实际应用中应该从认证上下文中获取）
-      const tenantId = 'current-tenant-id';
-      const response = await userApi.getUsers(tenantId);
-      setUsers(response);
+      const response = await userApi.getUsers(effectiveTenantId);
+      setUsers(Array.isArray(response) ? response : []);
     } catch (error) {
       message.error('加载用户列表失败');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchRoles = async () => {
-    try {
-      // 获取当前租户ID（实际应用中应该从认证上下文中获取）
-      const tenantId = 'current-tenant-id';
-      const response = await roleApi.getRoles(tenantId);
-      setRoles(response);
-    } catch (error) {
-      message.error('加载角色列表失败');
     }
   };
 
@@ -78,9 +98,6 @@ const UserList = () => {
   // 保存用户
   const handleSave = async (values) => {
     try {
-      // 获取当前租户ID（实际应用中应该从认证上下文中获取）
-      const tenantId = 'current-tenant-id';
-      
       if (editingUser) {
         // 更新用户
         await userApi.updateUser(editingUser.id, values);
@@ -89,8 +106,7 @@ const UserList = () => {
         // 创建用户
         await userApi.createUser({
           ...values,
-          tenantId,
-          password: values.password || '123456' // 默认密码
+          tenantId: effectiveTenantId,
         });
         message.success('用户创建成功');
       }
@@ -122,43 +138,50 @@ const UserList = () => {
       title: '用户名',
       dataIndex: 'username',
       key: 'username',
+      width: 180,
+      ellipsis: true,
     },
     {
       title: '姓名',
       dataIndex: 'firstName',
       key: 'name',
-      render: (firstName, record) => `${firstName} ${record.lastName}`.trim(),
+      width: 120,
+      render: (firstName, record) =>
+        `${firstName || ''} ${record.lastName || ''}`.trim() || '-',
     },
     {
       title: '邮箱',
       dataIndex: 'email',
       key: 'email',
+      width: 220,
     },
     {
       title: '电话',
       dataIndex: 'phone',
       key: 'phone',
+      width: 140,
     },
     {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
+      width: 100,
       render: (status) => getStatusTag(status),
     },
     {
       title: '创建时间',
       dataIndex: 'createdAt',
       key: 'createdAt',
-      render: (createdAt) => createdAt ? new Date(createdAt).toLocaleString() : '-',
+      width: 180,
+      render: (createdAt) => (createdAt ? new Date(createdAt).toLocaleString() : '-'),
     },
     {
       title: '操作',
       key: 'action',
+      width: 180,
+      fixed: 'right',
       render: (_, record) => (
-        <Space size="middle">
-          <Button type="link" icon={<InfoCircleOutlined />} href={`/users/${record.id}`}>
-            详情
-          </Button>
+        <Space size="small">
           <Button type="link" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
             编辑
           </Button>
@@ -178,12 +201,25 @@ const UserList = () => {
   ];
 
   return (
-    <div style={{ padding: '20px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
-        <h2>用户管理</h2>
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-          新建用户
-        </Button>
+    <div className="page">
+      <div className="page__header">
+        <div>
+          <h1 className="page__title">用户管理</h1>
+          <p className="page__subtitle">按租户筛选并管理平台用户</p>
+        </div>
+        <Space wrap>
+          <Select
+            placeholder="按租户筛选"
+            style={{ width: 200, maxWidth: '100%' }}
+            value={selectedTenantId || undefined}
+            onChange={setSelectedTenantId}
+            allowClear
+            options={tenants.map((t) => ({ value: t.id, label: t.name }))}
+          />
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+            新建用户
+          </Button>
+        </Space>
       </div>
 
       <Table
@@ -191,10 +227,12 @@ const UserList = () => {
         dataSource={users}
         rowKey="id"
         loading={loading}
+        scroll={{ x: 'max-content' }}
         pagination={{
           pageSize: 10,
           showSizeChanger: true,
           pageSizeOptions: ['10', '20', '50'],
+          showTotal: (total) => `共 ${total} 条`,
         }}
       />
 
@@ -203,6 +241,8 @@ const UserList = () => {
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
         footer={null}
+        width={560}
+        destroyOnHidden
       >
         <Form
           form={form}

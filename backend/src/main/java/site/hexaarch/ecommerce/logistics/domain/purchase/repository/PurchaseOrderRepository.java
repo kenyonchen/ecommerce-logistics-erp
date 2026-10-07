@@ -1,53 +1,47 @@
 package site.hexaarch.ecommerce.logistics.domain.purchase.repository;
 
+import site.hexaarch.ecommerce.logistics.domain.common.PageResult;
 import site.hexaarch.ecommerce.logistics.domain.purchase.aggregate.PurchaseOrder;
-import site.hexaarch.ecommerce.logistics.domain.purchase.valueobject.PurchaseStatus;
 
-import java.util.List;
 import java.util.Optional;
 
 /**
  * 采购单仓储接口，负责采购单的持久化和查询操作。
+ * <p>
+ * 所有读方法都带 tenantId：采购单曾经可以跨租户直读（docs/qa/known-issues.md ISS-050），
+ * 租户条件放在仓储签名上而不是靠调用方自觉，避免再次出现漏过滤。
+ * </p>
  *
  * @author kenyon
  */
 public interface PurchaseOrderRepository {
     /**
      * 保存采购单。
+     * <p>
+     * 刻意返回 void：调用方（领域服务）持有的聚合实例才是事件的唯一来源，
+     * 若返回映射副本会清空待发事件队列，见 docs/qa/known-issues.md ISS-062。
+     * </p>
      *
      * @param purchaseOrder 采购单实例
      */
     void save(PurchaseOrder purchaseOrder);
 
     /**
-     * 根据采购单号查找采购单。
+     * 在指定租户内按采购单号查找采购单。
      *
+     * @param tenantId        租户ID
      * @param purchaseOrderId 采购单号
-     * @return 采购单实例，若不存在则返回Optional.empty()
+     * @return 采购单实例，若不存在或不属于该租户则返回Optional.empty()
      */
-    Optional<PurchaseOrder> findById(String purchaseOrderId);
+    Optional<PurchaseOrder> findById(String tenantId, String purchaseOrderId);
 
     /**
-     * 根据状态查找采购单。
+     * 分页 + 条件查询采购单，按创建时间倒序。
      *
-     * @param status 采购单状态
-     * @return 采购单列表
+     * @param query 查询条件
+     * @param page  页码（从0开始）
+     * @param size  每页条数
+     * @return 分页结果
      */
-    List<PurchaseOrder> findByStatus(PurchaseStatus status);
-
-    /**
-     * 根据供应商ID查找采购单。
-     *
-     * @param supplierId 供应商ID
-     * @return 采购单列表
-     */
-    List<PurchaseOrder> findBySupplierId(String supplierId);
-
-    /**
-     * 根据仓库ID查找采购单。
-     *
-     * @param warehouseId 仓库ID
-     * @return 采购单列表
-     */
-    List<PurchaseOrder> findByWarehouseId(String warehouseId);
+    PageResult<PurchaseOrder> search(PurchaseQuery query, int page, int size);
 }

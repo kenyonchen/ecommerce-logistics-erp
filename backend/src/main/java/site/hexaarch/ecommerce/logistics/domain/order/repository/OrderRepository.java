@@ -1,5 +1,6 @@
 package site.hexaarch.ecommerce.logistics.domain.order.repository;
 
+import site.hexaarch.ecommerce.logistics.domain.common.PageResult;
 import site.hexaarch.ecommerce.logistics.domain.order.aggregate.Order;
 import site.hexaarch.ecommerce.logistics.domain.order.valueobject.OrderStatus;
 
@@ -57,4 +58,24 @@ public interface OrderRepository {
      * @param id 订单ID
      */
     void delete(String id);
+
+    /**
+     * 根据订单号查找订单（全局唯一）。
+     */
+    Optional<Order> findByOrderNumber(String orderNumber);
+
+    /**
+     * 按「租户 + 平台 + 平台订单号」查找订单，用于导入幂等去重。
+     */
+    Optional<Order> findByPlatformOrderId(String tenantId, String platform, String platformOrderId);
+
+    /**
+     * 判断「租户 + 平台 + 平台订单号」是否已存在。
+     */
+    boolean existsByPlatformOrderId(String tenantId, String platform, String platformOrderId);
+
+    /**
+     * 分页 + 条件查询订单，按创建时间倒序。
+     */
+    PageResult<Order> search(OrderQuery query, int page, int size);
 }

@@ -16,7 +16,8 @@ const TenantDetail = () => {
     setLoading(true);
     try {
       const response = await tenantApi.getTenantById(id);
-      setTenant(response.data);
+      // 拦截器已解包 Result.data，直接使用
+      setTenant(response);
     } catch (error) {
       console.error('获取租户详情失败:', error);
     } finally {

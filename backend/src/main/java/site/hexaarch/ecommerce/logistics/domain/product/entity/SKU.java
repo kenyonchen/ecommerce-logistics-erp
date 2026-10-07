@@ -26,6 +26,10 @@ public class SKU {
      */
     private final String productId;
     /**
+     * SKU名称（变体标题），为空时使用SKU编码
+     */
+    private String name;
+    /**
      * 重量（克）
      */
     private final Integer weightInGrams;
@@ -41,8 +45,12 @@ public class SKU {
      * SKU价格信息
      */
     private ProductPrice price;
+    /**
+     * 是否启用
+     */
+    private boolean active;
 
-    private SKU(String id, String skuCode, String productId, Integer weightInGrams, Integer volumeInCubicCentimeters, List<ProductAttribute> attributes, ProductPrice price) {
+    private SKU(String id, String skuCode, String productId, Integer weightInGrams, Integer volumeInCubicCentimeters, List<ProductAttribute> attributes, ProductPrice price, String name, boolean active) {
         this.id = id;
         this.skuCode = skuCode;
         this.productId = productId;
@@ -50,6 +58,8 @@ public class SKU {
         this.volumeInCubicCentimeters = volumeInCubicCentimeters;
         this.attributes = attributes;
         this.price = price;
+        this.name = name;
+        this.active = active;
     }
 
     // Builder class
@@ -85,6 +95,31 @@ public class SKU {
         return skuCode;
     }
 
+    /**
+     * 获取SKU名称，为空时回退为SKU编码
+     */
+    public String getName() {
+        return (name == null || name.isBlank()) ? skuCode : name;
+    }
+
+    public boolean isActive() {
+        return active;
+    }
+
+    /**
+     * 更新SKU名称
+     */
+    public void updateName(String name) {
+        this.name = name;
+    }
+
+    /**
+     * 启用/停用SKU
+     */
+    public void changeActive(boolean active) {
+        this.active = active;
+    }
+
     public static class Builder {
         private String id;
         private String skuCode;
@@ -93,6 +128,18 @@ public class SKU {
         private Integer volumeInCubicCentimeters;
         private List<ProductAttribute> attributes;
         private ProductPrice price;
+        private String name;
+        private boolean active = true;
+
+        public Builder name(String name) {
+            this.name = name;
+            return this;
+        }
+
+        public Builder active(boolean active) {
+            this.active = active;
+            return this;
+        }
 
         public Builder id(String id) {
             this.id = id;
@@ -130,7 +177,7 @@ public class SKU {
         }
 
         public SKU build() {
-            return new SKU(id, skuCode, productId, weightInGrams, volumeInCubicCentimeters, attributes, price);
+            return new SKU(id, skuCode, productId, weightInGrams, volumeInCubicCentimeters, attributes, price, name, active);
         }
 
         public Builder toBuilder() {
