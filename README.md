@@ -8,30 +8,30 @@
 >
 > 工程文档（本仓库工程线所写）：
 > - [技术架构设计](docs/architecture.md) — 分层、限界上下文、领域事件、事务、命名约定、技术债
-> - [接口设计](docs/api/api.md) — 100 个端点清单、响应信封、错误处理、鉴权现状
+> - [接口设计](docs/api/api.md) — 214 个端点清单、响应信封、错误处理、鉴权现状
 > - [数据库设计](docs/db/data-dictionary.md) · [ER 图](docs/db/er-diagram.md) · [schema 快照](docs/db/schema.sql)
 > - [测试文档](docs/testing.md) — 真实测试水位与修复路径
 > - [部署与运维](docs/deployment.md) — 依赖矩阵、启动顺序、配置面、缺失能力
 > - [安全与风险发现](docs/security-findings.md) — 逐条带行号的代码级事实清单
 > - [架构决策记录](docs/adr/README.md) — ADR-0001 ~ ADR-0012（0001~0005 与 0002 为选型决策，0006~0012 为工程侧实现差距与技术债）
 
-## 项目现状（2026-01-25 逐文件核对）
+## 项目现状（2026-10-10 逐文件核对）
 
 | 指标 | 实测值 |
 |---|---|
-| 后端主源码 | 266 个 `.java`（`domain` 117 / `infrastructure` 88 / `interfaces` 34 / `application` 26） |
-| 控制器 / 端点 | 13 个 `@RestController` / **100 个端点**（已全部实现路由与方法体） |
-| 持久化 | 24 张表（`@Entity`）+ 15 领域仓储接口 + 15 `*RepositoryImpl` + 15 Spring Data 接口 + 12 MapStruct Mapper |
-| 领域事件 | 22 个 `*Event`，双通道发布（进程内 + RocketMQ） |
-| 后端测试 | 10 个测试类 / 53 个 `@Test`（**多数存在失败或空断言问题**，见 [testing.md](docs/testing.md)） |
-| 前端 | user-web 34 个页面（37 个 API 调用已打通后端）；admin-web 4 个页面（**尚未接入后端**） |
+| 后端主源码 | 568 个 `.java`（`domain` 205 / `infrastructure` 209 / `interfaces` 110 / `application` 43） |
+| 控制器 / 端点 | 24 个 `@RestController` / **214 个端点**（已全部实现路由与方法体） |
+| 持久化 | 43 张表（`@Entity`）+ 59 Spring Data 仓储接口 + 30 `*RepositoryImpl`（自定义实现）+ 12 MapStruct Mapper |
+| 领域事件 | 25 个 `*Event`，双通道发布（进程内 + RocketMQ） |
+| 后端测试 | 102 个测试类 / 801 个 `@Test`（见 [testing.md](docs/testing.md)） |
+| 前端 | user-web 46 个页面文件（43 条路由，已联网）；admin-web 6 个页面（**已接入后端**） |
 | CI / 迁移工具 / 覆盖率 | 均**无** |
 
 **需要知道的三个前提**（不是待办清单，是当前事实）：
 
-1. **鉴权链路被桩化**：`JwtTokenProvider.validateToken()` 恒返回 `true`、用户权限集合恒为空 → `/api/**` 的保护实际可绕过，而 `/api/tenants/**` 因 `hasRole` 永不满足而恒 403。修复顺序见 [security-findings.md](docs/security-findings.md)。
-2. **事务覆盖不均**：客户模块应用服务已加 `@Transactional`，其余多数模块的多表写入仍无事务边界（历史"全仓 0 处"已不成立）。
-3. **平台对接只有 Shopify 一家按官方协议实现，且未经真实平台验证**：分派已改为按认证协议的适配器注册表（`PlatformFetcherRegistry`），Shopify 走 `X-Shopify-Access-Token` + `Link`/`page_info` 游标 + 429 退避，覆盖增量拉单 / 商品 / 发货回写 / `test-connection`；Amazon / eBay / Magento / AliExpress / Wish 仍是**零适配器**（落到 `CUSTOM_SHOP` 的自建店铺约定：对 `storeUrl` 调 `/customers|/orders|/products`）。⚠️ **没有任何平台沙箱凭据**，正确性证据只有本地 fixture 契约测试（ISS-064，P0）；未联调环境可靠 `useSampleData` 示例链路。
+1. **鉴权链路已落地（非桩）**：`JwtTokenProvider.validateToken()` 现校验签名（`parseClaims != null`），`JwtAuthenticationFilter` 每次请求从库重载用户、把角色（`ROLE_` 前缀）与权限点写入 `GrantedAuthority`、写入租户上下文，停用/删除用户降级为匿名（ISS-007/008 已修）。剩余真实风险见 [security-findings.md](docs/security-findings.md)（如 `Result.code` 仍为 `String`、部分控制器仍无方法级鉴权）。
+2. **声明式事务已较普遍**：全仓 `@Transactional` 共 **145 处**（约 27 个文件，application 96 / infrastructure 49），但 `readOnly` 仅 9 处、`rollbackFor` 仍为 0（ISS-036），事件在事务内是否真正发布仍缺集成测试验证（ISS-062）。
+3. **平台对接已有 8 家适配器**：分派改为按认证协议的 `PlatformFetcherRegistry`；已有实现 Amazon / eBay / Magento / AliExpress / Mercado / Shopee / Ozon / Shopify 八家 + 按资源的 `Http*Fetcher` 通用通道 + `Sample*Fetcher` 示例通道 + `CUSTOM_SHOP` 自建店铺约定。⚠️ 无一家有真实平台沙箱凭据，正确性证据只有本地 fixture 契约测试（ISS-064，P0）。
 
 ## 设计理念
 
@@ -60,7 +60,7 @@
 
 ```
 interfaces  →  application  →  domain  ←  infrastructure
-   19            21             102            77
+  110            43             205           209
 ```
 
 单 Maven 模块内以包实现分层（[ADR-0012](docs/adr/0012-ddd-single-module-layering.md)），领域模型为纯 POJO，JPA 实体与领域模型经 MapStruct 双向隔离（[ADR-0010](docs/adr/0010-mapstruct-domain-jpa-bridge.md)）。
@@ -73,15 +73,15 @@ ecommerce-logistics-erp/
 │   ├── pom.xml
 │   └── src/
 │       ├── main/java/site/hexaarch/ecommerce/logistics/
-│       │   ├── interfaces/      # 12 Controller · Result 信封 · GlobalExceptionHandler · dto
-│       │   ├── application/     # 12 应用服务 · command/query（骨架，未接线）
+│       │   ├── interfaces/      # 24 Controller · Result 信封 · GlobalExceptionHandler · dto
+│       │   ├── application/     # 应用服务（43 文件）· command/query
 │       │   ├── domain/          # 9 上下文 + common（聚合/值对象/领域服务/事件/仓储接口）
 │       │   └── infrastructure/  # persistence(jpa+mapper+repository) · security · messaging · aop · config
 │       ├── main/resources/application.yml   # 唯一配置文件（无 profile）
-│       └── test/java/…                       # 10 个测试类
+│       └── test/java/…                       # 102 个测试类
 ├── frontend/
-│   ├── user-web/                # :5173 卖家业务端（34 页面）
-│   └── admin-web/               # :5174 平台管理端（4 页面）
+│   ├── user-web/                # :5120 卖家业务端（46 页面文件 / 43 路由）
+│   └── admin-web/               # :5110 平台管理端（6 页面，已接后端）
 ├── scripts/docker/docker-compose.yml   # 仅 RocketMQ（namesrv/broker/proxy）
 ├── docs/                        # 架构 / API / DB / 测试 / 部署 / ADR / 安全
 ├── LICENSE   COPYRIGHT   README.md
@@ -220,14 +220,14 @@ API 文档：`http://localhost:8082/swagger-ui.html`。
 
 ### 前端
 ```bash
-cd frontend/user-web  && npm install && npm run dev   # http://localhost:5173
-cd frontend/admin-web && npm install && npm run dev   # http://localhost:5174
+cd frontend/user-web  && npm install && npm run dev   # http://localhost:5120
+cd frontend/admin-web && npm install && npm run dev   # http://localhost:5110
 ```
-两个工程都没有配置 Vite proxy，前端直连 `http://localhost:8082/api`，依赖后端 CORS（当前仅放行 5173）。
+两个工程都没有配置 Vite proxy，前端直连 `http://localhost:8082/api`，依赖后端 CORS（已放行 `http://localhost:5120` 与 `http://localhost:5110`）。
 
 ### 测试与静态检查
 ```bash
-cd backend          && mvn test        # 53 个用例；当前预计不通过，原因见 docs/testing.md §3
+cd backend          && mvn test        # 801 个用例，水位与修复路径见 docs/testing.md
 cd frontend/user-web  && npm run lint
 cd frontend/admin-web && npm run lint
 ```

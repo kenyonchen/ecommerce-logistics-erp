@@ -1,6 +1,6 @@
 # 技术架构设计
 
-> 全部结论核对自代码。**计量时点：2026-03-08 工作树 = 463 个主源码 Java 文件 / 31 个测试文件**（上一档 2026-01-25 = 444 / 26；`bfbce09` 为 220 / 9，2026-01-25 曾记为 266 / 10）。单 Maven 模块。重算命令见 [tech/traceability.md §5](tech/traceability.md)。
+> 全部结论核对自代码。**计量时点：2026-10-10 工作树 = 568 个主源码 Java 文件 / 102 个测试文件**（上一档 2026-03-08 = 463 / 31；2026-01-25 = 444 / 26；`bfbce09` 为 220 / 9）。单 Maven 模块。重算命令见 [tech/traceability.md §5](tech/traceability.md)。
 > 本文描述**当前实际架构（As-Is）**，并在末尾列出与 DDD 理想分层的偏离项。
 
 ## 1. 总览
@@ -12,8 +12,8 @@ graph LR
         B[admin-web<br/>:5110 React19+AntD6<br/>已接真实接口：6 页 / 全真实数据]
     end
     subgraph 服务端
-        C[interfaces<br/>20 Controller · 198 端点<br/>Result 信封 / GlobalExceptionHandler]
-        D[application<br/>21 个应用服务文件 · 编排]
+        C[interfaces<br/>24 Controller · 214 端点<br/>Result 信封 / GlobalExceptionHandler]
+        D[application<br/>43 文件（应用服务 + command/query）· 编排]
         E[domain<br/>9 限界上下文 + common<br/>聚合/值对象/领域服务/领域事件/仓储接口]
         F[infrastructure<br/>JPA · 安全 · 消息 · AOP · 配置]
     end
@@ -28,7 +28,7 @@ graph LR
     F -->|Spring Data JPA / Hibernate| G
     F -->|RocketMQTemplate| H
     H -->|@RocketMQMessageListener| F
-    E -.->|真实外呼已实现：6 个 Http*Fetcher<br/>useSampleData=false 时走它| I
+    E -.->|真实外呼已实现：8 家平台适配器 + Http*/Sample* 通道<br/>useSampleData=false 时走它| I
 ```
 
 - 前端 `baseURL` 硬编码 `http://localhost:8082/api`（**2026-10-10 复测两处都还在**：`admin-web/src/services/api.js:6`、~~`user-web/src/services/api.js:6`~~ → 现 `user-web/src/services/api.js:48`，该文件在 2026-01-25 后重构过、行号已下移），**没有 Vite proxy**（~~两个 `vite.config.js` 都只有 `plugins:[react()]`~~ → 🔄 2026-10-10：两份 `vite.config.js:9` 现有 `server.port`（5120 / 5110），但**依然没有 proxy**）→ 跨域直连，CORS 是硬约束。~~后端 `SecurityConfig` 只放行 `http://localhost:5173`，admin-web 的 5174 不在白名单~~ → **M-09 已修**：`SecurityConfig.java:50` 现为 `List.of("http://localhost:5173", "http://localhost:5174")`，admin-web 已能跨域访问并带令牌（5 页 / 33 个 api 方法 + Login + 路由守卫）。
@@ -38,11 +38,11 @@ graph LR
 
 | 层 | 主源码文件数 | 内容 |
 |---|---|---|
-| `interfaces` | 90 | 20 `@RestController`、`Result`（`interfaces/common`）、`GlobalExceptionHandler`（`interfaces/handler`）、`interfaces/dto/{order,product,finance}` |
-| `application` | 33 | 21 个应用服务文件（含 `BusinessProcessOrchestrationService`、`CustomUserDetailsService`）、`application/config/ApplicationConfig`、`application/command/`、`application/query/` |
-| `domain` | 177 | 9 个上下文（order/product/customer/logistics/warehouse/purchase/finance/tenant/platform…）+ `common` 共享内核（含 `PageResult`），**其中 20 个领域服务标了 `@Service`** |
-| `infrastructure` | 143 | 45 个 `*JpaEntity`（40 个有 `@Table`）、`jpa/mapper` 桥接、`repository` 自定义实现、`security`、`messaging`、`config`、`aop` |
-<!-- 2026-01-25 复测：原表 4 行数字均为 2026-01-25 口径——interfaces 34（13 控制器）/ application 26（13 应用服务）/ domain 117 / infrastructure 88。现按 find 实测为 90 / 33 / 177 / 143，控制器 20 个、application/service 下 21 个文件、domain 内 @Service 20 处、45 个 *JpaEntity（40 个带 @Table）。四仓合计 443 个主源码文件。 -->
+| `interfaces` | 110 | 24 `@RestController`、`Result`（`interfaces/common`）、`GlobalExceptionHandler`（`interfaces/handler`）、`interfaces/dto/{order,product,finance}` |
+| `application` | 43 | 应用服务（含 `BusinessProcessOrchestrationService`、`CustomUserDetailsService`）、`application/config/ApplicationConfig`、`application/command/`、`application/query/` |
+| `domain` | 205 | 9 个上下文（order/product/customer/logistics/warehouse/purchase/finance/tenant/platform…）+ `common` 共享内核（含 `PageResult`），含领域服务 `@Service` |
+| `infrastructure` | 209 | `*JpaEntity`、`jpa/mapper` 桥接、`repository` 自定义实现、`security`、`messaging`、`config`、`aop` |
+<!-- 2026-10-10 复测：按 find 实测 interfaces 110 / application 43 / domain 205 / infrastructure 209，控制器 24 个。四层合计 567 个主源码文件（另 1 个启动类）。 -->
 
 根包 `EcommerceLogisticsApplication` 对四个顶层包做 `@ComponentScan`；**分层只靠包约定，没有 Maven 多模块隔离**。
 

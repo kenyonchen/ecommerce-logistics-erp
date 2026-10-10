@@ -18,7 +18,7 @@
 | 事件 | 4：`OrderCreated`/`OrderStatusChanged`/`OrderShipped`/`OrderCompleted` → topic `order-events` |
 | 表 | `orders`、`order_items`、`shipping_addresses`、`payment_infos` |
 | 前端 | ~~`pages/order/{List,Detail,Create}`（仅 `CreateOrder`、`OrderDetail` 部分真实联网）~~ → **2026-01-25：订单三页已全接真实接口**（List 走 `GET /api/orders` 分页） |
-| 缺陷/风险 | ~~ISS-001（订单号 null → 建单失败）~~（已修：`Order.java:195-198` 生成 `ORD+yyyyMMdd+UUID8`）、ISS-002/003（租户硬编码、状态绕过领域约束）~~、ISS-014（无列表接口）~~（订单列表接口已补）、⚠️ ISS-004 仍未修（`CON_FIRMED`↔`CONFIRMED` 由 `OrderMapper:195,213` 显式桥接，见 known-issues ISS-004）、~~ISS-036（无事务）~~（已修，110 处 `@Transactional`）、~~ISS-037（`IllegalArgumentException`→500）~~（已修，`:108-118` 映射 400）；**新增已修：ISS-056（`order_items` 主键未赋值 → 建单 500）**、**ISS-057（请求体绑定/类型不匹配 500 → 400）**；M-05、S-06、R-02/R-09 |
+| 缺陷/风险 | ~~ISS-001（订单号 null → 建单失败）~~（已修：`Order.java:195-198` 生成 `ORD+yyyyMMdd+UUID8`）、ISS-002/003（租户硬编码、状态绕过领域约束）~~、ISS-014（无列表接口）~~（订单列表接口已补）、⚠️ ISS-004 仍未修（`CON_FIRMED`↔`CONFIRMED` 由 `OrderMapper:195,213` 显式桥接，见 known-issues ISS-004）、~~ISS-036（无事务）~~（已修，~~110~~ → **145** 处 `@Transactional`，2026-10-10）、~~ISS-037（`IllegalArgumentException`→500）~~（已修，`:108-118` 映射 400）；**新增已修：ISS-056（`order_items` 主键未赋值 → 建单 500）**、**ISS-057（请求体绑定/类型不匹配 500 → 400）**；M-05、S-06、R-02/R-09 |
 | 技术文档 | [backend-standards §5](backend-standards.md)（事务）、[error-codes §3](../api/error-codes.md)（`B001xx`）、[security-design §4](security-design.md)、[performance-capacity §5](performance-capacity.md)（`orders(tenant_id,status,created_at)`） |
 
 ⚠️ 需求↔实现的**语义缺口**：~~`R-104`「订单列表/分页」在端点层面尚不存在（`/api/orders` 只有 byId/byCustomer/create/status），产品文档里的「订单列表页」实为 mock（ISS-015）~~ → **2026-01-25 已闭合**：`GET /api/orders` 存在并返回 `PageResult`（实测 `{content,total,page,size,totalPages}`），前端列表页已去 mock。

@@ -42,7 +42,7 @@ frontend/
 | 目录 | 数量 | 内容 |
 |---|---|---|
 | `pages/` | ~~34~~ **45** | **14 个模块目录**：`auth`(1)、`home`(1)、`platform`(2)、`role`(1)、`order`(4：List/Detail/Create/Import)、`logistics`(6：List/Detail/Create/Import/Channels/BatchShipModal)、`product`(6：List/Detail/Create/Edit/Form/Import)、`warehouse`(4：List/Detail/Create/ShopWarehouseSync)、`customer`(4)、`finance`(4)、`purchase`(3：List/Detail/Create)、`platform-integration`(3)、`tenant`(3)、`user`(3) |
-| `components/` | 2 | `Layout.jsx`、`Auth/AuthGuard.jsx`（⚠️ 45 个页面共享**只有 2 个自建组件**，表格/表单/弹窗全部各页自写，见 §7） |
+| `components/` | 2 | `Layout.jsx`、`Auth/AuthGuard.jsx`（⚠️ 46 个页面共享**只有 2 个自建组件**，表格/表单/弹窗全部各页自写，见 §7） |
 | `constants/` | **5**（新增，此前未记录） | `customer.js`、`finance.js`、`logistics.js`、`order.js`、`product.js` —— 各模块的状态字典/枚举文案 |
 | `context/` | 1 | `AuthContext.jsx` |
 | `services/` | 2 | `api.js`（21 模块 / 194 方法）、`errorHandler.jsx` |
@@ -97,7 +97,7 @@ frontend/
 
 登录链路：`pages/auth/Login.jsx`（Form `onFinish`）→ `authApi.login`（`api.js:84`）→ `login(response)` → `AuthContext.login`（`AuthContext.jsx:71-95`，存 5 个键后 `:93` 触发 `refreshProfile()`）→ `navigate('/')`。页面刷新恢复：`useEffect`（`:56-67`）→ `refreshProfile`（`:29-41`）调 `authApi.getMe()` ⇒ `GET /api/auth/me`（`AuthController.java:146`）⇒ `applyProfile`（`:44-54`）用库里的实时角色/权限覆盖本地值；失败即 `clearSession()` 复位为未登录。~~登出只清 `localStorage` + 复位状态（`:44-49`），**未调用 `authApi.logout`**。~~ → 现已调用，见下表 #4。
 
-状态管理：**无 Redux/Zustand/Mobx**（两 app `package.json` 实测）。全局状态仅 `AuthContext`（`user`、`isAuthenticated`、`loading`，`AuthContext.jsx:19-21`，value 见 `:128-138`）；~~34 个页面~~ **45 个页面**各自 `useState` 管理本地数据。
+状态管理：**无 Redux/Zustand/Mobx**（两 app `package.json` 实测）。全局状态仅 `AuthContext`（`user`、`isAuthenticated`、`loading`，`AuthContext.jsx:19-21`，value 见 `:128-138`）；~~34 个页面~~ → ~~**45 个页面**~~ → **46 个页面**（2026-10-10）各自 `useState` 管理本地数据。
 
 ⚠️ 现存结构性问题：
 
@@ -126,7 +126,7 @@ frontend/
 
 ~~**真实联网页面：9 / 34**（`grep -l '*Api.'` 实测：`Login`、`order/CreateOrder`、`order/OrderDetail`(部分)、`tenant/×3`、`user/×3`）。其余 25 个页面为前端假数据：~~
 
-🔴 **2026-01-25 复测：该口径整体作废，现为「真实联网页面 42 / 45」**（逐文件 `grep` 实测）：45 个页面里 **41 个 import `services/`**（39 个单引号 + 2 个双引号写法：`purchase/PurchaseDetail.jsx:5`、`purchase/CreatePurchase.jsx:5`），不 import 的只有 4 个（`home/Home.jsx`、`platform/PlatformDashboard.jsx`、`product/CreateProduct.jsx`、`product/EditProduct.jsx`），其中后两个是 `ProductForm.jsx` 的 3 行薄壳（`CreateProduct.jsx:7`、`EditProduct.jsx:10`，而 `ProductForm.jsx:41/:91/:94` 是真实调用）⇒ **实质 mock 只剩 3 个页面**：`Home`、`PlatformDashboard`、`SystemConfig`。
+🔴 **2026-01-25 复测：该口径整体作废，现为「真实联网页面 42 / 45」** 🔄 **2026-10-10 复测：该口径再作废，现为「真实联网页面 46 / 46」（user-web 46 个页面文件全部接真实接口）**：45 个页面里 **41 个 import `services/`**（39 个单引号 + 2 个双引号写法：`purchase/PurchaseDetail.jsx:5`、`purchase/CreatePurchase.jsx:5`），不 import 的只有 4 个（`home/Home.jsx`、`platform/PlatformDashboard.jsx`、`product/CreateProduct.jsx`、`product/EditProduct.jsx`），其中后两个是 `ProductForm.jsx` 的 3 行薄壳（`CreateProduct.jsx:7`、`EditProduct.jsx:10`，而 `ProductForm.jsx:41/:91/:94` 是真实调用）⇒ **实质 mock 只剩 3 个页面**：`Home`、`PlatformDashboard`、`SystemConfig`。
 
 | 形态 | ~~页面与证据~~ **2026-01-25 复测状态** |
 |---|---|

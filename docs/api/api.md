@@ -1,12 +1,12 @@
 # 接口设计文档
 
 > 来源：逐文件核对 `backend/src/main/java/.../interfaces/controller/` 下的 `@RestController`。
-> 🔄 **2026-01-25 按工作树重测**：**20 个控制器 / 196 个端点**；**2026-03-08 复测 = 20 个控制器 / 198 个端点**（增量来自 `PlatformIntegrationController` 的 `test-connection` 与 `push-fulfillment`）；**同日三测 = 20 个控制器 / 199 个端点**（再加 `PlatformIntegrationController` 的 `GET /auth-specs`，`PlatformIntegrationController.java:59`）；**🔄 2026-03-22 复测 = 20 个控制器 / 202 个端点**（增量 3 条全在采购域：`GET /api/purchases/statuses`、`PUT /api/purchases/{id}/items/{itemId}`、`DELETE /api/purchases/{id}/items/{itemId}`）。旧口径「12 个 / 83 个」「13 个 / 100 个」均已过期。
+> 🔄 **2026-01-25 按工作树重测**：**20 个控制器 / 196 个端点**；**2026-03-08 复测 = 20 个控制器 / 198 个端点**（增量来自 `PlatformIntegrationController` 的 `test-connection` 与 `push-fulfillment`）；**同日三测 = 20 个控制器 / 199 个端点**（再加 `PlatformIntegrationController` 的 `GET /auth-specs`，`PlatformIntegrationController.java:59`）；**🔄 2026-03-22 复测 = 20 个控制器 / 202 个端点**（增量 3 条全在采购域：`GET /api/purchases/statuses`、`PUT /api/purchases/{id}/items/{itemId}`、`DELETE /api/purchases/{id}/items/{itemId}`）。**🔄 2026-10-10 复测 = 24 个控制器 / 214 个端点**（增量来自新增 `AuditLogController` / `OverviewController` / `SystemConfigController` / `ShopController` 四个控制器，共 +12 端点；§4B 当前仍为 202/20，须按注解重新扫描补全这 4 个控制器）。旧口径「12 个 / 83 个」「13 个 / 100 个」均已过期。
 > §4.1–§4.14 是较早基线的手写摘要（含风险注记）。~~仍逐条对得上代码~~ → 🔄 **2026-03-22 复核：§4.10 PurchaseController 一节整体已过期并已重写**（端点 9→12、入参 query→body、列表 全量数组→服务端分页、「不带 status 就回退查 PENDING」的语义 bug 已修）；其余 §4.x 抽核未见新偏差。**[§4B 全量端点清单](#4b-全量端点清单2026-01-25-由注解扫描生成)** 是由注解扫描生成的完整清单（10-02 生成时 196 条 → 10-03 追加平台 3 条 = 199 条 → **10-04 重写采购块 9→12 = 202 条**）。🔄 **本轮已用脚本把 §4B 的 20 个块逐控制器与源码注解扫描对账：doc 202 ↔ code 202，逐控制器 0 差集**，**计数与路径以 §4B 为准**。
 > 本文描述的是**代码当前真实暴露的契约**，含其中的不一致与缺陷——这些不一致必须被记录，否则前端只能靠试错来发现。
 >
 > 交互式文档：`http://localhost:8082/swagger-ui.html`（`server.port: 8082`；springdoc 分组 `public-api`，`paths-to-match: /api/**`，OpenAPI JSON 在 `/v3/api-docs`）。
-> 20/20 控制器都有 `@Tag`，**端点与 `@Operation` 数量相等**（2026-01-25 为 196/196；2026-03-08 复测 198/198；**同日三测 199/199**，实测 `grep -c '@Operation'` = 199 与 `grep -cE "@(Get|Post|Put|Delete|Patch)Mapping"` = 199 相等），即接口已自描述；本文补充的是自描述覆盖不到的横切约定与坑。
+> ~~20/20~~ → **24/24 控制器都有 `@Tag`**（2026-10-10；此前 20/20 为 2026-03-22 口径），**端点与 `@Operation` 数量相等**（2026-01-25 为 196/196；2026-03-08 复测 198/198；同日三测 199/199；2026-10-10 为 214/214，实测 `@Operation` 与 `@(Get|Post|Put|Delete|Patch)Mapping` 计数相等），即接口已自描述；本文补充的是自描述覆盖不到的横切约定与坑。
 >
 > **分工**：面向前端/联调的**入口导读**在产品线 [`README.md`](./README.md)（怎么读、按业务场景导航、响应信封与错误码的产品视角摘要、需求侧诉求清单）；该文件**不重述端点表**。
 > 本文是**逐端点的权威契约清单**（参数载体、载荷类型、每个端点的缺陷与不一致）。任何端点信息与本文冲突时，**以本文为准**并回改导读。
