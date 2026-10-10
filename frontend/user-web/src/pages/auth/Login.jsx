@@ -34,7 +34,7 @@ const Login = () => {
     }
   };
 
-  const onFinishFailed = (errorInfo) => {
+  const onFinishFailed = () => {
     message.error('表单验证失败');
   };
 
@@ -52,7 +52,7 @@ const Login = () => {
         </Title>
         
         <Alert
-          message="系统登录"
+          title="系统登录"
           description="请使用您的用户名和密码登录系统"
           type="info"
           showIcon

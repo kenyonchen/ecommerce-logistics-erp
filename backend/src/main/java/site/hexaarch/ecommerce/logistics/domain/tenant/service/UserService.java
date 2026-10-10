@@ -49,6 +49,13 @@ public interface UserService {
     List<User> getUsersByTenantId(String tenantId);
 
     /**
+     * 全平台用户列表（仅平台管理员的跨租户概览可用）
+     *
+     * @return 全部用户
+     */
+    List<User> getAllUsers();
+
+    /**
      * 更新用户信息
      *
      * @param id        用户ID

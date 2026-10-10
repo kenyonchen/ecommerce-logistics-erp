@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -13,6 +14,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import site.hexaarch.ecommerce.logistics.domain.audit.Auditable;
+import site.hexaarch.ecommerce.logistics.domain.audit.AuditActions;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.EntityNotFoundException;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.ValidationException;
 import site.hexaarch.ecommerce.logistics.domain.logistics.entity.LogisticsChannel;
@@ -38,10 +41,16 @@ import java.util.List;
 @RequiredArgsConstructor
 @Tag(name = "物流渠道管理", description = "物流渠道的增删改查与运费试算")
 public class LogisticsChannelController {
+    private static final String HAS_LOGISTICS_READ =
+            "hasRole('PLATFORM_ADMIN') or hasAuthority('logistics:read')";
+    private static final String HAS_LOGISTICS_WRITE =
+            "hasRole('PLATFORM_ADMIN') or hasAuthority('logistics:write')";
+
 
     private final LogisticsChannelService logisticsChannelService;
 
     @Operation(summary = "查询渠道列表", description = "country 为空返回全部渠道；指定 country 时返回该地区可用渠道")
+    @PreAuthorize(HAS_LOGISTICS_READ)
     @GetMapping
     public Result<List<LogisticsChannelDto>> listChannels(
             @Parameter(description = "国家/地区代码") @RequestParam(required = false) String country,
@@ -54,6 +63,7 @@ public class LogisticsChannelController {
     }
 
     @Operation(summary = "根据ID获取渠道", description = "获取物流渠道详细信息")
+    @PreAuthorize(HAS_LOGISTICS_READ)
     @GetMapping("/{id}")
     public Result<LogisticsChannelDto> getChannel(@Parameter(description = "渠道ID") @PathVariable String id) {
         return Result.success(logisticsChannelService.findById(id)
@@ -62,6 +72,9 @@ public class LogisticsChannelController {
     }
 
     @Operation(summary = "创建渠道", description = "新增物流渠道，渠道编码不可重复")
+    @PreAuthorize(HAS_LOGISTICS_WRITE)
+    @Auditable(action = AuditActions.LOGISTICS_CHANNEL_CREATE, label = "创建物流渠道",
+            targetType = "LogisticsChannel", targetIdResult = "channelId")
     @PostMapping
     public Result<LogisticsChannelDto> createChannel(@RequestBody LogisticsChannelDto request) {
         if (request.getChannelCode() == null || request.getChannelCode().isBlank()) {
@@ -74,6 +87,8 @@ public class LogisticsChannelController {
     }
 
     @Operation(summary = "更新渠道", description = "更新物流渠道基础信息与计费规则")
+    @PreAuthorize(HAS_LOGISTICS_WRITE)
+    @Auditable(action = AuditActions.LOGISTICS_CHANNEL_UPDATE, label = "更新物流渠道", targetType = "LogisticsChannel")
     @PutMapping("/{id}")
     public Result<LogisticsChannelDto> updateChannel(
             @Parameter(description = "渠道ID") @PathVariable String id,
@@ -97,6 +112,8 @@ public class LogisticsChannelController {
     }
 
     @Operation(summary = "启用/停用渠道", description = "变更渠道启用状态")
+    @PreAuthorize(HAS_LOGISTICS_WRITE)
+    @Auditable(action = AuditActions.LOGISTICS_CHANNEL_STATUS_UPDATE, label = "变更物流渠道状态", targetType = "LogisticsChannel")
     @PutMapping("/{id}/status")
     public Result<LogisticsChannelDto> changeStatus(
             @Parameter(description = "渠道ID") @PathVariable String id,
@@ -105,6 +122,8 @@ public class LogisticsChannelController {
     }
 
     @Operation(summary = "删除渠道", description = "删除渠道（存在关联物流单时禁止删除）")
+    @PreAuthorize(HAS_LOGISTICS_WRITE)
+    @Auditable(action = AuditActions.LOGISTICS_CHANNEL_DELETE, label = "删除物流渠道", targetType = "LogisticsChannel")
     @DeleteMapping("/{id}")
     public Result<Void> deleteChannel(@Parameter(description = "渠道ID") @PathVariable String id) {
         logisticsChannelService.deleteLogisticsChannel(id);
@@ -112,6 +131,7 @@ public class LogisticsChannelController {
     }
 
     @Operation(summary = "运费试算", description = "按渠道首重费用与续重单价试算运费，weight 单位为克")
+    @PreAuthorize(HAS_LOGISTICS_READ)
     @GetMapping("/{id}/fee")
     public Result<LogisticsFee> calculateFee(
             @Parameter(description = "渠道ID") @PathVariable String id,

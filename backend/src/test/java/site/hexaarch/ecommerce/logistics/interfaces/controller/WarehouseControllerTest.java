@@ -98,13 +98,14 @@ class WarehouseControllerTest {
                 .active(true)
                 .build();
 
-        when(warehouseApplicationService.findAllWarehouses())
-                .thenReturn(List.of(mockWarehouse));
+        when(warehouseApplicationService.searchWarehouses(anyString(), anyInt(), anyInt()))
+                .thenReturn(new site.hexaarch.ecommerce.logistics.domain.common.PageResult<>(List.of(mockWarehouse), 1, 0, 10));
 
         mockMvc.perform(get("/api/warehouses"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.data.length()").value(1));
+                .andExpect(jsonPath("$.data.content.length()").value(1))
+                .andExpect(jsonPath("$.data.total").value(1));
     }
 
     @Test

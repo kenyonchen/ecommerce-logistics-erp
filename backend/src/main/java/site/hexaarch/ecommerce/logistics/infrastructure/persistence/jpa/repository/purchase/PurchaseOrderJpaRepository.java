@@ -30,4 +30,16 @@ public interface PurchaseOrderJpaRepository extends
      * 统计租户下的采购单总数（首页概览用）
      */
     long countByTenantId(String tenantId);
+
+    /**
+     * 统计指向某张仓库的采购单数量（删仓库的引用守卫，ISS-142）。
+     * <p>
+     * 刻意不按租户过滤：口径与 {@code PurchaseOrderRepository#countByWarehouseId} 一致，
+     * 少算一半就等于放过一次把引用掏空的删除。
+     * </p>
+     *
+     * @param warehouseId 仓库ID
+     * @return 指向该仓库的采购单数量
+     */
+    long countByWarehouseId(String warehouseId);
 }

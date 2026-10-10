@@ -85,6 +85,20 @@ public class JwtTokenProvider {
      * @return JWT令牌
      */
     public String generateToken(String username, String tenantId, String[] roles, String[] permissions) {
+        return generateToken(username, tenantId, roles, permissions, jwtExpiration);
+    }
+
+    /**
+     * 生成JWT令牌并指定有效期
+     * <p>
+     * 有效期可由调用方覆盖是给「系统配置 → 会话超时」用的：配置项必须真的影响令牌寿命，
+     * 否则界面上的"会话超时(秒)"只是一个存得住的数字。
+     * </p>
+     *
+     * @param expirationMillis 令牌有效期（毫秒），非正数时回落到 {@code jwt.expiration}
+     */
+    public String generateToken(String username, String tenantId, String[] roles, String[] permissions,
+                                long expirationMillis) {
         Map<String, Object> claims = new HashMap<>();
         claims.put(CLAIM_USERNAME, username);
         if (tenantId != null) {
@@ -92,12 +106,13 @@ public class JwtTokenProvider {
         }
         claims.put(CLAIM_ROLES, roles == null ? new String[0] : roles);
         claims.put(CLAIM_PERMISSIONS, permissions == null ? new String[0] : permissions);
+        long effectiveExpiration = expirationMillis > 0 ? expirationMillis : jwtExpiration;
 
         return Jwts.builder()
                 .claims(claims)
                 .subject(username)
                 .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + jwtExpiration))
+                .expiration(new Date(System.currentTimeMillis() + effectiveExpiration))
                 .signWith(getSigningKey())
                 .compact();
     }

@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.BusinessException;
+import site.hexaarch.ecommerce.logistics.domain.common.exception.EntityNotFoundException;
 import site.hexaarch.ecommerce.logistics.domain.tenant.PermissionPoints;
 import site.hexaarch.ecommerce.logistics.domain.tenant.RoleNames;
 import site.hexaarch.ecommerce.logistics.domain.tenant.aggregate.Tenant;
@@ -75,7 +76,7 @@ public class TenantServiceImpl implements TenantService {
     @Override
     public Tenant getTenantById(String id) {
         return tenantRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Tenant not found"));
+                .orElseThrow(() -> new EntityNotFoundException("Tenant", id));
     }
 
     @Override
@@ -118,7 +119,36 @@ public class TenantServiceImpl implements TenantService {
     @Override
     @Transactional
     public void deleteTenant(String id) {
-        tenantRepository.deleteById(id);
+        Tenant tenant = getTenantById(id);
+
+        List<User> members = userRepository.findByTenantId(id);
+        // 守住运营方自己：平台管理员所在的租户不允许删除，删掉就再没有任何账号能恢复现场
+        boolean hasPlatformAdmin = members.stream().anyMatch(this::isPlatformAdmin);
+        if (hasPlatformAdmin) {
+            throw new BusinessException("租户「" + tenant.getName() + "」下仍有平台管理员账号，不允许删除");
+        }
+
+        // 业务数据不会被级联（业务表的 tenant_id 没有外键指向 tenants），
+        // 有数据时直接拒绝，避免静默留下无主的订单/商品
+        long businessRecords = tenantRepository.countBusinessRecords(id);
+        if (businessRecords > 0) {
+            throw new BusinessException("租户「" + tenant.getName() + "」下仍有 " + businessRecords
+                    + " 条业务数据，请先清空或改用「停用租户」");
+        }
+
+        // 身份数据随租户一起清理：只删租户行会留下能正常登录的孤儿账号（含其权限点与角色）
+        for (User member : members) {
+            userRepository.deleteById(member.getId());
+        }
+        for (Role role : roleService.getRolesByTenantId(id)) {
+            roleService.deleteRole(role.getId());
+        }
+        tenantRepository.deleteById(tenant.getId());
+    }
+
+    private boolean isPlatformAdmin(User user) {
+        return user.getRoles() != null && user.getRoles().stream()
+                .anyMatch(role -> role != null && RoleNames.PLATFORM_ADMIN.equals(role.getName()));
     }
 
     @Override

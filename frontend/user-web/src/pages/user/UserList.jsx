@@ -38,7 +38,7 @@ const UserList = () => {
     try {
       const response = await userApi.getUsers(currentTenantId);
       setUsers(Array.isArray(response) ? response : []);
-    } catch (error) {
+    } catch {
       message.error('加载用户列表失败');
     } finally {
       setLoading(false);
@@ -50,7 +50,7 @@ const UserList = () => {
     try {
       const response = await roleApi.getRoles(currentTenantId);
       setRoles(Array.isArray(response) ? response : []);
-    } catch (error) {
+    } catch {
       message.error('加载角色列表失败');
     }
   };
@@ -81,7 +81,7 @@ const UserList = () => {
       await userApi.deleteUser(userId);
       message.success('用户删除成功');
       fetchUsers();
-    } catch (error) {
+    } catch {
       message.error('删除用户失败');
     }
   };

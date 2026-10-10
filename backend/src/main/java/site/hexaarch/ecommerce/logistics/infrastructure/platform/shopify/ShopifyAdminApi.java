@@ -17,6 +17,7 @@ import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.BusinessException;
 import site.hexaarch.ecommerce.logistics.domain.platform.client.PlatformCredential;
+import site.hexaarch.ecommerce.logistics.infrastructure.platform.PlatformFailures;
 
 import java.net.URI;
 import java.time.Duration;
@@ -214,7 +215,7 @@ public class ShopifyAdminApi {
                     break;
                 }
                 log.warn("[Shopify] 平台侧异常，{}ms 后第 {}/{} 次重试 uri={} err={}",
-                        backoffMs, attempt + 1, retryMaxAttempts, uri, e.getMessage());
+                        backoffMs, attempt + 1, retryMaxAttempts, uri, PlatformFailures.causeChain(e));
                 backoffMs = Math.min(backoffMs * 2, retryMaxWait.toMillis());
                 if (!sleep(backoffMs)) {
                     throw fetchFailed("Shopify 外呼等待被中断", e);
@@ -230,10 +231,10 @@ public class ShopifyAdminApi {
             } catch (Exception e) {
                 lastFailure = e instanceof RuntimeException runtimeException ? runtimeException
                         : new IllegalStateException(e);
-                throw fetchFailed("调用 Shopify 失败: " + e.getMessage(), e);
+                throw fetchFailed("调用 Shopify 失败: " + PlatformFailures.userReason(e), e);
             }
         }
-        throw fetchFailed("Shopify 连续 " + retryMaxAttempts + " 次调用未成功（限流或平台不可用）", lastFailure);
+        throw fetchFailed(PlatformFailures.exhausted("Shopify", retryMaxAttempts, lastFailure), lastFailure);
     }
 
     private String accessToken(PlatformCredential credential) {
@@ -278,11 +279,15 @@ public class ShopifyAdminApi {
     }
 
     private BusinessException fetchFailed(String message, Throwable cause) {
-        if (cause == null) {
-            return new BusinessException(message, "SHOPIFY_REQUEST_FAILED");
+        // 只有真凶藏在更深处才附根因：连接类失败的包装层消息是 ": null"，不附就等于没说；
+        // 而 HTTP 状态码一类的抛出点已经写清了状态与响应体，再附一层只是把 404 复述第二遍（ISS-131）
+        boolean hasDeeperCause = cause != null && cause.getCause() != null && cause.getCause() != cause;
+        BusinessException exception = new BusinessException(
+                hasDeeperCause ? message + ": " + PlatformFailures.rootCauseSummary(cause) : message,
+                "SHOPIFY_REQUEST_FAILED");
+        if (cause != null) {
+            exception.initCause(cause);
         }
-        BusinessException exception = new BusinessException(message + ": " + cause.getMessage(), "SHOPIFY_REQUEST_FAILED");
-        exception.initCause(cause);
         return exception;
     }
 }

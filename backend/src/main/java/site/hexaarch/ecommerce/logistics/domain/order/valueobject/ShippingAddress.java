@@ -1,5 +1,7 @@
 package site.hexaarch.ecommerce.logistics.domain.order.valueobject;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 import lombok.Getter;
@@ -41,7 +43,14 @@ public class ShippingAddress {
      * @param recipient 收件人
      * @param phone     电话
      */
-    private ShippingAddress(String country, String province, String city, String street, String zipCode, String recipient, String phone) {
+    @JsonCreator
+    private ShippingAddress(@JsonProperty("country") String country,
+                            @JsonProperty("province") String province,
+                            @JsonProperty("city") String city,
+                            @JsonProperty("street") String street,
+                            @JsonProperty("zipCode") String zipCode,
+                            @JsonProperty("recipient") String recipient,
+                            @JsonProperty("phone") String phone) {
         this.country = Objects.requireNonNull(country, "Country cannot be null");
         this.province = Objects.requireNonNull(province, "Province cannot be null");
         this.city = Objects.requireNonNull(city, "City cannot be null");

@@ -1,6 +1,7 @@
 package site.hexaarch.ecommerce.logistics.interfaces.dto.logistics;
 
 import lombok.Data;
+import site.hexaarch.ecommerce.logistics.interfaces.common.UnfinishedRowReport;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -11,7 +12,7 @@ import java.util.List;
  * @author kenyon
  */
 @Data
-public class BatchShipResultDto {
+public class BatchShipResultDto implements UnfinishedRowReport {
     private int totalCount;
     private int successCount;
     private int failureCount;
@@ -39,6 +40,18 @@ public class BatchShipResultDto {
     public void recordFailure(Integer rowNumber, String orderNumber, String reason) {
         failureCount++;
         failures.add(BatchShipFailureDto.failed(rowNumber, orderNumber, reason));
+    }
+
+    /**
+     * 审计留痕用（ISS-117 / R-36）：响应是 {@code HTTP 200 + code=200}，但 {@code failures}
+     * 里躺着没处理完的单时，留痕不得谎报成整批成功。
+     */
+    @Override
+    public String unfinishedRows() {
+        BatchShipFailureDto first = failures == null || failures.isEmpty() ? null : failures.get(0);
+        String detail = first == null ? null
+                : (first.getOrderNumber() == null ? "" : first.getOrderNumber() + " ") + first.getReason();
+        return UnfinishedRowReport.summarize(totalCount, successCount, failureCount, skippedCount, detail);
     }
 
     /**

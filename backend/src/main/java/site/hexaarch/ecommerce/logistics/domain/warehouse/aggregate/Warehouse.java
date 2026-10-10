@@ -1,5 +1,6 @@
 package site.hexaarch.ecommerce.logistics.domain.warehouse.aggregate;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Getter;
 import site.hexaarch.ecommerce.logistics.domain.warehouse.entity.InventoryRecord;
 import site.hexaarch.ecommerce.logistics.domain.warehouse.entity.Location;
@@ -119,6 +120,10 @@ public class Warehouse {
         return new WarehouseBuilder();
     }
 
+    /**
+     * 事件缓冲是基础设施细节，聚合根被直接序列化时会外泄给 REST 消费者（ISS-063）。
+     */
+    @JsonIgnore
     public List<Object> getDomainEvents() {
         return domainEvents;
     }
@@ -234,6 +239,7 @@ public class Warehouse {
         if (inventoryRecord.getInventoryStatus().toString().equals("SHORTAGE") || inventoryRecord.getInventoryStatus().toString().equals("OUT_OF_STOCK")) {
             InventoryShortageEvent shortageEvent = InventoryShortageEvent.builder()
                     .warehouseId(this.getWarehouseId())
+                    .tenantId(this.getTenantId())
                     .productId(productId)
                     .sku(inventoryRecord.getSku())
                     .currentQuantity(inventoryRecord.getQuantity())

@@ -12,8 +12,12 @@ const UserList = () => {
   const [editingUser, setEditingUser] = useState(null);
   const [form] = Form.useForm();
 
-  /** 未选租户时回落到第一个租户，保证列表始终有数据来源 */
-  const effectiveTenantId = selectedTenantId || tenants[0]?.id || '';
+  /**
+   * 平台管理员默认看全平台用户（后端 GET /api/users 不带 tenantId 即跨租户），
+   * 曾经这里回落到「第一个租户」，于是看板说 4 个用户、列表只显示 2 个，
+   * 而且新建用户会被静默建进那个没人选过的租户。
+   */
+  const effectiveTenantId = selectedTenantId;
 
   // 平台管理员按租户筛选用户：先加载租户下拉
   useEffect(() => {
@@ -24,13 +28,9 @@ const UserList = () => {
 
   // 租户列表就绪或筛选变化时重新加载用户
   useEffect(() => {
-    if (!effectiveTenantId) {
-      setUsers([]);
-      return undefined;
-    }
     let cancelled = false;
     setLoading(true);
-    userApi.getUsers(effectiveTenantId)
+    userApi.getUsers(effectiveTenantId || undefined)
       .then((data) => {
         if (!cancelled) setUsers(Array.isArray(data) ? data : []);
       })
@@ -49,15 +49,11 @@ const UserList = () => {
   }, [effectiveTenantId]);
 
   const fetchUsers = async () => {
-    if (!effectiveTenantId) {
-      setUsers([]);
-      return;
-    }
     setLoading(true);
     try {
-      const response = await userApi.getUsers(effectiveTenantId);
+      const response = await userApi.getUsers(effectiveTenantId || undefined);
       setUsers(Array.isArray(response) ? response : []);
-    } catch (error) {
+    } catch {
       message.error('加载用户列表失败');
     } finally {
       setLoading(false);
@@ -90,7 +86,7 @@ const UserList = () => {
       await userApi.deleteUser(userId);
       message.success('用户删除成功');
       fetchUsers();
-    } catch (error) {
+    } catch {
       message.error('删除用户失败');
     }
   };
@@ -103,7 +99,11 @@ const UserList = () => {
         await userApi.updateUser(editingUser.id, values);
         message.success('用户更新成功');
       } else {
-        // 创建用户
+        // 创建用户：后端要求平台管理员显式指定租户，这里不替用户挑一个
+        if (!effectiveTenantId) {
+          message.warning('请先在右上角选择租户，再新建用户');
+          return;
+        }
         await userApi.createUser({
           ...values,
           tenantId: effectiveTenantId,
@@ -112,7 +112,7 @@ const UserList = () => {
       }
       setModalVisible(false);
       fetchUsers();
-    } catch (error) {
+    } catch {
       message.error('保存用户失败');
     }
   };
@@ -140,6 +140,19 @@ const UserList = () => {
       key: 'username',
       width: 180,
       ellipsis: true,
+    },
+    {
+      // 默认视图是跨租户的，不显示归属就无法判断该编辑/禁用的是谁的账号
+      title: '所属租户',
+      dataIndex: 'tenantId',
+      key: 'tenantId',
+      width: 160,
+      ellipsis: true,
+      render: (tenantId) => {
+        if (!tenantId) return '-';
+        const tenant = tenants.find((t) => t.id === tenantId);
+        return tenant ? tenant.name : tenantId;
+      },
     },
     {
       title: '姓名',
@@ -205,11 +218,11 @@ const UserList = () => {
       <div className="page__header">
         <div>
           <h1 className="page__title">用户管理</h1>
-          <p className="page__subtitle">按租户筛选并管理平台用户</p>
+          <p className="page__subtitle">默认展示全平台用户，可按租户筛选；新建用户需先选定租户</p>
         </div>
         <Space wrap>
           <Select
-            placeholder="按租户筛选"
+            placeholder="全部租户"
             style={{ width: 200, maxWidth: '100%' }}
             value={selectedTenantId || undefined}
             onChange={setSelectedTenantId}

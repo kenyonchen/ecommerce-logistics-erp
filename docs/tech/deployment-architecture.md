@@ -15,7 +15,7 @@
 | 就绪探针 | ❌ 无 Actuator → 编排器无法探活、无法安全滚动发布 |
 | TLS / 域名 / 反代 | ❌ 无 |
 | 备份恢复 | ❌ 无定义（数据在单实例 MySQL） |
-| 跨域策略 | `SecurityConfig.java:31` 硬编码只放行 `http://localhost:5173`（admin-web 的 5174 不在内，M-09/ISS-018） |
+| 跨域策略 | ~~`SecurityConfig.java:31` 硬编码只放行 `http://localhost:5173`（admin-web 的 5174 不在内，M-09/ISS-018）~~ → 🔄 **2026-10-10 现状**：`SecurityConfig.java:63` 硬编码放行 `http://localhost:5110`（admin-web）与 `http://localhost:5120`（user-web），来源仍**写死在代码里**（未外置为配置项），端口一改就要三处联动（两个 `vite.config.js:9` + 这一行 + 两份 `services/api.js` 的 `baseURL`），ISS-018 已修但"硬编码"这半句仍然成立 |
 
 **结论**：目标架构的第一块基石不是 K8s，而是「**能一条命令起一个含数据库的完整环境**」。
 
@@ -48,7 +48,7 @@ graph TB
 
 - **应用必须无状态**才能多副本。当前有两条状态依赖：① `TenantContext` 的 ThreadLocal（`clearTenantId()` 全仓无调用点，M-03）；② 进程内 `@EventListener` + MQ 双通道发布导致**同一事件被两个副本各处理一次**（[architecture.md §3](../architecture.md)）。**多副本前必须先收敛为单通道**，否则订单→物流单会翻倍。
 - **静态前端与 API 同源**（Nginx 反代 `/api` → backend），从而彻底删掉 CORS 白名单依赖；`SecurityConfig` 保留外部化 origin 列表仅为兼容直连调试。
-- 5173/5174 不是「配置出来的端口」，是 Vite 默认端口被占后递增的结果——目标态由 Nginx 按路径/子域分发（`app.example.com` / `admin.example.com`），不再依赖本机端口。
+- ~~5173/5174 不是「配置出来的端口」，是 Vite 默认端口被占后递增的结果~~ → 🔄 **2026-10-10 订正**：两端端口现由 `vite.config.js:9` 显式写死（user-web **5120** / admin-web **5110**），后端 CORS 白名单同步为这两个来源（`SecurityConfig:63`）；但三者是**三处独立的硬编码**（两个 `server.port` + 一份 origin 列表 + 两份 `baseURL`），改端口仍要手工联动，所以目标态仍是由 Nginx 按路径/子域分发（`app.example.com` / `admin.example.com`）、彻底删掉本机端口与 CORS 依赖。
 
 ## 3. 制品构建
 

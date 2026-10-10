@@ -38,6 +38,10 @@ public class WarehouseManagementService {
             throw new BusinessException("仓库编码已存在: " + warehouseCode);
         });
 
+        // 仓库名称唯一性校验（BR-01 名称全局唯一）：列上的 UNIQUE 只在 flush 时才拦，
+        // 那时冲突已变成 DataIntegrityViolationException，调用方拿不到「重名」这个原因
+        requireUniqueName(warehouseName.trim(), null);
+
         // 创建仓库
         Warehouse warehouse = Warehouse.create(tenantId, warehouseName, warehouseCode, address, capacity);
 
@@ -69,6 +73,9 @@ public class WarehouseManagementService {
                 .ifPresent(existing -> {
                     throw new BusinessException("仓库编码已存在: " + warehouseCode);
                 });
+
+        // 仓库名称唯一性校验（排除自身），改名撞名同样返回明确的 400
+        requireUniqueName(warehouseName.trim(), warehouseId);
 
         // 更新仓库信息
         Warehouse updatedWarehouse = warehouse.toBuilder()
@@ -107,6 +114,20 @@ public class WarehouseManagementService {
 
         // 保存仓库
         return warehouseRepository.save(warehouse);
+    }
+
+    /**
+     * 校验仓库名称未被占用。
+     *
+     * @param warehouseName   已 trim 的仓库名称
+     * @param selfWarehouseId 更新场景下需要排除自身的仓库ID，创建场景传 null
+     */
+    private void requireUniqueName(String warehouseName, String selfWarehouseId) {
+        warehouseRepository.findByWarehouseName(warehouseName)
+                .filter(existing -> selfWarehouseId == null || !existing.getWarehouseId().equals(selfWarehouseId))
+                .ifPresent(existing -> {
+                    throw new BusinessException("仓库名称已存在: " + warehouseName);
+                });
     }
 
     /**

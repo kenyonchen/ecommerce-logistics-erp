@@ -138,7 +138,11 @@ public class LogisticsLabel {
         }
 
         public LogisticsLabel build() {
-            return new LogisticsLabel(labelId, trackingNumber, shipperInfo, recipientInfo, packageInfo, barcode,
+            // 面单一经生成就要被 LogisticsLabelGeneratedEvent 带上 labelId 广播出去，
+            // 而事件对 labelId 是 requireNonNull：ID 在构建时补，而不是留给持久化层再造一次
+            // （mapper 里的 UUID 兜底只用于历史数据，否则事件里的 ID 与落库行 ID 会不是同一个）。
+            return new LogisticsLabel(labelId != null ? labelId : java.util.UUID.randomUUID().toString(),
+                    trackingNumber, shipperInfo, recipientInfo, packageInfo, barcode,
                     labelUrl, labelFormat);
         }
 

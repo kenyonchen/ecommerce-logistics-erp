@@ -21,7 +21,13 @@
 -- 类型推导约定：String→VARCHAR(255)  Long→BIGINT  Integer/int→INT  Double→DOUBLE
 --              boolean→BIT  LocalDateTime→DATETIME(6)  UUID→CHAR(36)
 --              BigDecimal→DECIMAL(38,2)（未显式声明 precision/scale 时的 Hibernate 默认，实测）
---              仅显式写了 @Column(precision=19, scale=2) 的列才是 DECIMAL(19,2)（当前只有 payment_infos.amount）
+--              仅显式写了 @Column(precision=19, scale=2) 的列才是 DECIMAL(19,2)
+-- ✅ 2026-10-10（ISS-023 / R-09 / V7+V7.2）：金额侧已全部收敛，15 个金额列 =
+--    14 个 DECIMAL(19,2) + 1 个 DECIMAL(19,4)（logistics_channels.price_per_gram，每克费率，R-52），
+--    实体侧 15 个字段一律显式写 precision/scale，由 MoneyPrecisionGuardTest 的列宽名册常驻钉住。
+--    仍然保留 DOUBLE 的只有两个**重量**列：skus.weight（映射自 weightInGrams）、
+--    logistics_labels.package_weight —— 物理量不是货币，migration-plan §4 只约束金额列。
+--    旧口径「BigDecimal→DECIMAL(38,2) 默认、只有 payment_infos.amount 是 19,2」自本行起作废。
 -- ⚠️ 2026-03-22 更正（ISS-049）：6 张 *_import_job_errors 表的行号列原为 row_number，
 --    ROW_NUMBER 是 MySQL 8 保留字，Hibernate 生成的 DDL 未加引号 → 建表语句直接报 1064 语法错误，
 --    这 6 张表在 ddl-auto=update 下从未被建出来（连带 导入错误明细 写入功能整体不可用）。
@@ -166,7 +172,7 @@ CREATE TABLE orders (
   payment_info_id     VARCHAR(255),
   customer_name       VARCHAR(128),
   customer_email      VARCHAR(128),
-  total_amount        DOUBLE,                    -- 金额用 DOUBLE，非 DECIMAL（风险 R-09）
+  total_amount        DECIMAL(19, 2),            -- BigDecimal + 显式 precision/scale（V7；原 DOUBLE，风险 R-09 已闭）
   platform            VARCHAR(32),               -- 平台名或 FILE（导入/同步来源）
   platform_order_id   VARCHAR(128),              -- 平台侧订单ID，导入幂等定位键
   created_at          BIGINT,                    -- Long epoch，与 DATETIME 并存（风险 R-10）
@@ -188,8 +194,8 @@ CREATE TABLE order_items (
   product_name VARCHAR(255) NOT NULL,
   sku_code     VARCHAR(255) NOT NULL,            -- 指向 skus.sku_code，无外键
   quantity     INT          NOT NULL,
-  unit_price   DOUBLE       NOT NULL,
-  total_price  DOUBLE       NOT NULL,
+  unit_price   DECIMAL(19, 2) NOT NULL,          -- V7：原 DOUBLE
+  total_price  DECIMAL(19, 2) NOT NULL,          -- V7：原 DOUBLE
   PRIMARY KEY (id),
   CONSTRAINT fk_order_items_order FOREIGN KEY (order_id) REFERENCES orders (id)  -- cascade=ALL, orphanRemoval
 ) ENGINE = InnoDB;
@@ -205,8 +211,8 @@ CREATE TABLE logistics_channels (
   description    VARCHAR(512),
   countries      VARCHAR(512),                      -- 逗号分隔的国家清单，非关联表
   active         BIT          NOT NULL,
-  base_price     DOUBLE,
-  price_per_gram DOUBLE,
+  base_price     DECIMAL(19, 2),                -- V7：原 DOUBLE
+  price_per_gram DECIMAL(19, 4),                -- 每克费率不是金额，按 R-52 给 4 位（存量有 0.0050/0.0150）
   currency       VARCHAR(8),
   PRIMARY KEY (id),
   UNIQUE KEY uk_channel_name (channel_name),
@@ -234,9 +240,9 @@ CREATE TABLE logistics_labels (
 
 CREATE TABLE logistics_fees (
   id       VARCHAR(255) NOT NULL,
-  base_fee DOUBLE,
-  weight_fee DOUBLE,
-  total_fee  DOUBLE       NOT NULL,
+  base_fee DECIMAL(19, 2),                      -- V7：原 DOUBLE
+  weight_fee DECIMAL(19, 2),                    -- V7：原 DOUBLE
+  total_fee  DECIMAL(19, 2)       NOT NULL,     -- V7：原 DOUBLE
   currency   VARCHAR(255) NOT NULL,
   PRIMARY KEY (id)
 ) ENGINE = InnoDB;
@@ -346,8 +352,8 @@ CREATE TABLE skus (
   product_id      VARCHAR(255) NOT NULL,
   sku_code        VARCHAR(255) NOT NULL,
   sku_name        VARCHAR(255) NOT NULL,
-  price           DOUBLE,                            -- 映射自 sellingPrice，列名未跟随字段名（风险 R-11）
-  cost_price      DOUBLE,
+  price           DECIMAL(19, 2),                  -- 映射自 sellingPrice，列名未跟随字段名（风险 R-11）；V7：原 DOUBLE
+  cost_price      DECIMAL(19, 2),                  -- V7：原 DOUBLE
   currency        VARCHAR(8),
   weight          DOUBLE,                            -- 映射自 weightInGrams，单位克
   volume_cc       INT,                               -- 体积，立方厘米
@@ -370,7 +376,7 @@ CREATE TABLE purchase_orders (
   supplier_name     VARCHAR(255)   NOT NULL,
   warehouse_id      VARCHAR(255)   NOT NULL,      -- 裸字符串引用，无外键
   status            VARCHAR(255)   NOT NULL,      -- 手写小写 code：pending/approved/rejected/in_transit/delivered/cancelled
-  total_amount      DECIMAL(38, 2) NOT NULL,      -- 无显式 precision 的 BigDecimal 实际是 DECIMAL(38,2)，见文件头类型推导约定
+  total_amount      DECIMAL(19, 2) NOT NULL,      -- V7.2 收敛：原本无显式 precision，按 Hibernate 默认建出 DECIMAL(38,2)
   created_at        DATETIME(6)    NOT NULL,
   updated_at        DATETIME(6)    NOT NULL,
   PRIMARY KEY (purchase_order_id)
@@ -381,8 +387,8 @@ CREATE TABLE purchase_order_items (
   sku_code         VARCHAR(255)   NOT NULL,
   product_name     VARCHAR(255)   NOT NULL,
   quantity         INT            NOT NULL,
-  unit_price       DECIMAL(38, 2) NOT NULL,
-  total_price      DECIMAL(38, 2) NOT NULL,
+  unit_price       DECIMAL(19, 2) NOT NULL,      -- V7.2 收敛：原 38,2
+  total_price      DECIMAL(19, 2) NOT NULL,      -- V7.2 收敛：原 38,2
   purchase_order_id VARCHAR(255)  NOT NULL,
   PRIMARY KEY (id),
   CONSTRAINT fk_po_items_order FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders (purchase_order_id)
@@ -396,7 +402,7 @@ CREATE TABLE financial_transactions (
   transaction_id VARCHAR(255)   NOT NULL,
   tenant_id      VARCHAR(255),                  -- 后加的租户列，历史行为 NULL
   type           VARCHAR(255)   NOT NULL,      -- 小写 code：income/expense/refund/adjustment
-  amount         DECIMAL(38, 2) NOT NULL,      -- 无显式 precision 的 BigDecimal，实测为 DECIMAL(38,2)
+  amount         DECIMAL(19, 2) NOT NULL,      -- V7.2 收敛：原 38,2（无显式 precision 的默认宽度）
   currency       VARCHAR(3)     NOT NULL,      -- 唯一显式收紧长度的列
   reference_id   VARCHAR(255)   NOT NULL,      -- 多态引用（order/logistics/purchase），无外键
   reference_type VARCHAR(255)   NOT NULL,
@@ -415,7 +421,7 @@ CREATE TABLE financial_transactions (
 CREATE TABLE platform_integrations (
   id                      BINARY(16)   NOT NULL,            -- ⚠️ 运行库实测 binary(16)（Hibernate 6 把 UUID 存成 16 字节原生二进制），既非 @Column 声明的 36 也不是字符列
   tenant_id               VARCHAR(64),                      -- 后加的租户列，历史行为 NULL
-  platform_name           ENUM('ALIEXPRESS','AMAZON','EBAY','MAGENTO','OTHER','SHOPIFY','WISH') NOT NULL,  -- ⚠️ 只有 7 值，见下方「enum 截断」
+  platform_name           ENUM('ALIEXPRESS','AMAZON','EBAY','MAGENTO','MERCADO_LIBRE','OTHER','OZON','SHOPEE','SHOPIFY','TEMU','TIKTOK_SHOP','WISH') NOT NULL,  -- 🔄 2026-10-10 放宽到 12 值，与 PlatformName 对齐；见下方「enum 截断」
   auth_type               ENUM('ALIEXPRESS','AMAZON_SP_API','CUSTOM_SHOP','EBAY_SELL','MAGENTO','MERCADO_LIBRE','OZON','SHOPEE','SHOPIFY','TEMU','TIKTOK_SHOP') NULL,  -- 对接协议，外呼分派键；NULL 按 CUSTOM_SHOP 处理
   api_key                 VARCHAR(255) NOT NULL,            -- ~~明文~~ → AES-256-GCM 密文（`enc:v1:` 前缀），见下方 ⚠️ 宽度
   api_secret              VARCHAR(255) NOT NULL,            -- ~~明文~~ → 密文；Shopify 不使用该列，未配置时占位空串
@@ -437,12 +443,24 @@ CREATE TABLE platform_integrations (
 -- ⚠️ region/external_shop_id/marketplace_ids 三列此前漏记（实体 :85/:91/:97 有、运行库有、本快照没有）。
 --    auth_type/access_token/refresh_token/token_expires_at/api_version 同轮补记，共 8 列。
 --    与快照其余部分同理：字节级真值以实际库 `mysqldump --no-data` 为准，本块是「可读镜像」。
--- ⚠️ **enum 截断（2026-04-29 实测）**：`platform_name` 在运行库是 ENUM，只有 **7 个值**，而
+-- ⚠️ **enum 截断（2026-04-29 实测）**：`platform_name` 在运行库是 ENUM，只有 ~~**7 个值**~~ 🔄 **2026-10-10 已放宽为 12 值**，而
 --    `PlatformName` 枚举有 **12 个**——SHOPEE / OZON / TEMU / TIKTOK_SHOP / MERCADO_LIBRE 五家写不进去。
 --    其中 SHOPEE/OZON/MERCADO_LIBRE 三家在 infrastructure/platform 下已有适配器类（见 spec/platform-integration.md §7.1）。
 --    回滚式插探针复现：`INSERT ... platform_name='OZON'` → `ERROR 1265 (01000): Data truncated for column 'platform_name'`
 --    （sql_mode 含 STRICT_TRANS_TABLES）。`auth_type` 的 ENUM 则是完整的 11 个值，两者不对称。
 --    后果：这两家有适配器（Ozon/Mercado）的平台**建不出集成记录**，属结构性阻塞而非配置问题。
+-- 🔄 **2026-10-10 复测：本库该阻塞已解除（`platform_name` 实测 12 值）**。因为 `ddl-auto=update` 不会改 ENUM
+--    （下面那条 ⚠️ 就是原因），放宽只能显式执行；本项目不引入 Flyway（ISS-020），**所以下面这条语句就是
+--    新环境的唯一复现途径**（按本轮 `information_schema` 实测列型逐值回写），照抄一次即可，
+--    否则 `smoke.sh` 7.6 建 OZON 集成会回到 1265：
+--    ```sql
+--    ALTER TABLE platform_integrations MODIFY COLUMN platform_name ENUM(
+--      'ALIEXPRESS','AMAZON','EBAY','MAGENTO','MERCADO_LIBRE','OTHER','OZON',
+--      'SHOPEE','SHOPIFY','TEMU','TIKTOK_SHOP','WISH') NOT NULL;
+--    ```
+--    复测：`information_schema.COLUMNS` 的 COLUMN_TYPE 现为 12 值（与 `PlatformName` 12 值相等）、
+--    `auth_type` 为 11 值（与 `PlatformAuthType` 11 值相等），两列对称；
+--    `POST /api/platform-integrations` 用 `platformName=OZON` 实测 **200** 并能按 id 回读、探活与删除（`smoke.sh` 7.6/7.9）。
 -- ⚠️ 列宽不是实体声明的结果：`platform_name`/`status`/`auth_type`/`id` 的 ENUM/BINARY(16) 形状由历史 DDL 决定，
 --    `ddl-auto=update` 只加不减不改（ADR-0002），所以改实体不会修正运行库，必须显式迁移。
 -- ⚠️ **密文比原文长**：`enc:v1:`(7) + Base64(12B IV + 明文 + 16B tag) ≈ 7 + 4/3×(明文长度+28)。

@@ -179,7 +179,10 @@ const PlatformIntegrationDetail = () => {
           <Descriptions.Item label="集成ID">{integration.id}</Descriptions.Item>
           <Descriptions.Item label="平台">{platformLabel(integration.platformName)}</Descriptions.Item>
           <Descriptions.Item label="对接协议">{authTypeLabel(integration.authType || 'CUSTOM_SHOP')}</Descriptions.Item>
-          <Descriptions.Item label="接口版本">{integration.apiVersion || '取全局配置'}</Descriptions.Item>
+          <Descriptions.Item label="接口版本">
+            {integration.apiVersion
+              || (integration.authType === 'SHOPIFY' ? '未配置（Shopify 集成必须显式指定，探活会因此失败）' : '未配置')}
+          </Descriptions.Item>
           <Descriptions.Item label="状态">
             <Tag color={tag.color}>{tag.text}</Tag>
           </Descriptions.Item>

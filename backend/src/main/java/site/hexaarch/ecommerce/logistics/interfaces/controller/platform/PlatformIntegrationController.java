@@ -20,12 +20,17 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import site.hexaarch.ecommerce.logistics.application.service.platform.PlatformIntegrationApplicationService;
+import site.hexaarch.ecommerce.logistics.domain.audit.Auditable;
+import site.hexaarch.ecommerce.logistics.domain.audit.AuditActions;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.BusinessException;
 import site.hexaarch.ecommerce.logistics.domain.platform.aggregate.PlatformIntegration;
 import site.hexaarch.ecommerce.logistics.domain.platform.client.PlatformConnectionTestResult;
 import site.hexaarch.ecommerce.logistics.domain.platform.client.PlatformFulfillmentPusher.PlatformFulfillmentResult;
 import site.hexaarch.ecommerce.logistics.domain.platform.valueobject.PlatformAuthCatalog;
 import site.hexaarch.ecommerce.logistics.domain.tenant.RoleNames;
+import site.hexaarch.ecommerce.logistics.domain.tenant.repository.TenantRepository;
+import site.hexaarch.ecommerce.logistics.application.service.support.TenantAccessGuard;
+import site.hexaarch.ecommerce.logistics.domain.common.exception.EntityNotFoundException;
 import site.hexaarch.ecommerce.logistics.infrastructure.security.TenantContext;
 import site.hexaarch.ecommerce.logistics.interfaces.common.Result;
 import site.hexaarch.ecommerce.logistics.interfaces.dto.customerimport.CustomerImportJobDto;
@@ -70,10 +75,13 @@ public class PlatformIntegrationController {
     private static final String ROLE_PLATFORM_ADMIN = "ROLE_" + RoleNames.PLATFORM_ADMIN;
 
     private final PlatformIntegrationApplicationService platformIntegrationApplicationService;
+    private final TenantRepository tenantRepository;
 
     @Autowired
-    public PlatformIntegrationController(PlatformIntegrationApplicationService platformIntegrationApplicationService) {
+    public PlatformIntegrationController(PlatformIntegrationApplicationService platformIntegrationApplicationService,
+                                        TenantRepository tenantRepository) {
         this.platformIntegrationApplicationService = platformIntegrationApplicationService;
+        this.tenantRepository = tenantRepository;
     }
 
     @Operation(summary = "对接协议凭据要求", description = "返回各 authType 需要哪些凭据字段、region 取值、令牌获取步骤与官方文档链接；"
@@ -87,6 +95,7 @@ public class PlatformIntegrationController {
     @Operation(summary = "创建平台集成", description = "创建一个新的平台集成；凭据加密存储，出参只返回掩码")
     @PreAuthorize(HAS_PLATFORM_MANAGE)
     @PostMapping
+    @Auditable(action = AuditActions.PLATFORM_INTEGRATION_CREATE, label = "创建平台集成")
     public ResponseEntity<Result<PlatformIntegrationDto>> createPlatformIntegration(
             @Parameter(description = "平台集成信息") @RequestBody PlatformIntegrationSaveRequest request) {
         try {
@@ -150,12 +159,16 @@ public class PlatformIntegrationController {
     @Operation(summary = "更新平台集成", description = "根据ID更新平台集成信息；凭据留空表示保留原值")
     @PreAuthorize(HAS_PLATFORM_MANAGE)
     @PutMapping("/{id}")
+    @Auditable(action = AuditActions.PLATFORM_INTEGRATION_UPDATE, label = "更新平台集成")
     public ResponseEntity<Result<PlatformIntegrationDto>> updatePlatformIntegration(
             @Parameter(description = "平台集成ID") @PathVariable UUID id,
             @Parameter(description = "平台集成信息") @RequestBody PlatformIntegrationSaveRequest request) {
+        // 归属校验放在 try 之前：EntityNotFoundException 是 BusinessException 的子类，
+        // 放进 try 就会被下面的 catch 压成 400，与其余按 ID 写接口的 404 口径不一致（ISS-122）
+        PlatformIntegration existing = requireOwnedIntegration(id);
         try {
             PlatformIntegration updated = platformIntegrationApplicationService
-                    .updatePlatformIntegration(id, toAggregateForUpdate(request, id));
+                    .updatePlatformIntegration(id, toAggregateForUpdate(request, existing));
             if (updated != null) {
                 return ResponseEntity.ok(Result.success(PlatformIntegrationDto.from(updated)));
             } else {
@@ -174,7 +187,9 @@ public class PlatformIntegrationController {
     @Operation(summary = "删除平台集成", description = "根据ID删除平台集成")
     @PreAuthorize(HAS_PLATFORM_MANAGE)
     @DeleteMapping("/{id}")
+    @Auditable(action = AuditActions.PLATFORM_INTEGRATION_DELETE, label = "删除平台集成")
     public ResponseEntity<Result<Void>> deletePlatformIntegration(@Parameter(description = "平台集成ID") @PathVariable UUID id) {
+        requireOwnedIntegration(id);
         try {
             platformIntegrationApplicationService.deletePlatformIntegration(id);
             return ResponseEntity.ok(Result.success(null));
@@ -187,7 +202,9 @@ public class PlatformIntegrationController {
     @Operation(summary = "激活平台集成", description = "激活指定ID的平台集成")
     @PreAuthorize(HAS_PLATFORM_MANAGE)
     @PostMapping("/{id}/activate")
+    @Auditable(action = AuditActions.PLATFORM_INTEGRATION_STATUS_UPDATE, label = "激活平台集成", targetType = "PlatformIntegration")
     public ResponseEntity<Result<PlatformIntegrationDto>> activatePlatformIntegration(@Parameter(description = "平台集成ID") @PathVariable UUID id) {
+        requireOwnedIntegration(id);
         try {
             PlatformIntegration activated = platformIntegrationApplicationService.activatePlatformIntegration(id);
             if (activated != null) {
@@ -205,7 +222,9 @@ public class PlatformIntegrationController {
     @Operation(summary = "停用平台集成", description = "停用指定ID的平台集成")
     @PreAuthorize(HAS_PLATFORM_MANAGE)
     @PostMapping("/{id}/deactivate")
+    @Auditable(action = AuditActions.PLATFORM_INTEGRATION_STATUS_UPDATE, label = "停用平台集成", targetType = "PlatformIntegration")
     public ResponseEntity<Result<PlatformIntegrationDto>> deactivatePlatformIntegration(@Parameter(description = "平台集成ID") @PathVariable UUID id) {
+        requireOwnedIntegration(id);
         try {
             PlatformIntegration deactivated = platformIntegrationApplicationService.deactivatePlatformIntegration(id);
             if (deactivated != null) {
@@ -222,6 +241,7 @@ public class PlatformIntegrationController {
 
     @Operation(summary = "同步订单", description = "从平台拉取订单并完成批量导入，返回导入任务结果")
     @PreAuthorize(HAS_PLATFORM_MANAGE)
+    @Auditable(action = AuditActions.PLATFORM_INTEGRATION_SYNC, label = "从平台同步订单", targetType = "PlatformIntegration")
     @PostMapping("/{id}/sync-orders")
     public ResponseEntity<Result<OrderImportJobDto>> syncOrdersFromPlatform(
             @Parameter(description = "平台集成ID") @PathVariable UUID id,
@@ -233,6 +253,7 @@ public class PlatformIntegrationController {
             @RequestParam(required = false) String updatedTo,
             @Parameter(description = "拉取条数") @RequestParam(required = false) Integer limit,
             @Parameter(description = "是否使用平台示例数据") @RequestParam(required = false) Boolean useSampleData) {
+        requireOwnedIntegration(id);
         try {
             OrderImportJobDto result = platformIntegrationApplicationService.syncOrdersFromPlatform(id, tenantId,
                     orderNumber, updatedFrom, updatedTo, limit, useSampleData);
@@ -248,6 +269,7 @@ public class PlatformIntegrationController {
 
     @Operation(summary = "同步客户（买家）", description = "从平台拉取买家（或从订单数据萃取买家）并完成批量导入，返回导入任务结果")
     @PreAuthorize(HAS_PLATFORM_MANAGE)
+    @Auditable(action = AuditActions.PLATFORM_INTEGRATION_SYNC, label = "从平台同步客户", targetType = "PlatformIntegration")
     @PostMapping("/{id}/sync-customers")
     public ResponseEntity<Result<CustomerImportJobDto>> syncCustomersFromPlatform(
             @Parameter(description = "平台集成ID") @PathVariable UUID id,
@@ -257,6 +279,7 @@ public class PlatformIntegrationController {
             @Parameter(description = "买家关键字过滤") @RequestParam(required = false) String keyword,
             @Parameter(description = "拉取条数") @RequestParam(required = false) Integer limit,
             @Parameter(description = "是否使用平台示例数据") @RequestParam(required = false) Boolean useSampleData) {
+        requireOwnedIntegration(id);
         try {
             CustomerImportJobDto result = platformIntegrationApplicationService.syncCustomersFromPlatform(id, tenantId,
                     sourceType, keyword, limit, useSampleData);
@@ -272,10 +295,12 @@ public class PlatformIntegrationController {
 
     @Operation(summary = "同步产品", description = "从平台拉取商品并完成批量导入，返回导入任务结果")
     @PreAuthorize(HAS_PLATFORM_MANAGE)
+    @Auditable(action = AuditActions.PLATFORM_INTEGRATION_SYNC, label = "从平台同步商品", targetType = "PlatformIntegration")
     @PostMapping("/{id}/sync-products")
     public ResponseEntity<Result<ProductImportJobDto>> syncProductsFromPlatform(
             @Parameter(description = "平台集成ID") @PathVariable UUID id,
             @Parameter(description = "租户ID") @RequestParam(required = false) String tenantId) {
+        requireOwnedIntegration(id);
         try {
             ProductImportJobDto result = platformIntegrationApplicationService.syncProductsFromPlatform(id, tenantId);
             return ResponseEntity.ok(Result.success(result));
@@ -290,8 +315,10 @@ public class PlatformIntegrationController {
 
     @Operation(summary = "同步库存", description = "汇总系统内库存并推送到平台店铺，返回推送的SKU明细")
     @PreAuthorize(HAS_PLATFORM_MANAGE)
+    @Auditable(action = AuditActions.PLATFORM_INTEGRATION_SYNC, label = "向平台推送库存", targetType = "PlatformIntegration")
     @PostMapping("/{id}/sync-inventory")
     public ResponseEntity<Result<Object>> syncInventoryToPlatform(@Parameter(description = "平台集成ID") @PathVariable UUID id) {
+        requireOwnedIntegration(id);
         try {
             return ResponseEntity.ok(Result.success(platformIntegrationApplicationService.syncInventoryToPlatform(id)));
         } catch (BusinessException e) {
@@ -305,6 +332,7 @@ public class PlatformIntegrationController {
 
     @Operation(summary = "同步物流", description = "从平台拉取店铺物流信息并完成批量导入，返回导入任务结果（含每行成功/跳过/失败明细）")
     @PreAuthorize(HAS_PLATFORM_MANAGE)
+    @Auditable(action = AuditActions.PLATFORM_INTEGRATION_SYNC, label = "从平台同步物流单", targetType = "PlatformIntegration")
     @PostMapping("/{id}/sync-logistics")
     public ResponseEntity<Result<LogisticsImportJobDto>> syncLogisticsFromPlatform(
             @Parameter(description = "平台集成ID") @PathVariable UUID id,
@@ -315,6 +343,7 @@ public class PlatformIntegrationController {
             @Parameter(description = "发货时间止(yyyy-MM-dd HH:mm:ss)") @RequestParam(required = false) String shippedTo,
             @Parameter(description = "拉取条数") @RequestParam(required = false) Integer limit,
             @Parameter(description = "是否使用平台示例数据") @RequestParam(required = false) Boolean useSampleData) {
+        requireOwnedIntegration(id);
         try {
             LogisticsImportJobDto result = platformIntegrationApplicationService.syncLogisticsFromPlatform(id,
                     tenantId, orderNumber, trackingNumber, shippedFrom, shippedTo, limit, useSampleData);
@@ -332,9 +361,11 @@ public class PlatformIntegrationController {
             + "失败也返回 200 并在 data.success=false 里给出原因（不会回传任何凭据明文）。"
             + "会真实使用凭据外呼平台，按写操作门槛保护")
     @PreAuthorize(HAS_PLATFORM_MANAGE)
+    @Auditable(action = AuditActions.PLATFORM_INTEGRATION_TEST, label = "平台连通性测试", targetType = "PlatformIntegration")
     @PostMapping("/{id}/test-connection")
     public ResponseEntity<Result<PlatformConnectionTestResult>> testConnection(
             @Parameter(description = "平台集成ID") @PathVariable UUID id) {
+        requireOwnedIntegration(id);
         try {
             return ResponseEntity.ok(Result.success(platformIntegrationApplicationService.testConnection(id)));
         } catch (BusinessException e) {
@@ -349,10 +380,12 @@ public class PlatformIntegrationController {
     @Operation(summary = "发货回写", description = "把本地已发货物流单的运单号回写到平台订单；"
             + "回写成功后在物流单上记录平台发货单号，重复调用会被拒绝")
     @PreAuthorize(HAS_PLATFORM_MANAGE)
+    @Auditable(action = AuditActions.PLATFORM_FULFILLMENT_PUSH, label = "推送履约单到平台", targetType = "PlatformIntegration")
     @PostMapping("/{id}/push-fulfillment")
     public ResponseEntity<Result<PlatformFulfillmentResult>> pushFulfillmentToPlatform(
             @Parameter(description = "平台集成ID") @PathVariable UUID id,
             @RequestBody PlatformFulfillmentPushRequest request) {
+        requireOwnedIntegration(id);
         try {
             PlatformFulfillmentResult result = platformIntegrationApplicationService.pushFulfillmentToPlatform(
                     id, request.getLogisticsOrderId(), request.isNotifyCustomer());
@@ -366,15 +399,40 @@ public class PlatformIntegrationController {
         }
     }
 
+    /**
+     * 按 ID 的写操作统一归属校验（ISS-122）：{@code platform:manage} 可以发给租户角色，
+     * 仅靠 {@code @PreAuthorize} 拦不住横向越权；跨租户与不存在都回 404，
+     * 不用状态码差异确认他租户资源存在性（与店铺口径一致）。
+     */
+    private PlatformIntegration requireOwnedIntegration(UUID id) {
+        PlatformIntegration existing = platformIntegrationApplicationService.getPlatformIntegrationById(id);
+        if (existing == null) {
+            throw new EntityNotFoundException("平台集成", String.valueOf(id));
+        }
+        TenantAccessGuard.requireOwned("平台集成", existing.getTenantId(), String.valueOf(id));
+        return existing;
+    }
+
     private PlatformIntegration toAggregate(PlatformIntegrationSaveRequest request) {
+        String requestedTenantId = request.getTenantId();
+        // 归属只由会话决定：请求体带历史默认桶字面量或缺省时落登录租户，
+        // 否则平台集成会连凭据一起写进谁也查不出来的幻影桶（ISS-121，35 条实测残留）
+        request.setTenantId(TenantAccessGuard.resolveWriteTenant(requestedTenantId, TenantContext.LEGACY_TENANT_ID));
+        // 客户端显式点名的租户必须真实存在：业务表的 tenant_id 是普通列不是外键，
+        // 平台管理员点名一个 tenants 表里没有的 UUID 会 200 落库成无主行（ISS-135 实测）。
+        // 校验放在越权判定之后，租户用户的跨租户请求仍按「越权」而不是「不存在」回答。
+        TenantAccessGuard.requireExistingTenant(requestedTenantId, tenantRepository);
         return request.toAggregate(null);
     }
 
     /**
      * 更新场景先取回聚合：出参不再回传明文凭据，入参留空的凭据沿用库里的原值。
+     * 归属由既有行决定，请求体的 tenantId 不能把行迁到别的租户。
      */
-    private PlatformIntegration toAggregateForUpdate(PlatformIntegrationSaveRequest request, UUID id) {
-        return request.toAggregate(platformIntegrationApplicationService.getPlatformIntegrationById(id));
+    private PlatformIntegration toAggregateForUpdate(PlatformIntegrationSaveRequest request, PlatformIntegration existing) {
+        // 归属由既有行决定：请求体的 tenantId 不能把这行迁到别的租户
+        request.setTenantId(existing.getTenantId());
+        return request.toAggregate(existing);
     }
 
     /**
@@ -388,7 +446,7 @@ public class PlatformIntegrationController {
      */
     private String resolveTenantScope(String requestedTenantId) {
         if (isPlatformAdmin()) {
-            return requestedTenantId == null || requestedTenantId.isBlank() ? null : requestedTenantId.trim();
+            return TenantContext.normalizeRequested(requestedTenantId);
         }
         return TenantContext.hasTenantId() ? TenantContext.getTenantId() : "";
     }

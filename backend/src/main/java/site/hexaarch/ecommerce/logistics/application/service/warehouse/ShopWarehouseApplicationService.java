@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import site.hexaarch.ecommerce.logistics.application.service.support.TenantAccessGuard;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.EntityNotFoundException;
 import site.hexaarch.ecommerce.logistics.domain.platform.aggregate.PlatformIntegration;
 import site.hexaarch.ecommerce.logistics.domain.platform.client.PlatformCredential;
@@ -73,6 +74,8 @@ public class ShopWarehouseApplicationService {
         }
         Warehouse localWarehouse = warehouseRepository.findById(request.getLocalWarehouseId())
                 .orElseThrow(() -> new EntityNotFoundException("本地仓库不存在: " + request.getLocalWarehouseId()));
+        // 绑定目标仓库必须属于登录租户，否则等于把自家店铺挂到他家仓库上（ISS-050）
+        TenantAccessGuard.requireOwned("Warehouse", localWarehouse.getTenantId(), localWarehouse.getWarehouseId());
 
         String platform = resolvePlatform(request.getPlatform(), null);
         ShopWarehouse shopWarehouse = shopWarehouseRepository
@@ -130,9 +133,13 @@ public class ShopWarehouseApplicationService {
                 integration == null ? null : integration.getApiSecret(),
                 keyword, limit, 1), credential);
 
-        // 本地仓库编码索引，用于自动绑定
+        // 本地仓库编码索引，用于自动绑定（按登录租户收敛，避免编码撞车时绑到他家仓库，ISS-050）
+        String scopeTenantId = TenantAccessGuard.currentTenantId();
         Map<String, Warehouse> warehouseByCode = new HashMap<>();
         for (Warehouse warehouse : warehouseRepository.findAll()) {
+            if (scopeTenantId != null && !scopeTenantId.equals(warehouse.getTenantId())) {
+                continue;
+            }
             if (warehouse.getWarehouseCode() != null) {
                 warehouseByCode.put(warehouse.getWarehouseCode().toLowerCase(), warehouse);
             }
@@ -224,6 +231,13 @@ public class ShopWarehouseApplicationService {
         } else {
             shopWarehouses = shopWarehouseRepository.findByTenantId(resolvedTenant);
         }
+        // 按本地仓库过滤的分支不带租户条件，统一按登录租户收敛（ISS-050）
+        String currentTenantId = TenantAccessGuard.currentTenantId();
+        if (currentTenantId != null) {
+            shopWarehouses = shopWarehouses.stream()
+                    .filter(sw -> currentTenantId.equals(sw.getTenantId()))
+                    .toList();
+        }
         return shopWarehouses.stream().map(this::toDto).toList();
     }
 
@@ -235,8 +249,11 @@ public class ShopWarehouseApplicationService {
     }
 
     private ShopWarehouse getShopWarehouseEntity(String id) {
-        return shopWarehouseRepository.findById(id)
+        ShopWarehouse shopWarehouse = shopWarehouseRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("店铺仓库不存在: " + id));
+        // 按ID直读/解绑店铺仓库的入口，先校验归属（ISS-050）
+        TenantAccessGuard.requireOwned("ShopWarehouse", shopWarehouse.getTenantId(), id);
+        return shopWarehouse;
     }
 
     private ShopWarehouseDto toDto(ShopWarehouse shopWarehouse) {
@@ -291,7 +308,7 @@ public class ShopWarehouseApplicationService {
     }
 
     private String resolveTenant(String tenantId) {
-        return StringUtils.hasText(tenantId) ? tenantId.trim() : DEFAULT_TENANT_ID;
+        return TenantAccessGuard.resolveWriteTenant(tenantId, DEFAULT_TENANT_ID);
     }
 
     private String firstText(Map<String, Object> row, String... keys) {

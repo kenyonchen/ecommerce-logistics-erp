@@ -21,6 +21,8 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import site.hexaarch.ecommerce.logistics.application.service.finance.FinanceImportApplicationService;
+import site.hexaarch.ecommerce.logistics.domain.audit.Auditable;
+import site.hexaarch.ecommerce.logistics.domain.audit.AuditActions;
 import site.hexaarch.ecommerce.logistics.domain.common.PageResult;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.BusinessException;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.ValidationException;
@@ -90,6 +92,7 @@ public class FinanceImportController {
     }
 
     @Operation(summary = "保存字段映射", description = "按租户+平台整体保存字段映射关系")
+    @Auditable(action = AuditActions.IMPORT_FIELD_MAPPING_UPDATE, label = "保存财务导入字段映射", targetType = "FinanceImport")
     @PutMapping("/field-mappings")
     public Result<List<FieldMappingDto>> saveFieldMappings(@RequestBody FieldMappingSaveRequest request) {
         return Result.success(financeImportApplicationService.saveMappings(request));
@@ -107,6 +110,7 @@ public class FinanceImportController {
     }
 
     @Operation(summary = "上传文件导入", description = "上传JSON/CSV/Excel(xlsx)文件，mode=preview 仅预览，mode=import 直接执行导入")
+    @Auditable(action = AuditActions.IMPORT_UPLOAD, label = "上传财务导入文件", targetType = "FinanceImportJob")
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Result<Object> upload(
             @Parameter(description = "导入文件(JSON/CSV)") @RequestPart("file") MultipartFile file,
@@ -143,6 +147,7 @@ public class FinanceImportController {
     }
 
     @Operation(summary = "批量导入财务数据", description = "执行批量导入，返回导入任务结果（含每行的成功/失败明细）")
+    @Auditable(action = AuditActions.FINANCE_IMPORT_EXECUTE, label = "执行财务导入", targetType = "FinanceImportJob")
     @PostMapping
     public Result<FinanceImportJobDto> importTransactions(@RequestBody FinanceImportRequest request) {
         try {

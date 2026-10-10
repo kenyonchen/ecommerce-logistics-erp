@@ -3,6 +3,8 @@ package site.hexaarch.ecommerce.logistics.interfaces.dto.logisticsimport;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
+import site.hexaarch.ecommerce.logistics.interfaces.common.UnfinishedRowReport;
+
 import java.util.List;
 
 /**
@@ -12,7 +14,7 @@ import java.util.List;
  */
 @Data
 @Schema(description = "物流导入任务")
-public class LogisticsImportJobDto {
+public class LogisticsImportJobDto implements UnfinishedRowReport {
     private String jobId;
     private String tenantId;
     private String platform;
@@ -35,4 +37,15 @@ public class LogisticsImportJobDto {
     private List<String> createdLogisticsOrderIds;
     @Schema(description = "本次更新的物流单ID")
     private List<String> updatedLogisticsOrderIds;
+
+    /**
+     * 审计留痕用（ISS-117 / R-36 / R-38）：导入作业允许"HTTP 200 + code=200 却有一行没落库"，
+     * 这种形状必须报出来，否则只落了 3 行的作业会在留痕里记成整批成功。
+     */
+    @Override
+    public String unfinishedRows() {
+        String firstDetail = errors == null || errors.isEmpty() ? null
+                : UnfinishedRowReport.firstRowDetail(errors.get(0).getRowNumber(), errors.get(0).getMessage());
+        return UnfinishedRowReport.summarize(totalCount, successCount, failureCount, skippedCount, firstDetail);
+    }
 }

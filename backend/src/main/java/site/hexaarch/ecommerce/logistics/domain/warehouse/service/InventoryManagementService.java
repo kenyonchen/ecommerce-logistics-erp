@@ -25,6 +25,12 @@ public class InventoryManagementService {
     private final WarehouseRepository warehouseRepository;
 
     /**
+     * 库存操作结果：变更后的库存记录 + 承载领域事件的仓库聚合（供应用服务发布事件，ISS-062）。
+     */
+    public record InventoryOperationResult(InventoryRecord record, Warehouse warehouse) {
+    }
+
+    /**
      * 库存入库。
      *
      * @param warehouseId 仓库ID
@@ -34,7 +40,7 @@ public class InventoryManagementService {
      * @param locationId  库位ID
      * @return 入库后的库存记录
      */
-    public InventoryRecord inboundInventory(String warehouseId, String productId, String sku, int quantity, String locationId) {
+    public InventoryOperationResult inboundInventory(String warehouseId, String productId, String sku, int quantity, String locationId) {
         // 查找仓库
         Warehouse warehouse = warehouseRepository.findById(warehouseId)
                 .orElseThrow(() -> new EntityNotFoundException("仓库不存在: " + warehouseId));
@@ -46,9 +52,9 @@ public class InventoryManagementService {
 
         // 保存库存记录和仓库
         inventoryRecordRepository.save(inventoryRecord);
-        warehouseRepository.save(warehouse);
+        Warehouse savedWarehouse = warehouseRepository.save(warehouse);
 
-        return inventoryRecord;
+        return new InventoryOperationResult(inventoryRecord, savedWarehouse);
     }
 
     /**
@@ -59,7 +65,7 @@ public class InventoryManagementService {
      * @param quantity    数量
      * @return 出库后的库存记录
      */
-    public InventoryRecord outboundInventory(String warehouseId, String productId, int quantity) {
+    public InventoryOperationResult outboundInventory(String warehouseId, String productId, int quantity) {
         // 查找仓库
         Warehouse warehouse = warehouseRepository.findById(warehouseId)
                 .orElseThrow(() -> new EntityNotFoundException("仓库不存在: " + warehouseId));
@@ -78,9 +84,9 @@ public class InventoryManagementService {
 
         // 保存库存记录和仓库
         inventoryRecordRepository.save(inventoryRecord);
-        warehouseRepository.save(warehouse);
+        Warehouse savedWarehouse = warehouseRepository.save(warehouse);
 
-        return inventoryRecord;
+        return new InventoryOperationResult(inventoryRecord, savedWarehouse);
     }
 
     /**
@@ -91,7 +97,7 @@ public class InventoryManagementService {
      * @param newQuantity 新的数量
      * @return 调整后的库存记录
      */
-    public InventoryRecord adjustInventory(String warehouseId, String productId, int newQuantity) {
+    public InventoryOperationResult adjustInventory(String warehouseId, String productId, int newQuantity) {
         // 查找仓库
         Warehouse warehouse = warehouseRepository.findById(warehouseId)
                 .orElseThrow(() -> new EntityNotFoundException("仓库不存在: " + warehouseId));
@@ -104,9 +110,9 @@ public class InventoryManagementService {
 
         // 保存库存记录和仓库
         inventoryRecordRepository.save(inventoryRecord);
-        warehouseRepository.save(warehouse);
+        Warehouse savedWarehouse = warehouseRepository.save(warehouse);
 
-        return inventoryRecord;
+        return new InventoryOperationResult(inventoryRecord, savedWarehouse);
     }
 
     /**

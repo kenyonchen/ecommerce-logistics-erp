@@ -4,6 +4,7 @@ import lombok.Data;
 import site.hexaarch.ecommerce.logistics.domain.logistics.aggregate.LogisticsOrder;
 import site.hexaarch.ecommerce.logistics.domain.logistics.valueobject.LogisticsTrace;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -32,7 +33,9 @@ public class LogisticsOrderDto {
     private String labelUrl;
     private String labelFormat;
     private String barcode;
-    private Double totalFee;
+    private BigDecimal baseFee;
+    private BigDecimal weightFee;
+    private BigDecimal totalFee;
     private String currency;
     private String recipient;
     private String phone;
@@ -74,7 +77,9 @@ public class LogisticsOrderDto {
             }
         }
         if (order.getLogisticsFee() != null && order.getLogisticsFee().getTotalFee() != null) {
-            dto.setTotalFee(order.getLogisticsFee().getTotalFee().doubleValue());
+            dto.setBaseFee(order.getLogisticsFee().getBaseFee());
+            dto.setWeightFee(order.getLogisticsFee().getWeightFee());
+            dto.setTotalFee(order.getLogisticsFee().getTotalFee());
             dto.setCurrency(order.getLogisticsFee().getCurrency());
         }
         for (LogisticsTrace trace : order.getTraces()) {

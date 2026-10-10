@@ -112,7 +112,7 @@ public class PlatformHttpExchange {
                     break;
                 }
                 log.warn("[{}] 平台侧异常，{}ms 后第 {}/{} 次重试 uri={} err={}",
-                        label, backoffMs, attempt + 1, maxAttempts, uri, e.getMessage());
+                        label, backoffMs, attempt + 1, maxAttempts, uri, PlatformFailures.causeChain(e));
                 backoffMs = Math.min(backoffMs * 2, maxWait.toMillis());
                 if (!sleep(backoffMs)) {
                     throw failed(label + " 外呼等待被中断", e);
@@ -127,10 +127,10 @@ public class PlatformHttpExchange {
             } catch (Exception e) {
                 lastFailure = e instanceof RuntimeException runtimeException ? runtimeException
                         : new IllegalStateException(e);
-                throw failed(label + " 调用失败: " + e.getMessage(), e);
+                throw failed(label + " 调用失败: " + PlatformFailures.userReason(e), e);
             }
         }
-        throw failed(label + " 连续 " + maxAttempts + " 次调用未成功（限流或平台不可用）", lastFailure);
+        throw failed(PlatformFailures.exhausted(label, maxAttempts, lastFailure), lastFailure);
     }
 
     /**

@@ -21,6 +21,7 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -58,6 +59,7 @@ class MagentoOrderFetcherContractTest {
 
     private static final String PASTED_TOKEN = "pasted-integration-token-never-echoed";
     private static final String GROUP_PREFIX = "searchCriteria[filter_groups]";
+    private static final DateTimeFormatter QUERY_VALUE = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private static final String EMPTY_ORDERS = "{\"items\":[],\"total_count\":0}";
 
@@ -111,11 +113,12 @@ class MagentoOrderFetcherContractTest {
     void shouldSendTheTimeFilterWithFieldValueAndConditionTypeAppearingOnceEach() {
         scripted.add(new Scripted(200, EMPTY_ORDERS));
 
-        fetcher().fetch(orderRequest(LocalDateTime.of(2026, 10, 1, 0, 0), null, 10), credential());
+        LocalDateTime from = LocalDateTime.of(2026, 10, 1, 0, 0);
+        fetcher().fetch(orderRequest(from, null, 10), credential());
 
         String query = query(0);
         assertTrue(query.contains(GROUP_PREFIX + "[0][filters][0][field]=updated_at"), query);
-        assertTrue(query.contains(GROUP_PREFIX + "[0][filters][0][value]=2026-01-25 00:00:00"), query);
+        assertTrue(query.contains(GROUP_PREFIX + "[0][filters][0][value]=" + QUERY_VALUE.format(from)), query);
         assertTrue(query.contains(GROUP_PREFIX + "[0][filters][0][condition_type]=from"), query);
         // §9：三个键各出现一次；重复出现会被平台当成多个条件
         assertEquals(1, count(query, "[field]"), query);
@@ -127,14 +130,15 @@ class MagentoOrderFetcherContractTest {
     void shouldSplitBothBoundsIntoSeparateFilterGroupsBecauseGroupsAreAnd() {
         scripted.add(new Scripted(200, EMPTY_ORDERS));
 
-        fetcher().fetch(orderRequest(LocalDateTime.of(2026, 10, 1, 0, 0), LocalDateTime.of(2026, 10, 3, 12, 0), 10),
-                credential());
+        LocalDateTime from = LocalDateTime.of(2026, 10, 1, 0, 0);
+        LocalDateTime to = LocalDateTime.of(2026, 10, 3, 12, 0);
+        fetcher().fetch(orderRequest(from, to, 10), credential());
 
         String query = query(0);
         assertTrue(query.contains(GROUP_PREFIX + "[0][filters][0][condition_type]=from"), query);
         assertTrue(query.contains(GROUP_PREFIX + "[1][filters][0][condition_type]=to"),
                 "§9：组内是 OR，两个界挤在同一组就从区间变成并集: " + query);
-        assertTrue(query.contains(GROUP_PREFIX + "[1][filters][0][value]=2026-03-22 12:00:00"), query);
+        assertTrue(query.contains(GROUP_PREFIX + "[1][filters][0][value]=" + QUERY_VALUE.format(to)), query);
         assertEquals(2, count(query, "[field]"), query);
         assertEquals(2, count(query, "[condition_type]"), query);
     }

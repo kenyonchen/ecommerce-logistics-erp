@@ -27,7 +27,7 @@ import {
   SaveOutlined,
   SearchOutlined
 } from '@ant-design/icons';
-import { financeImportApi, platformIntegrationApi } from '../../services/api';
+import { financeImportApi, platformIntegrationApi, currentTenantId } from '../../services/api';
 import {
   DEFAULT_TENANT_ID,
   FILE_PLATFORM,
@@ -583,7 +583,7 @@ const FinanceImport = () => {
               type="warning"
               showIcon
               style={{ marginBottom: 12 }}
-              message="处理提示"
+              title="处理提示"
               description={
                 <ul style={{ margin: 0, paddingLeft: 18 }}>
                   {previewMeta.warnings.map((item, idx) => (
@@ -743,7 +743,7 @@ const FinanceImport = () => {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <Title level={4}>财务导入</Title>
-        <Text type="secondary">当前租户：{DEFAULT_TENANT_ID}</Text>
+        <Text type="secondary">当前租户：{currentTenantId() || '未登录'}</Text>
       </div>
 
       <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabItems} />

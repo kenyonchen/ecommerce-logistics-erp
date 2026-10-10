@@ -4,7 +4,10 @@
  * 约定：
  * - 二级菜单的 `key` 必须与 `routes.jsx` 中的 `path` 严格一致，选中态与展开态都依赖此约定；
  * - `icon` 存组件引用而非元素，由 Layout 统一 createElement，本文件保持纯 .js 不含 JSX；
- * - `roles` 不填表示所有登录用户可见，填了则仅拥有其中任一角色时可见。
+ * - `roles` 不填表示所有登录用户可见，填了则仅拥有其中任一角色时可见；
+ * - `permission` 填权限点名（与后端 PermissionPoints 目录一字不差）时，
+ *   没有该权限点的用户看不到这个入口；不填表示所有登录用户可见。
+ *   这只是「入口收敛」，真正的拦截在后端 @PreAuthorize，两边都用同一份权限点目录作准。
  */
 import { createElement } from 'react';
 import {
@@ -28,10 +31,10 @@ export const MENU_GROUPS = [
     label: '交易管理',
     icon: ShoppingCartOutlined,
     children: [
-      { key: '/orders', label: '订单管理' },
-      { key: '/orders/import', label: '订单导入' },
-      { key: '/customers', label: '客户管理' },
-      { key: '/customers/import', label: '客户导入' }
+      { key: '/orders', label: '订单管理', permission: 'order:read' },
+      { key: '/orders/import', label: '订单导入', permission: 'order:import' },
+      { key: '/customers', label: '客户管理', permission: 'customer:read' },
+      { key: '/customers/import', label: '客户导入', permission: 'customer:import' }
     ]
   },
   {
@@ -39,9 +42,9 @@ export const MENU_GROUPS = [
     label: '物流履约',
     icon: TruckOutlined,
     children: [
-      { key: '/logistics', label: '物流管理' },
-      { key: '/logistics/import', label: '物流导入' },
-      { key: '/logistics/channels', label: '物流渠道' }
+      { key: '/logistics', label: '物流管理', permission: 'logistics:read' },
+      { key: '/logistics/import', label: '物流导入', permission: 'logistics:import' },
+      { key: '/logistics/channels', label: '物流渠道', permission: 'logistics:read' }
     ]
   },
   {
@@ -49,10 +52,10 @@ export const MENU_GROUPS = [
     label: '商品与仓储',
     icon: ContainerOutlined,
     children: [
-      { key: '/products', label: '产品管理' },
-      { key: '/products/import', label: '商品导入' },
-      { key: '/warehouses', label: '仓储管理' },
-      { key: '/warehouses/shop', label: '店铺仓库对接' }
+      { key: '/products', label: '产品管理', permission: 'product:read' },
+      { key: '/products/import', label: '商品导入', permission: 'product:import' },
+      { key: '/warehouses', label: '仓储管理', permission: 'warehouse:read' },
+      { key: '/warehouses/shop', label: '店铺仓库对接', permission: 'warehouse:read' }
     ]
   },
   {
@@ -60,9 +63,9 @@ export const MENU_GROUPS = [
     label: '采购与财务',
     icon: DollarOutlined,
     children: [
-      { key: '/purchase', label: '采购管理' },
-      { key: '/finance', label: '财务管理' },
-      { key: '/finance/import', label: '财务导入' }
+      { key: '/purchase', label: '采购管理', permission: 'purchase:read' },
+      { key: '/finance', label: '财务管理', permission: 'finance:read' },
+      { key: '/finance/import', label: '财务导入', permission: 'finance:import' }
     ]
   },
   {
@@ -70,17 +73,22 @@ export const MENU_GROUPS = [
     label: '平台与设置',
     icon: SettingOutlined,
     children: [
-      { key: '/shops', label: '店铺管理' },
+      { key: '/shops', label: '店铺管理', permission: 'shop:read' },
+      // 平台集成列表后端对已认证用户开放（凭据不外泄，ADR-0013 §4.2），
+      // 建/改/同步才要 platform:manage，所以入口不按权限点收敛。
       { key: '/platform-integration', label: '平台集成' },
-      { key: '/users', label: '用户管理' },
-      { key: '/roles', label: '角色管理' },
+      { key: '/users', label: '用户管理', permission: 'user:manage' },
+      { key: '/roles', label: '角色管理', permission: 'role:manage' },
       { key: '/tenants', label: '租户管理', roles: ['PLATFORM_ADMIN'] }
     ]
   }
 ];
 
-/** 菜单项对当前用户是否可见 */
-const isVisible = (item, hasRole) => !item.roles || item.roles.some(role => hasRole(role));
+/** 菜单项对当前用户是否可见：角色与权限点是「与」关系，各自未声明即视为不限制 */
+const isVisible = (item, hasRole, can) => {
+  if (item.roles && !item.roles.some(role => hasRole(role))) return false;
+  return can(item.permission);
+};
 
 /** 把配置项转成 antd Menu 的 item 结构（一级菜单带图标，二级菜单靠缩进区分层级） */
 const toMenuItem = ({ key, label, icon }) => ({
@@ -90,15 +98,18 @@ const toMenuItem = ({ key, label, icon }) => ({
 });
 
 /**
- * 生成 antd Menu 的 items：按角色过滤不可见项，
+ * 生成 antd Menu 的 items：按角色与权限点过滤不可见项，
  * 分组内子项被过滤光时整个分组一起隐藏。
+ *
+ * @param hasRole  (roleNames) => boolean  —— useAuth().hasRole
+ * @param can      (permission) => boolean —— useAuth().can（权限点未加载时恒真，由角色兜底）
  */
-export const buildMenuItems = (hasRole, groups = MENU_GROUPS) =>
+export const buildMenuItems = (hasRole, can = () => true, groups = MENU_GROUPS) =>
   groups
     .map(group => {
-      if (!isVisible(group, hasRole)) return null;
+      if (!isVisible(group, hasRole, can)) return null;
       if (!group.children) return toMenuItem(group);
-      const children = group.children.filter(child => isVisible(child, hasRole)).map(toMenuItem);
+      const children = group.children.filter(child => isVisible(child, hasRole, can)).map(toMenuItem);
       return children.length > 0
         ? { key: group.key, label: group.label, icon: createElement(group.icon), children }
         : null;

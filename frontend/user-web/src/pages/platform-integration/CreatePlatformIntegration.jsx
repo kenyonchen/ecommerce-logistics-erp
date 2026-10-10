@@ -19,6 +19,7 @@ const CreatePlatformIntegration = () => {
 
   const handleSubmit = async (values) => {
     setLoading(true);
+    let createdId;
     try {
       const created = await platformIntegrationApi.createIntegration({
         tenantId: DEFAULT_TENANT_ID,
@@ -31,13 +32,21 @@ const CreatePlatformIntegration = () => {
         storeUrl: values.storeUrl,
         status: 'INACTIVE'
       });
+      createdId = created?.id;
       if (values.activateAfterCreate) {
-        await platformIntegrationApi.activate(created.id);
+        await platformIntegrationApi.activate(createdId);
       }
       message.success('平台集成创建成功');
       navigate('/platform-integration');
-    } catch {
-      message.error('创建平台集成失败');
+    } catch (error) {
+      // 具体失败原因已由 services/api.js 的响应拦截器 toast（它自己注释的口径就是「无需重复弹窗」），
+      // 这里再补一条「创建失败」会把原因盖掉；只有阶段信息是拦截器给不出的：
+      // 集成已入库、仅「立即启用」失败时若仍提示创建失败，会诱导用户重复建单。
+      if (createdId) {
+        message.warning('平台集成已创建但未启用，可在列表页重试启用');
+      } else if (!error?.notified) {
+        message.error('创建平台集成失败');
+      }
     } finally {
       setLoading(false);
     }
@@ -81,7 +90,7 @@ const CreatePlatformIntegration = () => {
               type="info"
               showIcon
               style={{ marginBottom: 16 }}
-              message="Shopify 走 Admin REST API"
+              title="Shopify 走 Admin REST API"
               description="需要 App 颁发的 shpat_ 访问令牌，并具备 read_orders / read_products / write_fulfillments；代码按官方文档规范实现并经 fixture 契约测试验证，但尚未用真实店铺凭据演练。"
             />
           )}
@@ -113,7 +122,11 @@ const CreatePlatformIntegration = () => {
               <Form.Item
                 label="接口版本(api_version)"
                 name="apiVersion"
-                extra="形如 2026-01；留空则取全局配置 platform.shopify.api-version"
+                extra="形如 2026-01，必填：全局配置 platform.shopify.api-version 默认留空（Admin API 版本有 12 个月支持窗口，写死会随时间静默失效），所以每条 Shopify 集成都要自己指定"
+                rules={[
+                  { required: true, message: '请填写 Shopify Admin API 版本，形如 2026-01' },
+                  { pattern: /^\d{4}-\d{2}$/, message: '版本格式是「四位年份-两位月份」，如 2026-01' },
+                ]}
               >
                 <Input placeholder="如 2026-01" />
               </Form.Item>

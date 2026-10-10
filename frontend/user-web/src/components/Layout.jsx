@@ -16,7 +16,7 @@ const { Title } = Typography;
 const AppLayout = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();  // 使用navigate进行编程式导航
-  const { user, logout, hasRole } = useAuth();
+  const { user, logout, hasRole, can } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [siderWidth, setSiderWidth] = useState(200);
 
@@ -85,8 +85,8 @@ const AppLayout = ({ children }) => {
     }
   ];
 
-  // 导航菜单：由 constants/menus.js 按业务域分组并按角色过滤
-  const menuItems = buildMenuItems(hasRole);
+  // 导航菜单：由 constants/menus.js 按业务域分组，再按角色与权限点过滤
+  const menuItems = buildMenuItems(hasRole, can);
   const selectedKeys = findSelectedKeys(location.pathname);
 
   return (

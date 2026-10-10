@@ -10,6 +10,7 @@ import {
   purchaseStatusLabel
 } from '../../constants/purchase';
 
+import Can from '../../components/Auth/Can.jsx';
 const { Title } = Typography;
 const { Option } = Select;
 const { RangePicker } = DatePicker;
@@ -189,7 +190,9 @@ const PurchaseList = () => {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
         <Title level={4}>采购订单列表</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/purchase/create')}>创建采购订单</Button>
+        <Can permission="purchase:write">
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/purchase/create')}>创建采购订单</Button>
+        </Can>
       </div>
 
       {/* 查询条件 */}

@@ -115,7 +115,8 @@ class ShopeeOrderFetcherContractTest {
         assertEquals("jane", row.get("customerName"), "买家名概要已有，取概要/明细皆可");
         assertEquals("jane@example.com", row.get("email"), "邮箱只在明细里，必须来自 get_order_detail");
         assertEquals("processing", row.get("orderStatus"), "TO_SHIP 是待发货，归 processing");
-        assertEquals("2026-03-22 08:30:00", row.get("orderTime"), "create_time 是 epoch 秒要换算成导入时间");
+        assertEquals("2026-10-02 08:30:00", row.get("orderTime"),
+                "create_time 1790929800 是 epoch 秒，按 UTC 换算成导入时间");
         assertEquals("SGD", row.get("currency"));
         assertEquals("129.90", row.get("totalAmount"));
         assertEquals("SHPEE_PAY", row.get("paymentMethod"));

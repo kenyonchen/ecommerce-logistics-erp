@@ -3,6 +3,7 @@ package site.hexaarch.ecommerce.logistics.infrastructure.config;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -38,6 +39,17 @@ public class DataInitializationConfig implements CommandLineRunner {
      * 角色名统一由 {@link RoleNames} 定义，此处不再出现字面量。
      */
     private static final String PLATFORM_ADMIN_ROLE = RoleNames.PLATFORM_ADMIN;
+
+    /**
+     * 首次种子时默认租户管理员的口令。
+     * <p>
+     * 口令值不写日志（docs/tech/security-design.md §7：启动日志不得输出凭据），
+     * 由部署侧用 {@code app.seed.default-tenant-admin-password} 注入；未注入时退到开发环境值，
+     * 保证本地开箱可登录。
+     * </p>
+     */
+    @Value("${app.seed.default-tenant-admin-password:123456}")
+    private String seedAdminPassword;
 
     /**
      * 内置物流渠道：channelCode 是平台物流数据导入时的匹配依据，
@@ -204,16 +216,14 @@ public class DataInitializationConfig implements CommandLineRunner {
                         "admin@example.com",
                         "13800138000",
                         "admin",
-                        "123456",
+                        seedAdminPassword,
                         "admin@example.com",
                         "系统",
                         "管理员"
                 );
 
                 logger.info("默认租户与管理员创建成功，租户ID: {}", defaultTenant.getId());
-                logger.info("默认管理员用户名: admin");
-                logger.info("默认密码: 123456");
-                logger.info("请在生产环境中及时修改默认密码！");
+                logger.info("默认管理员用户名: admin，口令来源: app.seed.default-tenant-admin-password（生产环境请立即改密）");
 
             } else {
                 logger.info("检测到 {} 个现有租户，跳过默认租户创建", existingTenants.size());

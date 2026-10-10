@@ -42,6 +42,36 @@ public class User extends BaseEntity {
         this.status = UserStatus.ACTIVE;
     }
 
+    private User(LocalDateTime createdAt, LocalDateTime updatedAt) {
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
+        this.status = UserStatus.ACTIVE;
+    }
+
+    /**
+     * 从持久化数据重建用户：落库时间必须由入参带入。
+     * <p>
+     * 不能用 {@link #create} 重建——{@code createdAt} 是 final 且只在构造里赋 {@code now()}，
+     * 走 create() 会让「读回来的创建时间」变成「本次请求的时刻」，
+     * 并让随后的 {@code save()} 把库里的 {@code created_at} 覆盖成当前时间（真实数据丢失）。
+     * </p>
+     */
+    public static User restore(String id, String tenantId, String username, String password, String email,
+                               String phone, String firstName, String lastName,
+                               UserStatus status, LocalDateTime createdAt, LocalDateTime updatedAt) {
+        User user = new User(createdAt, updatedAt);
+        user.id = id;
+        user.tenantId = tenantId;
+        user.username = username;
+        user.password = password;
+        user.email = email;
+        user.phone = phone;
+        user.firstName = firstName;
+        user.lastName = lastName;
+        user.status = status == null ? UserStatus.ACTIVE : status;
+        return user;
+    }
+
     // 工厂方法
     public static User create(String tenantId, String username, String password, String email,
                               String phone, String firstName, String lastName) {

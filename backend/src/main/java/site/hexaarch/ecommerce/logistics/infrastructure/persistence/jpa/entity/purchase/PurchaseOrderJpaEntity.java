@@ -48,7 +48,7 @@ public class PurchaseOrderJpaEntity {
     @Column(name = "status", nullable = false)
     private String status;
 
-    @Column(name = "total_amount", nullable = false)
+    @Column(name = "total_amount", nullable = false, precision = 19, scale = 2)
     private BigDecimal totalAmount;
 
     @Column(name = "created_at", nullable = false)

@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import site.hexaarch.ecommerce.logistics.application.service.purchase.PurchaseApplicationService;
+import site.hexaarch.ecommerce.logistics.domain.audit.AuditActions;
+import site.hexaarch.ecommerce.logistics.domain.audit.Auditable;
 import site.hexaarch.ecommerce.logistics.domain.common.PageResult;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.ValidationException;
 import site.hexaarch.ecommerce.logistics.domain.purchase.aggregate.PurchaseOrder;
@@ -61,6 +63,7 @@ public class PurchaseController {
      */
     @Operation(summary = "创建采购单", description = "创建一个新的采购单，可同时提交明细行")
     @PreAuthorize("hasRole('PLATFORM_ADMIN') or hasAuthority('purchase:write')")
+    @Auditable(action = AuditActions.PURCHASE_CREATE, label = "新建采购单", targetType = "PurchaseOrder")
     @PostMapping
     public Result<PurchaseOrderDto> createPurchaseOrder(@RequestBody PurchaseCreateRequest request) {
         String tenantId = resolveTenant(request.getTenantId());
@@ -126,6 +129,7 @@ public class PurchaseController {
      */
     @Operation(summary = "添加采购项", description = "向采购单添加新的采购项（仅待处理状态可维护明细）")
     @PreAuthorize("hasRole('PLATFORM_ADMIN') or hasAuthority('purchase:write')")
+    @Auditable(action = AuditActions.PURCHASE_ITEM_ADD, label = "添加采购明细行", targetType = "PurchaseOrder")
     @PostMapping("/{purchaseOrderId}/items")
     public Result<PurchaseOrderDto> addPurchaseOrderItem(
             @Parameter(description = "采购单ID") @PathVariable String purchaseOrderId,
@@ -142,6 +146,7 @@ public class PurchaseController {
      */
     @Operation(summary = "修改采购项", description = "修改采购项的数量与单价，小计与总金额由服务端重算")
     @PreAuthorize("hasRole('PLATFORM_ADMIN') or hasAuthority('purchase:write')")
+    @Auditable(action = AuditActions.PURCHASE_ITEM_UPDATE, label = "修改采购明细行数量与单价", targetType = "PurchaseOrder")
     @PutMapping("/{purchaseOrderId}/items/{itemId}")
     public Result<PurchaseOrderDto> updatePurchaseOrderItem(
             @Parameter(description = "采购单ID") @PathVariable String purchaseOrderId,
@@ -158,6 +163,7 @@ public class PurchaseController {
      */
     @Operation(summary = "删除采购项", description = "从采购单删除指定采购项")
     @PreAuthorize("hasRole('PLATFORM_ADMIN') or hasAuthority('purchase:write')")
+    @Auditable(action = AuditActions.PURCHASE_ITEM_REMOVE, label = "删除采购明细行", targetType = "PurchaseOrder")
     @DeleteMapping("/{purchaseOrderId}/items/{itemId}")
     public Result<PurchaseOrderDto> removePurchaseOrderItem(
             @Parameter(description = "采购单ID") @PathVariable String purchaseOrderId,
@@ -173,6 +179,7 @@ public class PurchaseController {
      */
     @Operation(summary = "批准采购单", description = "批准指定ID的采购单，记录审批人与审批意见")
     @PreAuthorize("hasRole('PLATFORM_ADMIN') or hasAuthority('purchase:write')")
+    @Auditable(action = AuditActions.PURCHASE_APPROVE, label = "批准采购单", targetType = "PurchaseOrder")
     @PutMapping("/{purchaseOrderId}/approve")
     public Result<PurchaseOrderDto> approvePurchaseOrder(
             @Parameter(description = "采购单ID") @PathVariable String purchaseOrderId,
@@ -189,6 +196,7 @@ public class PurchaseController {
      */
     @Operation(summary = "拒绝采购单", description = "拒绝指定ID的采购单，必须填写拒绝原因")
     @PreAuthorize("hasRole('PLATFORM_ADMIN') or hasAuthority('purchase:write')")
+    @Auditable(action = AuditActions.PURCHASE_REJECT, label = "拒绝采购单", targetType = "PurchaseOrder")
     @PutMapping("/{purchaseOrderId}/reject")
     public Result<PurchaseOrderDto> rejectPurchaseOrder(
             @Parameter(description = "采购单ID") @PathVariable String purchaseOrderId,
@@ -208,6 +216,7 @@ public class PurchaseController {
      */
     @Operation(summary = "标记采购单为运输中", description = "标记指定ID的采购单为运输中")
     @PreAuthorize("hasRole('PLATFORM_ADMIN') or hasAuthority('purchase:write')")
+    @Auditable(action = AuditActions.PURCHASE_TRANSIT, label = "采购单标记为运输中", targetType = "PurchaseOrder")
     @PutMapping("/{purchaseOrderId}/in-transit")
     public Result<PurchaseOrderDto> markPurchaseOrderAsInTransit(
             @Parameter(description = "采购单ID") @PathVariable String purchaseOrderId,
@@ -223,6 +232,7 @@ public class PurchaseController {
     @Operation(summary = "标记采购单为已送达",
             description = "标记指定ID的采购单为已送达，同事务内完成收货入库与采购应付入账")
     @PreAuthorize("hasRole('PLATFORM_ADMIN') or hasAuthority('purchase:write')")
+    @Auditable(action = AuditActions.PURCHASE_DELIVERED, label = "采购单确认到货（入库并记应付）", targetType = "PurchaseOrder")
     @PutMapping("/{purchaseOrderId}/delivered")
     public Result<PurchaseOrderDto> markPurchaseOrderAsDelivered(
             @Parameter(description = "采购单ID") @PathVariable String purchaseOrderId,
@@ -237,6 +247,7 @@ public class PurchaseController {
      */
     @Operation(summary = "取消采购单", description = "取消指定ID的采购单（仅待处理/已批准可取消）")
     @PreAuthorize("hasRole('PLATFORM_ADMIN') or hasAuthority('purchase:write')")
+    @Auditable(action = AuditActions.PURCHASE_CANCEL, label = "取消采购单", targetType = "PurchaseOrder")
     @PutMapping("/{purchaseOrderId}/cancel")
     public Result<PurchaseOrderDto> cancelPurchaseOrder(
             @Parameter(description = "采购单ID") @PathVariable String purchaseOrderId,
@@ -262,8 +273,9 @@ public class PurchaseController {
      * 租户解析：优先取请求参数，其次取租户上下文，最后回退默认租户
      */
     private String resolveTenant(String tenantId) {
-        if (tenantId != null && !tenantId.isBlank()) {
-            return tenantId.trim();
+        String requested = TenantContext.normalizeRequested(tenantId);
+        if (requested != null) {
+            return requested;
         }
         if (TenantContext.hasTenantId()) {
             return TenantContext.getTenantId();

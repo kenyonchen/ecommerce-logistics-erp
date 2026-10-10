@@ -56,4 +56,16 @@ public interface TenantRepository {
      * @param id 租户ID
      */
     void deleteById(String id);
+
+    /**
+     * 统计租户下仍存在的业务数据条数（不含身份数据与审计日志）。
+     * <p>
+     * 业务表的 {@code tenant_id} 是普通列而非指向 {@code tenants} 的外键，
+     * 因此数据库不会替我们挡住「删掉租户后留下一堆无主订单」。删除前必须问一次。
+     * </p>
+     *
+     * @param tenantId 租户ID
+     * @return 业务数据总条数
+     */
+    long countBusinessRecords(String tenantId);
 }

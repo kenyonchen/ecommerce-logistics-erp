@@ -11,7 +11,7 @@
 
 | 项 | 实测值 |
 |---|---|
-| 前端 | `frontend/user-web` Vite dev server，**http://localhost:5174**（admin-web 5173 未纳入本轮） |
+| 前端 | `frontend/user-web` Vite dev server，**http://localhost:5174**（admin-web 5173 未纳入本轮）<br>⚠️ 该端口是当时 Vite 占用递增的结果；🔄 **2026-10-10**：两端端口已写死为 user-web **5120** / admin-web **5110**（`vite.config.js:9` + `strictPort: true`），照本文件旧端口起服务会落在 CORS 白名单外 |
 | 后端 | Spring Boot 3.5.9，**http://localhost:8082**（IDE 启动，日志不落盘） |
 | 复测实例 | 自建 **8083** 实例（同一 MySQL），用于抓异常栈，测毕已停止 |
 | 数据库 | docker `erp-mysql`（MySQL 8，库 `ecommerce_logistics_erp`） |

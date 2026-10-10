@@ -1,6 +1,48 @@
 import axios from 'axios';
 import { message } from 'antd';
 
+// 当前登录租户：登录时由 AuthContext 写入 localStorage，每次调用现读。
+// 不能用 constants/order.js 的 DEFAULT_TENANT_ID 兜底——那是模块导入时求值的常量，
+// 未登录时其值为 'default-tenant'，会把「缺租户」的 400 变成「查不到数据」的空列表。
+export const currentTenantId = () => localStorage.getItem('tenantId') || '';
+
+/**
+ * 给「平台管理员必须显式指定 tenantId」的端点补上当前登录租户（后端 ShopController /
+ * UserController / RoleController 的 resolveTenantScope，ADR-0013 §4.4：平台管理员不传就是 400，
+ * 租户用户传了也会被后端忽略并收敛为登录租户，所以统一注入是安全的）。
+ * 显式传入的非空值优先；undefined / null / 空串不参与覆盖，避免把注入值顶掉。
+ * 登录租户也取不到时不注入，让后端的 400 原样透出（宁可报错，不返回假空态）。
+ */
+const withTenant = (input) => {
+  const next = { ...(input || {}) };
+  const value = next.tenantId;
+  const tenant = currentTenantId();
+  if ((value === undefined || value === null || value === '') && tenant) {
+    next.tenantId = tenant;
+  }
+  return next;
+};
+
+// constants/order.js 与 constants/product.js 里的 DEFAULT_TENANT_ID 是模块导入时求值的常量：
+// 浏览器先在未登录状态加载应用、再由客户端路由登录，它的值就永久停在哨兵 'default-tenant'
+// （库里不存在这个租户），23 个页面 77 处调用点因此把列表查成空数据却不报错。
+// 在请求出口把哨兵换成当前登录租户，比逐页改造调用点小得多；取不到登录租户时保持原值，
+// 让后端的校验错误原样透出，不制造假数据。
+const TENANT_SENTINEL = 'default-tenant';
+const repairTenantSentinel = (config) => {
+  const tenant = currentTenantId();
+  if (!tenant) return;
+  if (config.params?.tenantId === TENANT_SENTINEL) {
+    config.params = { ...config.params, tenantId: tenant };
+  }
+  const data = config.data;
+  if (data instanceof FormData) {
+    if (data.get('tenantId') === TENANT_SENTINEL) data.set('tenantId', tenant);
+  } else if (data && typeof data === 'object' && data.tenantId === TENANT_SENTINEL) {
+    config.data = { ...data, tenantId: tenant };
+  }
+};
+
 // 创建axios实例
 const api = axios.create({
   baseURL: 'http://localhost:8082/api',
@@ -18,6 +60,7 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    repairTenantSentinel(config);
     return config;
   },
   error => {
@@ -48,7 +91,9 @@ api.interceptors.response.use(
       // 处理错误
       const errorMessage = ERROR_MESSAGES[response.data.code] || response.data.message || '请求失败';
       message.error(errorMessage);
-      throw new Error(errorMessage);
+      const businessError = new Error(errorMessage);
+      businessError.notified = true;
+      throw businessError;
     }
   },
   error => {
@@ -80,9 +125,11 @@ api.interceptors.response.use(
 
     message.error(errorMessage);
     // 附加业务码与HTTP 状态，页面可据此区分错误类型（如 403 已被上面提示过，无需重复弹窗）
+    // notified：上面那次 message.error 已经发生过，页面再补一条泛化文案就会把具体原因盖掉
     const requestError = new Error(errorMessage);
     requestError.code = errorCode;
     requestError.status = errorStatus;
+    requestError.notified = true;
     throw requestError;
   }
 );
@@ -109,8 +156,10 @@ export const tenantApi = {
 };
 
 // 用户相关API
+// 注：GET /users 平台管理员不传 tenantId 是合法的（返回全平台用户），所以这里不注入；
+// POST /users 走 resolveTenantScope，平台管理员缺 tenantId 会被判 400，故在分组内兜底注入
 export const userApi = {
-  createUser: (userData) => api.post('/users', userData),
+  createUser: (userData) => api.post('/users', withTenant(userData)),
   getUsers: (tenantId) => api.get('/users', { params: { tenantId } }),
   getUserById: (id) => api.get(`/users/${id}`),
   updateUser: (id, userData) => api.put(`/users/${id}`, userData),
@@ -124,10 +173,11 @@ export const userApi = {
 };
 
 // 角色相关API
+// createRole / getRoles 走后端 resolveTenantScope：平台管理员必须显式带租户，缺参即 400
 export const roleApi = {
-  createRole: (roleData) => api.post('/roles', roleData),
+  createRole: (roleData) => api.post('/roles', withTenant(roleData)),
   createSystemRole: (roleData) => api.post('/roles/system', roleData),
-  getRoles: (tenantId) => api.get('/roles', { params: { tenantId } }),
+  getRoles: (tenantId) => api.get('/roles', { params: withTenant({ tenantId }) }),
   getSystemRoles: () => api.get('/roles/system'),
   getRoleById: (id) => api.get(`/roles/${id}`),
   updateRole: (id, roleData) => api.put(`/roles/${id}`, roleData),
@@ -289,7 +339,8 @@ export const productImportApi = {
 
 // 仓储相关API
 export const warehouseApi = {
-  getWarehouses: () => api.get('/warehouses'),
+  // 分页 + 租户过滤（PageResult：{ content, total, page, size }）
+  getWarehouses: (params) => api.get('/warehouses', { params }),
   getWarehouseById: (id) => api.get(`/warehouses/${id}`),
   getWarehouseByCode: (code) => api.get(`/warehouses/code/${code}`),
   createWarehouse: (data) => api.post('/warehouses', data),
@@ -503,24 +554,28 @@ export const overviewApi = {
 // 权限：列表/详情 shop:read；建店/改名/启停/回写策略/删除 shop:write；凭据写入 shop:credential_write
 // 凭据语义：不填(null)=保留原值，填空串=清除该字段；任何写入都会把授权状态打回 PENDING
 export const shopApi = {
-  // params: { platform }
-  getShops: (params) => api.get('/shops', { params }),
-  getShopById: (id) => api.get(`/shops/${id}`),
+  // params: { platform }（tenantId 由此处集中注入，平台管理员缺它会被后端判 400）
+  getShops: (params) => api.get('/shops', { params: withTenant(params) }),
+  getShopById: (id, params) => api.get(`/shops/${id}`, { params: withTenant(params) }),
   // data: { integrationId?, platform, shopCode, shopName?, region?, marketplaceId? }
-  createShop: (data) => api.post('/shops', data),
+  // 租户归属走 query 参数 tenantId（后端 @RequestParam），不能塞进请求体
+  createShop: (data) => api.post('/shops', data, { params: withTenant() }),
   // data: { shopName?, active? }
-  updateShop: (id, data) => api.put(`/shops/${id}`, data),
+  updateShop: (id, data) => api.put(`/shops/${id}`, data, { params: withTenant() }),
   // data: { apiKey?, apiSecret?, accessToken?, refreshToken?, tokenExpiresAt?,
   //         marketplaceId?, region?, externalShopId?, storeUrl?, apiVersion? }
-  bindCredentials: (id, data) => api.put(`/shops/${id}/credentials`, data),
+  bindCredentials: (id, data) => api.put(`/shops/${id}/credentials`, data, { params: withTenant() }),
   // policy: AUTO / MANUAL / OFF
-  changePushBackPolicy: (id, policy) => api.put(`/shops/${id}/push-back-policy`, { pushBackPolicy: policy }),
-  deleteShop: (id) => api.delete(`/shops/${id}`)
+  changePushBackPolicy: (id, policy) =>
+    api.put(`/shops/${id}/push-back-policy`, { pushBackPolicy: policy }, { params: withTenant() }),
+  deleteShop: (id) => api.delete(`/shops/${id}`, { params: withTenant() })
 };
 
-// 平台相关API
-export const platformApi = {
-  // 根据实际后端API补充
+// 平台系统配置API：GET 返回 { general, email, security } 嵌套结构，PUT 提交同结构并回显
+// 仅平台管理员可访问；租户用户调用会得到 403
+export const systemConfigApi = {
+  getConfig: () => api.get('/system-config'),
+  saveConfig: (config) => api.put('/system-config', config)
 };
 
 export default api;

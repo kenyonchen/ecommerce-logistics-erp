@@ -59,7 +59,8 @@ public final class OrderSpecification {
                 Predicate orderNumber = criteriaBuilder.like(criteriaBuilder.lower(root.get("orderNumber")), pattern);
                 Predicate platformOrderId = criteriaBuilder.like(criteriaBuilder.lower(root.get("platformOrderId")), pattern);
                 Predicate customerId = criteriaBuilder.like(criteriaBuilder.lower(root.get("customerId")), pattern);
-                predicates.add(criteriaBuilder.or(orderNumber, platformOrderId, customerId));
+                Predicate customerName = criteriaBuilder.like(criteriaBuilder.lower(root.get("customerName")), pattern);
+                predicates.add(criteriaBuilder.or(orderNumber, platformOrderId, customerId, customerName));
             }
             if (query.createdFrom() != null) {
                 predicates.add(criteriaBuilder.greaterThanOrEqualTo(root.get("createdAt"),

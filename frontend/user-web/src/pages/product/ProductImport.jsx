@@ -521,7 +521,7 @@ const ProductImport = () => {
                   <Alert
                     type="info"
                     showIcon
-                    message="选择平台集成后，系统会按其 storeUrl 调用 {storeUrl}/products 拉取商品（鉴权：X-API-Key / X-API-Secret 请求头）。未完成平台联调时，可勾选「使用示例数据」验证完整导入链路。"
+                    title="选择平台集成后，系统会按其 storeUrl 调用 {storeUrl}/products 拉取商品（鉴权：X-API-Key / X-API-Secret 请求头）。未完成平台联调时，可勾选「使用示例数据」验证完整导入链路。"
                   />
                 </div>
               </Card>
@@ -621,7 +621,7 @@ const ProductImport = () => {
               type="warning"
               showIcon
               style={{ marginBottom: 8 }}
-              message={previewMeta.warnings.join('；')}
+              title={previewMeta.warnings.join('；')}
             />
           )}
           <Table
@@ -676,7 +676,7 @@ const ProductImport = () => {
                     : 'error'
               }
               showIcon
-              message={`${result.statusLabel}：共 ${result.totalCount} 行，成功 ${result.successCount} 行，失败 ${result.failureCount} 行，跳过 ${result.skippedCount} 行`}
+              title={`${result.statusLabel}：共 ${result.totalCount} 行，成功 ${result.successCount} 行，失败 ${result.failureCount} 行，跳过 ${result.skippedCount} 行`}
               description={result.message}
             />
             <DescriptionsLike result={result} />

@@ -21,6 +21,13 @@ import {
 
 const { Title } = Typography;
 
+// 后端返回 ISO 时间（如 2026-04-29T00:11:02.755709），统一格式化为本地可读时间（ISS-081③）
+const formatDateTime = (value) => {
+  if (!value) return '-';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('zh-CN');
+};
+
 const ProductDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -122,8 +129,8 @@ const ProductDetail = () => {
           </Descriptions.Item>
           <Descriptions.Item label="平台商品ID">{product.sourceProductId || '-'}</Descriptions.Item>
           <Descriptions.Item label="SKU数量">{skus.length}</Descriptions.Item>
-          <Descriptions.Item label="创建时间">{product.createdAt || '-'}</Descriptions.Item>
-          <Descriptions.Item label="更新时间">{product.updatedAt || '-'}</Descriptions.Item>
+          <Descriptions.Item label="创建时间">{formatDateTime(product.createdAt)}</Descriptions.Item>
+          <Descriptions.Item label="更新时间">{formatDateTime(product.updatedAt)}</Descriptions.Item>
         </Descriptions>
       </Card>
 

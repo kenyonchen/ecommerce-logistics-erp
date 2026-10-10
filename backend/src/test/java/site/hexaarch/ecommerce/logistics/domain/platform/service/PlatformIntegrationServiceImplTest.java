@@ -62,6 +62,20 @@ class PlatformIntegrationServiceImplTest {
     }
 
     @Test
+    void updateKeepsServerOwnedTimestampsWhenRequestOmitsThem() {
+        UUID id = UUID.randomUUID();
+        PlatformIntegration existing = shopify().id(id).accessToken("shpat_old")
+                .createdAt(java.time.LocalDateTime.of(2026, 1, 1, 0, 0)).build();
+        when(repository.findById(id)).thenReturn(java.util.Optional.of(existing));
+
+        // 控制器按请求体拼装聚合，时间戳恒为 null；曾经原样搬过去把 NOT NULL 列写成 null（冒烟 7.5）
+        PlatformIntegration saved = service.updatePlatformIntegration(id, shopify().accessToken("shpat_new").build());
+
+        assertEquals(java.time.LocalDateTime.of(2026, 1, 1, 0, 0), saved.getCreatedAt());
+        org.junit.jupiter.api.Assertions.assertNotNull(saved.getUpdatedAt());
+    }
+
+    @Test
     void shopifyWithoutAccessTokenIsRejected() {
         PlatformIntegration integration = shopify().apiKey("ak").build();
 

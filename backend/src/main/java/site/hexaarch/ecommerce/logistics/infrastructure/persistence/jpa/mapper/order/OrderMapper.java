@@ -289,7 +289,7 @@ public interface OrderMapper {
     OrderDto toDto(Order order);
 
     /**
-     * 订单行项 -> 行项DTO（sku -> skuCode，BigDecimal -> Double）
+     * 订单行项 -> 行项DTO（sku -> skuCode）
      */
     default OrderItemDto toDtoItem(OrderItem item) {
         if (item == null) {
@@ -299,8 +299,8 @@ public interface OrderMapper {
         dto.setProductName(item.getProductName());
         dto.setSkuCode(item.getSku());
         dto.setQuantity(item.getQuantity());
-        dto.setUnitPrice(item.getUnitPrice() == null ? null : item.getUnitPrice().doubleValue());
-        dto.setTotalPrice(item.getTotalPrice() == null ? null : item.getTotalPrice().doubleValue());
+        dto.setUnitPrice(item.getUnitPrice());
+        dto.setTotalPrice(item.getTotalPrice());
         return dto;
     }
 

@@ -4,14 +4,15 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.springframework.data.domain.Persistable;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -28,12 +29,24 @@ import java.util.UUID;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class PlatformIntegrationJpaEntity {
+public class PlatformIntegrationJpaEntity implements Persistable<UUID> {
 
+    /**
+     * 主键由聚合 {@code PlatformIntegration.create()} 分配，不是数据库生成，故不加 {@code @GeneratedValue}：
+     * 带生成器的 id 一旦非空，Hibernate 就把实体判成游离态，{@code persist()} 直接抛
+     * {@code PersistentObjectException: detached entity passed to persist}。
+     */
     @Id
-    @GeneratedValue
     @Column(name = "id", updatable = false, nullable = false)
     private UUID id;
+
+    /**
+     * 新行标记：主键由聚合在入库前预分配，Spring Data 只看 id 是否为空会把新行误判成游离实体走
+     * {@code merge()}（SELECT 落空后 UPDATE 0 行 → unsaved-value 异常）。仓储在 save 前写入本标记，
+     * {@code SimpleJpaRepository} 据此走 {@code persist()} 做 INSERT。不入库。
+     */
+    @Transient
+    private boolean newRecord;
 
     @Column(name = "tenant_id", length = 64)
     private String tenantId;
@@ -49,10 +62,14 @@ public class PlatformIntegrationJpaEntity {
     @Enumerated(EnumType.STRING)
     private PlatformAuthTypeJpaEntity authType;
 
-    @Column(name = "api_key", nullable = false)
+    /**
+     * API Key 密文列：与 {@code access_token} 同宽。密文比明文长（{@code enc:v1:} + Base64(IV+密文+GCM tag)），
+     * 默认 255 会让长令牌在写入时报 Data too long（冒烟 7.5）。
+     */
+    @Column(name = "api_key", nullable = false, length = 1024)
     private String apiKey;
 
-    @Column(name = "api_secret", nullable = false)
+    @Column(name = "api_secret", nullable = false, length = 1024)
     private String apiSecret;
 
     /**
@@ -112,4 +129,9 @@ public class PlatformIntegrationJpaEntity {
 
     @Column(name = "last_orders_synced_at")
     private LocalDateTime lastOrdersSyncedAt;
+
+    @Override
+    public boolean isNew() {
+        return newRecord;
+    }
 }

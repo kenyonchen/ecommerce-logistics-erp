@@ -4,6 +4,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Repository;
 import org.springframework.util.StringUtils;
+import site.hexaarch.ecommerce.logistics.domain.common.BaseAggregateRoot;
 import site.hexaarch.ecommerce.logistics.domain.common.PageResult;
 import site.hexaarch.ecommerce.logistics.domain.customer.aggregate.Customer;
 import site.hexaarch.ecommerce.logistics.domain.customer.repository.CustomerQuery;
@@ -44,7 +45,10 @@ public class CustomerRepositoryImpl implements CustomerRepository {
         }
         jpaEntity.setUpdatedAt(now);
         CustomerJpaEntity saved = customerJpaRepository.save(jpaEntity);
-        return customerMapper.toDomain(saved);
+        Customer savedCustomer = customerMapper.toDomain(saved);
+        // save 重建的聚合副本不携带领域事件，补回后应用服务才能发布（ISS-062）
+        BaseAggregateRoot.carryOverEvents(customer, savedCustomer);
+        return savedCustomer;
     }
 
     @Override

@@ -38,16 +38,11 @@ export const categoryLabel = (code) => {
   return matched ? matched.label : code || '-';
 };
 
-/** 第三方电商平台 */
-export const platformOptions = [
-  { value: 'AMAZON', label: 'Amazon' },
-  { value: 'EBAY', label: 'eBay' },
-  { value: 'SHOPIFY', label: 'Shopify' },
-  { value: 'ALIEXPRESS', label: 'AliExpress' },
-  { value: 'WISH', label: 'Wish' },
-  { value: 'MAGENTO', label: 'Magento' },
-  { value: 'OTHER', label: '其他平台' }
-];
+/** 第三方电商平台：清单只在 constants/order.js 里定义一份（与后端 PlatformName 逐值对齐），
+ *  这里原样转出。此前两处各自维护同一份 7 项列表，是 ISS-086「后端能收、界面选不到」的成因。 */
+import { platformOptions } from './order';
+
+export { platformOptions };
 
 /** 文件上传导入使用的虚拟平台标识 */
 export const FILE_PLATFORM = 'FILE';
@@ -60,12 +55,21 @@ export const platformLabel = (code) => {
 };
 
 /**
- * 对接协议（对应后端 PlatformAuthType）：决定用哪套适配器外呼，与「平台」是两回事。
- * 未识别的取值一律按 CUSTOM_SHOP 处理，与后端默认值一致。
+ * 对接协议（对应后端 PlatformAuthType，11 值）：决定用哪套适配器外呼，与「平台」是两回事。
+ * 未识别的取值一律按 CUSTOM_SHOP 处理，与后端默认值一致（PlatformAuthType#parse 的 fallback）。
  */
 export const authTypeOptions = [
   { value: 'CUSTOM_SHOP', label: '通用自建店铺（API Key/Secret）' },
-  { value: 'SHOPIFY', label: 'Shopify Admin API（访问令牌）' }
+  { value: 'SHOPIFY', label: 'Shopify Admin API（访问令牌）' },
+  { value: 'MAGENTO', label: 'Magento 2 REST Admin API（Bearer 集成令牌）' },
+  { value: 'AMAZON_SP_API', label: 'Amazon SP-API（LWA 刷新令牌，分区域 host）' },
+  { value: 'EBAY_SELL', label: 'eBay Sell APIs（OAuth2 + Bearer）' },
+  { value: 'TEMU', label: 'Temu 开放平台（公共参数 + app_secret 签名）' },
+  { value: 'TIKTOK_SHOP', label: 'TikTok Shop 开放平台（OAuth2 + 请求签名）' },
+  { value: 'ALIEXPRESS', label: '速卖通开放平台（method 式接口 + 签名 + session）' },
+  { value: 'SHOPEE', label: 'Shopee 开放平台（OAuth2 + 请求签名，partner/shop 双身份）' },
+  { value: 'MERCADO_LIBRE', label: 'Mercado Libre（OAuth2 用户授权 + Bearer）' },
+  { value: 'OZON', label: 'Ozon（静态凭据 Client-Id + Api-Key）' }
 ];
 
 export const authTypeLabel = (code) => {

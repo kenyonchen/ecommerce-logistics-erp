@@ -165,9 +165,9 @@ public interface LogisticsOrderMapper {
         }
         LogisticsFeeJpaEntity entity = new LogisticsFeeJpaEntity();
         entity.setId(fee.getFeeId() == null ? UUID.randomUUID().toString() : fee.getFeeId());
-        entity.setBaseFee(toDouble(fee.getBaseFee()));
-        entity.setWeightFee(toDouble(fee.getWeightFee()));
-        entity.setTotalFee(fee.getTotalFee() == null ? 0D : fee.getTotalFee().doubleValue());
+        entity.setBaseFee(fee.getBaseFee());
+        entity.setWeightFee(fee.getWeightFee());
+        entity.setTotalFee(fee.getTotalFee() == null ? BigDecimal.ZERO : fee.getTotalFee());
         entity.setCurrency(fee.getCurrency() == null ? "CNY" : fee.getCurrency());
         return entity;
     }
@@ -181,9 +181,9 @@ public interface LogisticsOrderMapper {
         }
         return LogisticsFee.builder()
                 .feeId(entity.getId())
-                .baseFee(fromDouble(entity.getBaseFee()))
-                .weightFee(fromDouble(entity.getWeightFee()))
-                .totalFee(fromDouble(entity.getTotalFee()))
+                .baseFee(entity.getBaseFee())
+                .weightFee(entity.getWeightFee())
+                .totalFee(entity.getTotalFee())
                 .currency(entity.getCurrency())
                 .build();
     }
@@ -256,14 +256,6 @@ public interface LogisticsOrderMapper {
     default LocalDateTime fromEpochMillis(Long millis) {
         return millis == null ? null
                 : LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(millis), java.time.ZoneId.systemDefault());
-    }
-
-    private static Double toDouble(BigDecimal value) {
-        return value == null ? null : value.doubleValue();
-    }
-
-    private static BigDecimal fromDouble(Double value) {
-        return value == null ? null : BigDecimal.valueOf(value);
     }
 
     private static String nvl(String value) {

@@ -140,18 +140,21 @@ class OrderProcessingServiceTest {
     }
 
     @Test
-    void shipOrderShouldRejectPendingButAcceptProcessingAndConfirmed() {
+    void shippedTransitionShouldRejectPendingButAcceptProcessingAndConfirmed() {
+        // 发货入口统一后的前置规则（ISS-072）：待处理订单不能直接发货，规则写在聚合状态机上，
+        // 由订单状态端点、批量发货、物流单手工揽收三条入口共同遵守。
         Order pending = pendingOrder();
-        stubFind(pending);
-        assertThrows(InvalidOperationException.class, () -> orderProcessingService.shipOrder(pending.getId()));
+        InvalidOperationException ex = assertThrows(InvalidOperationException.class,
+                () -> pending.updateStatus(OrderStatus.SHIPPED));
+        assertTrue(ex.getMessage().contains("不允许"));
 
         Order processing = orderWithStatus(OrderStatus.PROCESSING);
-        stubFind(processing);
-        assertEquals(OrderStatus.SHIPPED, orderProcessingService.shipOrder(processing.getId()).getOrderStatus());
+        processing.updateStatus(OrderStatus.SHIPPED);
+        assertEquals(OrderStatus.SHIPPED, processing.getOrderStatus());
 
         Order confirmed = orderWithStatus(OrderStatus.CON_FIRMED);
-        stubFind(confirmed);
-        assertEquals(OrderStatus.SHIPPED, orderProcessingService.shipOrder(confirmed.getId()).getOrderStatus());
+        confirmed.updateStatus(OrderStatus.SHIPPED);
+        assertEquals(OrderStatus.SHIPPED, confirmed.getOrderStatus());
     }
 
     @Test

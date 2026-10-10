@@ -95,28 +95,6 @@ public class OrderProcessingService {
     }
 
     /**
-     * 发货订单。
-     *
-     * @param orderId 订单ID
-     * @return 发货后的订单
-     */
-    public Order shipOrder(String orderId) {
-        // 查找订单
-        Order order = findOrderOrThrow(orderId);
-
-        // 检查订单状态是否可以发货
-        if (!order.getOrderStatus().isProcessing() && !order.getOrderStatus().isConfirmed()) {
-            throw new InvalidOperationException("只有处理中或已确认的订单才能发货");
-        }
-
-        // 更新订单状态为已发货
-        order.updateStatus(OrderStatus.SHIPPED);
-
-        // 保存订单
-        return orderRepository.save(order);
-    }
-
-    /**
      * 完成订单。
      *
      * @param orderId 订单ID

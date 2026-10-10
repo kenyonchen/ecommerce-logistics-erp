@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import site.hexaarch.ecommerce.logistics.application.service.tenant.RoleServiceImpl;
+import site.hexaarch.ecommerce.logistics.domain.audit.Auditable;
+import site.hexaarch.ecommerce.logistics.domain.audit.AuditActions;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.BusinessException;
 import site.hexaarch.ecommerce.logistics.domain.tenant.RoleNames;
 import site.hexaarch.ecommerce.logistics.domain.tenant.entity.Role;
@@ -55,6 +57,7 @@ public class RoleController {
      */
     @Operation(summary = "创建角色", description = "创建新的角色；租户用户强制归属本租户，平台管理员必须显式指定租户")
     @PostMapping
+    @Auditable(action = AuditActions.ROLE_CREATE, label = "创建角色")
     public ResponseEntity<Result<?>> createRole(@RequestBody CreateRoleRequest request) {
         request.setTenantId(resolveTenantScope(request.getTenantId()));
         Role role = roleService.createRole(
@@ -71,6 +74,7 @@ public class RoleController {
     @Operation(summary = "创建系统角色", description = "创建新的系统角色（仅平台管理员）")
     @PreAuthorize("hasRole('PLATFORM_ADMIN')")
     @PostMapping("/system")
+    @Auditable(action = AuditActions.ROLE_CREATE, label = "创建系统角色")
     public ResponseEntity<Result<?>> createSystemRole(@RequestBody CreateRoleRequest request) {
         Role role = roleService.createSystemRole(
                 request.getName(),
@@ -114,6 +118,7 @@ public class RoleController {
      */
     @Operation(summary = "更新角色", description = "更新角色信息")
     @PutMapping("/{id}")
+    @Auditable(action = AuditActions.ROLE_UPDATE, label = "更新角色")
     public ResponseEntity<Result<?>> updateRole(@Parameter(description = "角色ID") @PathVariable String id, @RequestBody UpdateRoleRequest request) {
         requireAccessibleRole(id);
         Role role = roleService.updateRole(
@@ -129,6 +134,7 @@ public class RoleController {
      */
     @Operation(summary = "删除角色", description = "删除角色")
     @DeleteMapping("/{id}")
+    @Auditable(action = AuditActions.ROLE_DELETE, label = "删除角色")
     public ResponseEntity<Result<?>> deleteRole(@Parameter(description = "角色ID") @PathVariable String id) {
         requireAccessibleRole(id);
         roleService.deleteRole(id);
@@ -140,6 +146,7 @@ public class RoleController {
      */
     @Operation(summary = "为角色添加权限", description = "为角色添加指定权限")
     @PostMapping("/{id}/permissions")
+    @Auditable(action = AuditActions.ROLE_PERMISSION_UPDATE, label = "为角色增加权限点")
     public ResponseEntity<Result<?>> addPermission(@Parameter(description = "角色ID") @PathVariable String id, @RequestBody AddPermissionRequest request) {
         requireAccessibleRole(id);
         Role role = roleService.addPermissionToRole(id, request.getPermission());
@@ -151,6 +158,7 @@ public class RoleController {
      */
     @Operation(summary = "从角色移除权限", description = "从角色中移除指定权限")
     @DeleteMapping("/{id}/permissions/{permission}")
+    @Auditable(action = AuditActions.ROLE_PERMISSION_UPDATE, label = "移除角色权限点")
     public ResponseEntity<Result<?>> removePermission(@Parameter(description = "角色ID") @PathVariable String id, @Parameter(description = "权限代码") @PathVariable String permission) {
         requireAccessibleRole(id);
         Role role = roleService.removePermissionFromRole(id, permission);
@@ -162,6 +170,7 @@ public class RoleController {
      */
     @Operation(summary = "为角色设置权限集合", description = "为角色设置权限集合")
     @PutMapping("/{id}/permissions")
+    @Auditable(action = AuditActions.ROLE_PERMISSION_UPDATE, label = "重置角色权限点")
     public ResponseEntity<Result<?>> setPermissions(@Parameter(description = "角色ID") @PathVariable String id, @RequestBody SetPermissionsRequest request) {
         requireAccessibleRole(id);
         Role role = roleService.setPermissionsToRole(id, request.getPermissions());
@@ -174,10 +183,11 @@ public class RoleController {
      */
     private String resolveTenantScope(String requestedTenantId) {
         if (isPlatformAdmin()) {
-            if (requestedTenantId == null || requestedTenantId.isBlank()) {
+            String requested = TenantContext.normalizeRequested(requestedTenantId);
+            if (requested == null) {
                 throw new BusinessException("平台管理员操作角色数据必须显式指定 tenantId");
             }
-            return requestedTenantId.trim();
+            return requested;
         }
         if (!TenantContext.hasTenantId() || TenantContext.getTenantId().isBlank()) {
             throw new BusinessException("缺少租户上下文，无法执行角色管理操作");

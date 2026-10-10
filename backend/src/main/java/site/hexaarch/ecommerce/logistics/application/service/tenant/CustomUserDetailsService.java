@@ -29,9 +29,11 @@ import java.util.List;
 public class CustomUserDetailsService implements UserDetailsService {
 
     private final UserRepository userRepository;
+    private final AccountLoginGuard accountLoginGuard;
 
-    public CustomUserDetailsService(UserRepository userRepository) {
+    public CustomUserDetailsService(UserRepository userRepository, AccountLoginGuard accountLoginGuard) {
         this.userRepository = userRepository;
+        this.accountLoginGuard = accountLoginGuard;
     }
 
     @Override
@@ -39,8 +41,11 @@ public class CustomUserDetailsService implements UserDetailsService {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found with username: " + username));
 
+        // 账号是否被锁定单独传给 Spring（给出「账号已锁定」而不是「账号已禁用」），
+        // 租户维度由守卫判定：被停用/被删除租户下的账号不能再拿到令牌
         boolean accountNonLocked = user.getStatus() != UserStatus.LOCKED;
-        boolean enabled = user.getStatus() == UserStatus.ACTIVE;
+        boolean enabled = user.getStatus() == UserStatus.ACTIVE
+                && accountLoginGuard.isTenantUsable(user);
 
         return new org.springframework.security.core.userdetails.User(
                 user.getUsername(),

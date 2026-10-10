@@ -102,7 +102,9 @@ public class PlatformIntegrationServiceImpl implements PlatformIntegrationServic
                     .status(platformIntegration.getStatus() == null
                             ? existing.getStatus() : platformIntegration.getStatus())
                     .createdAt(existing.getCreatedAt())
-                    .updatedAt(platformIntegration.getUpdatedAt())
+                    // updatedAt 是服务端归属的修改时间：入参聚合由控制器按请求体拼装，该字段恒为 null，
+                    // 直接搬过来会把 NOT NULL 列写成 null（PUT /platform-integrations/{id} 报 500）。
+                    .updatedAt(java.time.LocalDateTime.now())
                     .lastProductsSyncedAt(existing.getLastProductsSyncedAt())
                     .lastOrdersSyncedAt(existing.getLastOrdersSyncedAt())
                     .build();

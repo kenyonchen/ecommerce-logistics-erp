@@ -156,6 +156,41 @@ class ShopifyAdminApiContractTest {
         assertTrue(error.getMessage().contains("3 次"), error.getMessage());
     }
 
+    /**
+     * ISS-131：平台已经把状态码和错误体给出来了，就别再把同一个状态用异常类名复述一遍，
+     * 也不要出现包装层那种 {@code ": null"} 尾巴。
+     */
+    @Test
+    void shouldNotRestateStatusWhenPlatformAlreadyGaveOne() {
+        scripted.add(new Scripted(404, "{\"errors\":\"There is no such thing as a shop named br18probe\"}", null));
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> fetcher.fetch(orderRequest(5), credential));
+
+        assertTrue(error.getMessage().contains("404"), error.getMessage());
+        assertFalse(error.getMessage().contains("NotFound:"), "异常类名重复复述同一个 404: " + error.getMessage());
+        assertFalse(error.getMessage().endsWith(": null"), error.getMessage());
+    }
+
+    /**
+     * ISS-131：连接层失败的真凶在 cause 链深处（{@code ResourceAccessException} 自己的消息以
+     * {@code ": null"} 结尾），必须按族说清是「连不上」而不是「限流」，并附根因。
+     */
+    @Test
+    void shouldReportRefusedConnectionAsUnreachableWithRootCause() {
+        ShopifyOrderFetcher unreachable = new ShopifyOrderFetcher(
+                api(credential("http://127.0.0.1:1", "2026-01"), 20, 2, Duration.ofMillis(10)));
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> unreachable.fetch(orderRequest(5), credential("http://127.0.0.1:1", "2026-01")));
+
+        assertTrue(error.getMessage().contains("无法连接"), error.getMessage());
+        assertFalse(error.getMessage().contains("限流或平台不可用"), error.getMessage());
+        assertTrue(error.getMessage().contains("ConnectException"), "应附连接层根因: " + error.getMessage());
+        assertFalse(error.getMessage().endsWith(": null"), error.getMessage());
+        assertEquals("SHOPIFY_REQUEST_FAILED", error.getErrorCode());
+    }
+
     @Test
     void shouldRequireApiVersionInsteadOfHardcodingOne() {
         ShopifyOrderFetcher versionless = new ShopifyOrderFetcher(

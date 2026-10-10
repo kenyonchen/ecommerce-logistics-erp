@@ -12,6 +12,7 @@ import {
   formatAmount
 } from '../../constants/finance';
 
+import Can from '../../components/Auth/Can.jsx';
 const { Title } = Typography;
 const { Option } = Select;
 const { RangePicker } = DatePicker;
@@ -173,38 +174,40 @@ const FinanceList = () => {
           <Button type="link" icon={<EyeOutlined />} onClick={() => navigate(`/finance/${record.transactionId}`)}>
             查看
           </Button>
-          {['PENDING', 'FAILED'].includes(record.status) && (
-            <>
-              {record.status === 'PENDING' && (
-                <>
-                  <Popconfirm
-                    title="确认将该笔交易标记为成功？"
-                    okText="确定"
-                    cancelText="取消"
-                    onConfirm={() => handleStatusAction('complete', record.transactionId)}
-                  >
-                    <Button type="link">完成</Button>
-                  </Popconfirm>
-                  <Popconfirm
-                    title="确认将该笔交易标记为失败？"
-                    okText="确定"
-                    cancelText="取消"
-                    onConfirm={() => handleStatusAction('fail', record.transactionId)}
-                  >
-                    <Button type="link" danger>失败</Button>
-                  </Popconfirm>
-                </>
-              )}
-              <Popconfirm
-                title="确认取消该笔交易？"
-                okText="确定"
-                cancelText="取消"
-                onConfirm={() => handleStatusAction('cancel', record.transactionId)}
-              >
-                <Button type="link">取消</Button>
-              </Popconfirm>
-            </>
-          )}
+          <Can permission="finance:write">
+            {['PENDING', 'FAILED'].includes(record.status) && (
+              <>
+                {record.status === 'PENDING' && (
+                  <>
+                    <Popconfirm
+                      title="确认将该笔交易标记为成功？"
+                      okText="确定"
+                      cancelText="取消"
+                      onConfirm={() => handleStatusAction('complete', record.transactionId)}
+                    >
+                      <Button type="link">完成</Button>
+                    </Popconfirm>
+                    <Popconfirm
+                      title="确认将该笔交易标记为失败？"
+                      okText="确定"
+                      cancelText="取消"
+                      onConfirm={() => handleStatusAction('fail', record.transactionId)}
+                    >
+                      <Button type="link" danger>失败</Button>
+                    </Popconfirm>
+                  </>
+                )}
+                <Popconfirm
+                  title="确认取消该笔交易？"
+                  okText="确定"
+                  cancelText="取消"
+                  onConfirm={() => handleStatusAction('cancel', record.transactionId)}
+                >
+                  <Button type="link">取消</Button>
+                </Popconfirm>
+              </>
+            )}
+          </Can>
         </Space>
       )
     }
@@ -215,12 +218,16 @@ const FinanceList = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
         <Title level={4}>财务交易列表</Title>
         <Space>
-          <Button icon={<ImportOutlined />}>
-            <Link to="/finance/import">财务导入</Link>
-          </Button>
-          <Button type="primary" icon={<PlusOutlined />}>
-            <Link to="/finance/create">添加交易</Link>
-          </Button>
+          <Can permission="finance:import">
+            <Button icon={<ImportOutlined />}>
+              <Link to="/finance/import">财务导入</Link>
+            </Button>
+          </Can>
+          <Can permission="finance:write">
+            <Button type="primary" icon={<PlusOutlined />}>
+              <Link to="/finance/create">添加交易</Link>
+            </Button>
+          </Can>
         </Space>
       </div>
 

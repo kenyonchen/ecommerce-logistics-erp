@@ -78,6 +78,15 @@ public class UserRepositoryImpl implements UserRepository {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<User> findAll() {
+        return userJpaRepository.findAll()
+                .stream()
+                .map(this::toDomainWithRoles)
+                .collect(Collectors.toList());
+    }
+
+    @Override
     @Transactional
     public void deleteById(String id) {
         userJpaRepository.deleteById(id);
@@ -104,12 +113,10 @@ public class UserRepositoryImpl implements UserRepository {
     }
 
     private site.hexaarch.ecommerce.logistics.domain.tenant.entity.Role toDomainRole(RoleJpaEntity roleJpa) {
-        var role = site.hexaarch.ecommerce.logistics.domain.tenant.entity.Role.create(
-                roleJpa.getTenantId(), roleJpa.getName(), roleJpa.getDescription());
-        role.setId(roleJpa.getId());
-        role.setSystemRole(roleJpa.isSystemRole());
-        role.setPermissions(roleJpa.getPermissions() == null ? new java.util.HashSet<>() : new java.util.HashSet<>(roleJpa.getPermissions()));
-        role.setUpdatedAt(roleJpa.getUpdatedAt());
-        return role;
+        // 同样必须走 restore：这里曾独立用 create() 重建角色，让 GET /api/users/{id} 内嵌的
+        // roles[].createdAt 是请求时刻而不是落库时刻（ISS-125 的第二个重建点）。
+        return site.hexaarch.ecommerce.logistics.domain.tenant.entity.Role.restore(
+                roleJpa.getId(), roleJpa.getTenantId(), roleJpa.getName(), roleJpa.getDescription(),
+                roleJpa.isSystemRole(), roleJpa.getPermissions(), roleJpa.getCreatedAt(), roleJpa.getUpdatedAt());
     }
 }

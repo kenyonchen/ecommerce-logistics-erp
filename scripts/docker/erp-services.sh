@@ -45,7 +45,7 @@ fi
 # 若 3306 等端口被本机其它 MySQL / RocketMQ 占用，docker 会静默发布端口失败，
 # 后端连 localhost:3306 时便会抛 Communications link failure，极难定位，故提前拦截。
 # 仅在当前没有本栈容器运行时才检测，避免把 Docker 已发布的本栈端口误判为冲突。
-PORTS=(3306 9876 10909 10911 10912 8080 8081)
+PORTS=("${ERP_MYSQL_HOST_PORT:-3306}" 9876 10909 10911 10912 8080 8081)
 check_ports() {
   if [ -n "$(docker compose -f "$COMPOSE_FILE" ps -q 2>/dev/null)" ]; then
     return 0

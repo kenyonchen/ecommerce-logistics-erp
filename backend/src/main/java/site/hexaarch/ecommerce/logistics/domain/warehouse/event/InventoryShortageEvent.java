@@ -1,5 +1,7 @@
 package site.hexaarch.ecommerce.logistics.domain.warehouse.event;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Getter;
 
 import java.time.LocalDateTime;
@@ -12,14 +14,27 @@ import java.time.LocalDateTime;
 @Getter
 public class InventoryShortageEvent {
     private final String warehouseId;
+    private final String tenantId;
     private final String productId;
     private final String sku;
     private final int currentQuantity;
     private final int threshold;
     private final LocalDateTime occurredAt;
 
-    private InventoryShortageEvent(String warehouseId, String productId, String sku, int currentQuantity, int threshold, LocalDateTime occurredAt) {
+    /**
+     * MQ 消费侧的反序列化入口：字段全为 final + 私有 builder 构造时 Jackson 无 creator 可用，
+     * 消费者会在 `cannot convert message` 上反复重试（ISS-052）。
+     */
+    @JsonCreator
+    public InventoryShortageEvent(@JsonProperty("warehouseId") String warehouseId,
+                                  @JsonProperty("tenantId") String tenantId,
+                                  @JsonProperty("productId") String productId,
+                                  @JsonProperty("sku") String sku,
+                                  @JsonProperty("currentQuantity") int currentQuantity,
+                                  @JsonProperty("threshold") int threshold,
+                                  @JsonProperty("occurredAt") LocalDateTime occurredAt) {
         this.warehouseId = warehouseId;
+        this.tenantId = tenantId;
         this.productId = productId;
         this.sku = sku;
         this.currentQuantity = currentQuantity;
@@ -36,6 +51,13 @@ public class InventoryShortageEvent {
      */
     public String getWarehouseId() {
         return warehouseId;
+    }
+
+    /**
+     * 获取租户ID
+     */
+    public String getTenantId() {
+        return tenantId;
     }
 
     /**
@@ -75,6 +97,7 @@ public class InventoryShortageEvent {
 
     public static class Builder {
         private String warehouseId;
+        private String tenantId;
         private String productId;
         private String sku;
         private int currentQuantity;
@@ -83,6 +106,11 @@ public class InventoryShortageEvent {
 
         public Builder warehouseId(String warehouseId) {
             this.warehouseId = warehouseId;
+            return this;
+        }
+
+        public Builder tenantId(String tenantId) {
+            this.tenantId = tenantId;
             return this;
         }
 
@@ -112,7 +140,7 @@ public class InventoryShortageEvent {
         }
 
         public InventoryShortageEvent build() {
-            return new InventoryShortageEvent(warehouseId, productId, sku, currentQuantity, threshold, occurredAt);
+            return new InventoryShortageEvent(warehouseId, tenantId, productId, sku, currentQuantity, threshold, occurredAt);
         }
     }
 }

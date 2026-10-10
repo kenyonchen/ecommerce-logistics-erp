@@ -3,7 +3,6 @@ package site.hexaarch.ecommerce.logistics.infrastructure.persistence.jpa.mapper.
 import org.mapstruct.Mapper;
 import site.hexaarch.ecommerce.logistics.domain.logistics.entity.LogisticsChannel;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -31,8 +30,8 @@ public interface LogisticsChannelMapper {
         entity.setDescription(channel.getDescription());
         entity.setCountries(channel.getCountries() == null || channel.getCountries().isEmpty()
                 ? null : String.join(",", channel.getCountries()));
-        entity.setBasePrice(channel.getBasePrice() == null ? null : channel.getBasePrice().doubleValue());
-        entity.setPricePerGram(channel.getPricePerGram() == null ? null : channel.getPricePerGram().doubleValue());
+        entity.setBasePrice(channel.getBasePrice());
+        entity.setPricePerGram(channel.getPricePerGram());
         entity.setCurrency(channel.getCurrency());
         entity.setActive(channel.isActive());
         return entity;
@@ -51,8 +50,8 @@ public interface LogisticsChannelMapper {
                 .channelName(entity.getChannelName())
                 .description(entity.getDescription())
                 .countries(splitCountries(entity.getCountries()))
-                .basePrice(entity.getBasePrice() == null ? null : BigDecimal.valueOf(entity.getBasePrice()))
-                .pricePerGram(entity.getPricePerGram() == null ? null : BigDecimal.valueOf(entity.getPricePerGram()))
+                .basePrice(entity.getBasePrice())
+                .pricePerGram(entity.getPricePerGram())
                 .currency(entity.getCurrency())
                 .active(entity.isActive())
                 .build();

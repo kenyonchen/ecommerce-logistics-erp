@@ -54,7 +54,7 @@ const Login = () => {
         </Paragraph>
 
         <Alert
-          message="平台管理员登录"
+          title="平台管理员登录"
           description="本端仅供平台管理员（PLATFORM_ADMIN）使用，用于租户与全局用户管理"
           type="info"
           showIcon

@@ -3,6 +3,7 @@ package site.hexaarch.ecommerce.logistics.interfaces.controller.product;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -17,6 +18,8 @@ import site.hexaarch.ecommerce.logistics.application.command.product.CreateSkuCo
 import site.hexaarch.ecommerce.logistics.application.command.product.ProductAttributeCommand;
 import site.hexaarch.ecommerce.logistics.application.command.product.UpdateProductCommand;
 import site.hexaarch.ecommerce.logistics.application.service.product.ProductApplicationService;
+import site.hexaarch.ecommerce.logistics.domain.audit.Auditable;
+import site.hexaarch.ecommerce.logistics.domain.audit.AuditActions;
 import site.hexaarch.ecommerce.logistics.domain.common.PageResult;
 import site.hexaarch.ecommerce.logistics.domain.product.aggregate.Product;
 import site.hexaarch.ecommerce.logistics.domain.product.repository.ProductQuery;
@@ -42,6 +45,11 @@ import java.util.List;
 @RequestMapping("/api/products")
 @Tag(name = "产品管理", description = "产品和SKU相关的API接口")
 public class ProductController {
+    private static final String HAS_PRODUCT_READ =
+            "hasRole('PLATFORM_ADMIN') or hasAuthority('product:read')";
+    private static final String HAS_PRODUCT_WRITE =
+            "hasRole('PLATFORM_ADMIN') or hasAuthority('product:write')";
+
     private final ProductApplicationService productApplicationService;
     private final ProductMapper productMapper;
 
@@ -51,6 +59,7 @@ public class ProductController {
     }
 
     @Operation(summary = "分页查询产品", description = "支持关键字、分类、状态、来源平台过滤的分页查询")
+    @PreAuthorize(HAS_PRODUCT_READ)
     @GetMapping
     public Result<PageResult<ProductDto>> listProducts(
             @Parameter(description = "租户ID") @RequestParam(required = false) String tenantId,
@@ -78,6 +87,8 @@ public class ProductController {
     }
 
     @Operation(summary = "创建产品", description = "创建一个新的产品，可同时携带SKU列表")
+    @PreAuthorize(HAS_PRODUCT_WRITE)
+    @Auditable(action = AuditActions.PRODUCT_CREATE, label = "创建商品", targetType = "Product")
     @PostMapping
     public Result<ProductDto> createProduct(@RequestBody CreateProductRequest request) {
         var product = productApplicationService.createProduct(toCreateCommand(request));
@@ -85,6 +96,8 @@ public class ProductController {
     }
 
     @Operation(summary = "更新产品", description = "更新已存在的产品信息，SKU列表为整体覆盖")
+    @PreAuthorize(HAS_PRODUCT_WRITE)
+    @Auditable(action = AuditActions.PRODUCT_UPDATE, label = "更新商品", targetType = "Product")
     @PutMapping("/{id}")
     public Result<ProductDto> updateProduct(@Parameter(description = "产品ID") @PathVariable String id,
                                             @RequestBody UpdateProductRequest request) {
@@ -100,6 +113,7 @@ public class ProductController {
     }
 
     @Operation(summary = "根据ID获取产品", description = "根据产品ID获取产品详细信息")
+    @PreAuthorize(HAS_PRODUCT_READ)
     @GetMapping("/{id}")
     public Result<ProductDto> getProductById(
             @Parameter(description = "产品ID") @PathVariable String id) {
@@ -108,6 +122,7 @@ public class ProductController {
     }
 
     @Operation(summary = "根据SKU编码获取产品", description = "根据SKU编码查找产品")
+    @PreAuthorize(HAS_PRODUCT_READ)
     @GetMapping("/sku/{skuCode}")
     public Result<ProductDto> getProductBySkuCode(
             @Parameter(description = "SKU编码") @PathVariable String skuCode) {
@@ -116,6 +131,8 @@ public class ProductController {
     }
 
     @Operation(summary = "激活产品", description = "激活指定ID的产品")
+    @PreAuthorize(HAS_PRODUCT_WRITE)
+    @Auditable(action = AuditActions.PRODUCT_STATUS_UPDATE, label = "启用商品", targetType = "Product")
     @PutMapping("/{id}/activate")
     public Result<ProductDto> activateProduct(
             @Parameter(description = "产品ID") @PathVariable String id) {
@@ -124,6 +141,8 @@ public class ProductController {
     }
 
     @Operation(summary = "停用产品", description = "停用指定ID的产品")
+    @PreAuthorize(HAS_PRODUCT_WRITE)
+    @Auditable(action = AuditActions.PRODUCT_STATUS_UPDATE, label = "停用商品", targetType = "Product")
     @PutMapping("/{id}/deactivate")
     public Result<ProductDto> deactivateProduct(
             @Parameter(description = "产品ID") @PathVariable String id) {
@@ -132,6 +151,8 @@ public class ProductController {
     }
 
     @Operation(summary = "删除产品", description = "根据ID删除产品及其SKU")
+    @PreAuthorize(HAS_PRODUCT_WRITE)
+    @Auditable(action = AuditActions.PRODUCT_DELETE, label = "删除商品", targetType = "Product")
     @DeleteMapping("/{id}")
     public Result<Void> deleteProduct(@Parameter(description = "产品ID") @PathVariable String id,
                                       @Parameter(description = "租户ID") @RequestParam(required = false) String tenantId) {
@@ -140,6 +161,8 @@ public class ProductController {
     }
 
     @Operation(summary = "新增SKU", description = "给指定产品新增SKU")
+    @PreAuthorize(HAS_PRODUCT_WRITE)
+    @Auditable(action = AuditActions.PRODUCT_SKU_ADD, label = "新增商品SKU", targetType = "Product")
     @PostMapping("/{id}/skus")
     public Result<ProductDto> addSku(@Parameter(description = "产品ID") @PathVariable String id,
                                      @RequestBody SkuRequestDto request) {
@@ -148,6 +171,8 @@ public class ProductController {
     }
 
     @Operation(summary = "删除SKU", description = "删除指定产品下的SKU")
+    @PreAuthorize(HAS_PRODUCT_WRITE)
+    @Auditable(action = AuditActions.PRODUCT_SKU_REMOVE, label = "删除商品SKU", targetType = "Product", targetIdParam = "id")
     @DeleteMapping("/{id}/skus/{skuCode}")
     public Result<ProductDto> removeSku(@Parameter(description = "产品ID") @PathVariable String id,
                                         @Parameter(description = "SKU编码") @PathVariable String skuCode,
@@ -157,6 +182,8 @@ public class ProductController {
     }
 
     @Operation(summary = "批量启用/停用产品", description = "批量修改产品的启用状态")
+    @PreAuthorize(HAS_PRODUCT_WRITE)
+    @Auditable(action = AuditActions.PRODUCT_BATCH_UPDATE, label = "批量启用/停用商品", targetType = "Product")
     @PutMapping("/batch/active")
     public Result<Integer> batchChangeActive(@RequestBody BatchActiveRequest request) {
         int count = productApplicationService.batchChangeActive(request.getProductIds(), request.getTenantId(),
@@ -165,6 +192,8 @@ public class ProductController {
     }
 
     @Operation(summary = "批量删除产品", description = "批量删除多个产品及其SKU")
+    @PreAuthorize(HAS_PRODUCT_WRITE)
+    @Auditable(action = AuditActions.PRODUCT_BATCH_DELETE, label = "批量删除商品", targetType = "Product")
     @DeleteMapping("/batch")
     public Result<Integer> batchDeleteProducts(@RequestBody BatchDeleteRequest request) {
         int count = productApplicationService.batchDeleteProducts(request.getProductIds(), request.getTenantId());

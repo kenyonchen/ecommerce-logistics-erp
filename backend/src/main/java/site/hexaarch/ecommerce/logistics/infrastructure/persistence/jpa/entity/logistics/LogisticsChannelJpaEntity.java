@@ -8,6 +8,8 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
+
 /**
  * 物流渠道JPA实体，用于持久化物流渠道实体。
  *
@@ -42,14 +44,14 @@ public class LogisticsChannelJpaEntity {
     /**
      * 首重基础费用
      */
-    @Column(name = "base_price")
-    private Double basePrice;
+    @Column(name = "base_price", precision = 19, scale = 2)
+    private BigDecimal basePrice;
 
     /**
      * 每克续重费用
      */
-    @Column(name = "price_per_gram")
-    private Double pricePerGram;
+    @Column(name = "price_per_gram", precision = 19, scale = 4)
+    private BigDecimal pricePerGram;
 
     @Column(name = "currency", length = 8)
     private String currency;

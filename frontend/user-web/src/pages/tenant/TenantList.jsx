@@ -23,7 +23,7 @@ const TenantList = () => {
     try {
       const response = await tenantApi.getTenants();
       setTenants(response);
-    } catch (error) {
+    } catch {
       message.error('加载租户列表失败');
     } finally {
       setLoading(false);
@@ -55,7 +55,7 @@ const TenantList = () => {
       await tenantApi.deleteTenant(tenantId);
       message.success('租户删除成功');
       fetchTenants();
-    } catch (error) {
+    } catch {
       message.error('删除租户失败');
     }
   };
@@ -74,7 +74,7 @@ const TenantList = () => {
       }
       setModalVisible(false);
       fetchTenants();
-    } catch (error) {
+    } catch {
       message.error('保存租户失败');
     }
   };

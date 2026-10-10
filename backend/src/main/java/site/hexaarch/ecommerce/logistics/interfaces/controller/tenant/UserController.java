@@ -15,8 +15,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import site.hexaarch.ecommerce.logistics.application.service.config.SystemConfigApplicationService;
 import site.hexaarch.ecommerce.logistics.application.service.tenant.RoleServiceImpl;
 import site.hexaarch.ecommerce.logistics.application.service.tenant.UserServiceImpl;
+import site.hexaarch.ecommerce.logistics.domain.audit.Auditable;
+import site.hexaarch.ecommerce.logistics.domain.audit.AuditActions;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.BusinessException;
 import site.hexaarch.ecommerce.logistics.domain.tenant.RoleNames;
 import site.hexaarch.ecommerce.logistics.domain.tenant.entity.User;
@@ -46,11 +49,14 @@ public class UserController {
 
     private final UserServiceImpl userService;
     private final RoleServiceImpl roleService;
+    private final SystemConfigApplicationService systemConfigApplicationService;
 
     @Autowired
-    public UserController(UserServiceImpl userService, RoleServiceImpl roleService) {
+    public UserController(UserServiceImpl userService, RoleServiceImpl roleService,
+                          SystemConfigApplicationService systemConfigApplicationService) {
         this.userService = userService;
         this.roleService = roleService;
+        this.systemConfigApplicationService = systemConfigApplicationService;
     }
 
     /**
@@ -58,8 +64,10 @@ public class UserController {
      */
     @Operation(summary = "创建用户", description = "创建新的用户；租户用户强制归属本租户，平台管理员必须显式指定租户")
     @PostMapping
+    @Auditable(action = AuditActions.USER_CREATE, label = "创建用户")
     public ResponseEntity<Result<?>> createUser(@RequestBody CreateUserRequest request) {
         request.setTenantId(resolveTenantScope(request.getTenantId()));
+        systemConfigApplicationService.requireAcceptablePassword(request.getPassword());
         User user = userService.createUser(
                 request.getTenantId(),
                 request.getUsername(),
@@ -75,9 +83,15 @@ public class UserController {
     /**
      * 获取用户列表
      */
-    @Operation(summary = "获取用户列表", description = "根据租户ID获取用户列表；租户用户强制返回本租户用户")
+    @Operation(summary = "获取用户列表", description = "租户用户返回本租户用户；平台管理员不传 tenantId 时返回全平台用户")
     @GetMapping
-    public ResponseEntity<Result<?>> getUsers(@Parameter(description = "租户ID，平台管理员必填") @RequestParam String tenantId) {
+    public ResponseEntity<Result<?>> getUsers(
+            @Parameter(description = "租户ID；平台管理员留空表示全平台") @RequestParam(required = false) String tenantId) {
+        if (TenantContext.normalizeRequested(tenantId) == null && isPlatformAdmin()) {
+            // 平台看板要一次拿到全平台用户数，逐租户求和是 N+1；租户用户仍被收敛到本租户。
+            // 历史默认桶字面量在这里等同留空（R-32）：它不是可寻址租户，拿去当过滤值只会得到空列表。
+            return ResponseEntity.ok(Result.success(userService.getAllUsers()));
+        }
         List<User> users = userService.getUsersByTenantId(resolveTenantScope(tenantId));
         return ResponseEntity.ok(Result.success(users));
     }
@@ -96,6 +110,7 @@ public class UserController {
      */
     @Operation(summary = "更新用户", description = "更新用户信息")
     @PutMapping("/{id}")
+    @Auditable(action = AuditActions.USER_UPDATE, label = "更新用户资料")
     public ResponseEntity<Result<?>> updateUser(@Parameter(description = "用户ID") @PathVariable String id, @RequestBody UpdateUserRequest request) {
         requireAccessibleUser(id);
         User user = userService.updateUser(
@@ -111,10 +126,12 @@ public class UserController {
     /**
      * 更新用户密码
      */
-    @Operation(summary = "更新用户密码", description = "更新用户密码")
+    @Operation(summary = "更新用户密码", description = "管理员重置指定用户口令（需审计）")
     @PutMapping("/{id}/password")
+    @Auditable(action = AuditActions.USER_PASSWORD_UPDATE, label = "重置用户口令")
     public ResponseEntity<Result<?>> updatePassword(@Parameter(description = "用户ID") @PathVariable String id, @RequestBody UpdatePasswordRequest request) {
         requireAccessibleUser(id);
+        systemConfigApplicationService.requireAcceptablePassword(request.getPassword());
         User user = userService.updatePassword(id, request.getPassword());
         return ResponseEntity.ok(Result.success(user));
     }
@@ -124,6 +141,7 @@ public class UserController {
      */
     @Operation(summary = "激活用户", description = "激活用户账号")
     @PutMapping("/{id}/activate")
+    @Auditable(action = AuditActions.USER_STATUS_UPDATE, label = "激活用户账号")
     public ResponseEntity<Result<?>> activateUser(@Parameter(description = "用户ID") @PathVariable String id) {
         requireAccessibleUser(id);
         User user = userService.activateUser(id);
@@ -135,6 +153,7 @@ public class UserController {
      */
     @Operation(summary = "禁用用户", description = "禁用用户账号")
     @PutMapping("/{id}/deactivate")
+    @Auditable(action = AuditActions.USER_STATUS_UPDATE, label = "禁用用户账号")
     public ResponseEntity<Result<?>> deactivateUser(@Parameter(description = "用户ID") @PathVariable String id) {
         requireAccessibleUser(id);
         User user = userService.deactivateUser(id);
@@ -146,6 +165,7 @@ public class UserController {
      */
     @Operation(summary = "锁定用户", description = "锁定用户账号")
     @PutMapping("/{id}/lock")
+    @Auditable(action = AuditActions.USER_STATUS_UPDATE, label = "锁定用户账号")
     public ResponseEntity<Result<?>> lockUser(@Parameter(description = "用户ID") @PathVariable String id) {
         requireAccessibleUser(id);
         User user = userService.lockUser(id);
@@ -157,6 +177,7 @@ public class UserController {
      */
     @Operation(summary = "删除用户", description = "删除用户账号")
     @DeleteMapping("/{id}")
+    @Auditable(action = AuditActions.USER_DELETE, label = "删除用户账号")
     public ResponseEntity<Result<?>> deleteUser(@Parameter(description = "用户ID") @PathVariable String id) {
         requireAccessibleUser(id);
         userService.deleteUser(id);
@@ -168,6 +189,7 @@ public class UserController {
      */
     @Operation(summary = "为用户分配角色", description = "为用户分配指定角色；租户用户只能分配本租户的角色，系统角色仅平台管理员可分配")
     @PostMapping("/{id}/roles")
+    @Auditable(action = AuditActions.USER_ROLE_ASSIGN, label = "为用户分配角色")
     public ResponseEntity<Result<?>> assignRole(@Parameter(description = "用户ID") @PathVariable String id, @RequestBody AssignRoleRequest request) {
         User target = requireAccessibleUser(id);
         ensureRoleAssignable(target, request.getRoleId());
@@ -180,6 +202,7 @@ public class UserController {
      */
     @Operation(summary = "从用户移除角色", description = "从用户账号中移除指定角色；租户用户只能操作本租户的角色")
     @DeleteMapping("/{id}/roles/{roleId}")
+    @Auditable(action = AuditActions.USER_ROLE_REMOVE, label = "移除用户角色", targetIdParam = "id")
     public ResponseEntity<Result<?>> removeRole(@Parameter(description = "用户ID") @PathVariable String id, @Parameter(description = "角色ID") @PathVariable String roleId) {
         User target = requireAccessibleUser(id);
         ensureRoleAssignable(target, roleId);
@@ -193,10 +216,11 @@ public class UserController {
      */
     private String resolveTenantScope(String requestedTenantId) {
         if (isPlatformAdmin()) {
-            if (requestedTenantId == null || requestedTenantId.isBlank()) {
+            String requested = TenantContext.normalizeRequested(requestedTenantId);
+            if (requested == null) {
                 throw new BusinessException("平台管理员操作用户数据必须显式指定 tenantId");
             }
-            return requestedTenantId.trim();
+            return requested;
         }
         if (!TenantContext.hasTenantId() || TenantContext.getTenantId().isBlank()) {
             throw new BusinessException("缺少租户上下文，无法执行用户管理操作");

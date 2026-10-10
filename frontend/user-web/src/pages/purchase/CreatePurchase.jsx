@@ -20,8 +20,8 @@ const CreatePurchase = () => {
 
   const fetchWarehouses = useCallback(async () => {
     try {
-      const data = await warehouseApi.getWarehouses();
-      setWarehouses(Array.isArray(data) ? data : []);
+      const data = await warehouseApi.getWarehouses({ page: 0, size: 200 });
+      setWarehouses(Array.isArray(data) ? data : (data?.content ?? []));
     } catch (error) {
       console.error('获取仓库列表失败:', error);
       setWarehouses([]);

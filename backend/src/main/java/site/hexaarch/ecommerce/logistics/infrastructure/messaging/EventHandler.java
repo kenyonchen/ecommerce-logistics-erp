@@ -6,7 +6,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import site.hexaarch.ecommerce.logistics.application.service.finance.FinanceApplicationService;
 import site.hexaarch.ecommerce.logistics.application.service.logistics.LogisticsApplicationService;
-import site.hexaarch.ecommerce.logistics.application.service.purchase.PurchaseApplicationService;
+import site.hexaarch.ecommerce.logistics.application.service.purchase.ReplenishmentApplicationService;
 import site.hexaarch.ecommerce.logistics.application.service.warehouse.WarehouseApplicationService;
 import site.hexaarch.ecommerce.logistics.domain.logistics.event.LogisticsCompletedEvent;
 import site.hexaarch.ecommerce.logistics.domain.order.event.OrderCreatedEvent;
@@ -26,16 +26,16 @@ public class EventHandler {
 
     private final LogisticsApplicationService logisticsApplicationService;
     private final WarehouseApplicationService warehouseApplicationService;
-    private final PurchaseApplicationService purchaseApplicationService;
+    private final ReplenishmentApplicationService replenishmentApplicationService;
     private final FinanceApplicationService financeApplicationService;
 
     public EventHandler(LogisticsApplicationService logisticsApplicationService,
                         WarehouseApplicationService warehouseApplicationService,
-                        PurchaseApplicationService purchaseApplicationService,
+                        ReplenishmentApplicationService replenishmentApplicationService,
                         FinanceApplicationService financeApplicationService) {
         this.logisticsApplicationService = logisticsApplicationService;
         this.warehouseApplicationService = warehouseApplicationService;
-        this.purchaseApplicationService = purchaseApplicationService;
+        this.replenishmentApplicationService = replenishmentApplicationService;
         this.financeApplicationService = financeApplicationService;
     }
 
@@ -94,11 +94,12 @@ public class EventHandler {
         log.info("接收到库存不足事件: 产品 {} 在仓库 {} 数量 {}",
                 event.getProductId(), event.getWarehouseId(), event.getCurrentQuantity());
 
-        // 库存不足时自动生成采购单
+        // 补货语义只住在 ReplenishmentApplicationService：MQ 消费端走同一个方法，
+        // 两条通道各写一套就会建出只有单头的空单（ISS-143）
         try {
-            // 使用正确的参数调用createPurchaseOrder方法，使用默认的tenantId
-            purchaseApplicationService.createPurchaseOrder("default-tenant", "DEFAULT_SUPPLIER", "Default Supplier", event.getWarehouseId());
-            log.info("为产品 {} 自动创建采购单成功", event.getProductId());
+            replenishmentApplicationService.replenishForShortage(event)
+                    .ifPresent(order -> log.info("为产品 {} 自动创建补货采购单 {} 成功",
+                            event.getProductId(), order.getPurchaseOrderId()));
         } catch (Exception e) {
             log.error("为产品 {} 自动创建采购单失败", event.getProductId(), e);
         }

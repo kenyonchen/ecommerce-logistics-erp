@@ -465,7 +465,7 @@ const PlatformIntegration = () => {
         <Alert
           type="info"
           showIcon
-          message="当前账号为只读访问"
+          title="当前账号为只读访问"
           description="查看平台集成需要登录身份；创建、编辑、启停与同步操作需要平台管理员角色或 platform:manage 权限。"
           style={{ marginBottom: 8 }}
         />

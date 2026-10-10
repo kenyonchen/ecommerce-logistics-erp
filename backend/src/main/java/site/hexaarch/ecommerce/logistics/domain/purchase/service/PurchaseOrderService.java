@@ -18,17 +18,6 @@ import java.util.List;
  */
 public interface PurchaseOrderService {
     /**
-     * 创建采购单（仅单头，不含明细）。
-     *
-     * @param tenantId     租户ID
-     * @param supplierId   供应商ID
-     * @param supplierName 供应商名称
-     * @param warehouseId  仓库ID
-     * @return 创建的采购单
-     */
-    PurchaseOrder createPurchaseOrder(String tenantId, String supplierId, String supplierName, String warehouseId);
-
-    /**
      * 创建采购单并一次性写入明细行。
      *
      * @param tenantId     租户ID

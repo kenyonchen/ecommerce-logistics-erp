@@ -37,7 +37,7 @@ export const AuthProvider = ({ children }) => {
           if (!applyProfile(me)) {
             clearSession();
           }
-        } catch (error) {
+        } catch {
           clearSession();
         }
       }
@@ -72,7 +72,7 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     try {
       await authApi.logout();
-    } catch (error) {
+    } catch {
       // 后端登出失败不阻塞本地登出
     }
     clearSession();
@@ -95,6 +95,8 @@ export const AuthProvider = ({ children }) => {
   );
 };
 
+// Provider 与钩子同文件是 Context 惯例，豁免 react-refresh 限制
+// eslint-disable-next-line react-refresh/only-export-components
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {

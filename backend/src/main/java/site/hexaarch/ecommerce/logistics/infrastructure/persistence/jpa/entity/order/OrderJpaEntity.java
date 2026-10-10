@@ -15,6 +15,7 @@ import jakarta.persistence.UniqueConstraint;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -69,8 +70,8 @@ public class OrderJpaEntity {
     @Column(name = "customer_email", length = 128)
     private String customerEmail;
 
-    @Column(name = "total_amount")
-    private Double totalAmount;
+    @Column(name = "total_amount", precision = 19, scale = 2)
+    private BigDecimal totalAmount;
 
     /**
      * 来源平台（AMAZON/EBAY/SHOPIFY...、MANUAL、FILE）

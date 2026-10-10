@@ -5,7 +5,7 @@ import {
 } from 'antd';
 import {
   ArrowLeftOutlined, EditOutlined, DeleteOutlined, InboxOutlined, EnvironmentOutlined,
-  PlusOutlined, ImportOutlined, ExportOutlined
+  PlusOutlined, ImportOutlined, ExportOutlined, SwapOutlined
 } from '@ant-design/icons';
 import { warehouseApi } from '../../services/api';
 
@@ -23,6 +23,7 @@ const WarehouseDetail = () => {
   const [locationAddModalVisible, setLocationAddModalVisible] = useState(false);
   const [inventoryFormModalVisible, setInventoryFormModalVisible] = useState(false);
   const [inventoryFormType, setInventoryFormType] = useState('IN');
+  const [allWarehouses, setAllWarehouses] = useState([]);
   const [inventoryForm] = Form.useForm();
   const [locationForm] = Form.useForm();
   const [editForm] = Form.useForm();
@@ -62,6 +63,13 @@ const WarehouseDetail = () => {
   useEffect(() => {
     fetchWarehouseDetail();
   }, [fetchWarehouseDetail]);
+
+  // 加载仓库下拉（调拨目标选择用）
+  useEffect(() => {
+    warehouseApi.getWarehouses({ page: 0, size: 200 })
+      .then((data) => setAllWarehouses(Array.isArray(data) ? data : (data?.content ?? [])))
+      .catch(() => setAllWarehouses([]));
+  }, []);
 
   const handleBack = () => navigate('/warehouses');
 
@@ -137,7 +145,7 @@ const WarehouseDetail = () => {
     setInventoryFormModalVisible(true);
   };
 
-  // 提交出入库
+  // 提交出入库/调拨
   const handleInventorySubmit = async () => {
     try {
       const values = await inventoryForm.validateFields();
@@ -146,9 +154,20 @@ const WarehouseDetail = () => {
       if (inventoryFormType === 'IN') {
         await warehouseApi.inventoryIn(id, payload);
         message.success('入库成功');
-      } else {
+      } else if (inventoryFormType === 'OUT') {
         await warehouseApi.inventoryOut(id, payload);
         message.success('出库成功');
+      } else {
+        // InventoryMovement 值对象要求 body 内含 warehouseId 与 productId，仅靠路径参数不够
+        await warehouseApi.moveInventory(id, {
+          movementType: 'TRANSFER',
+          warehouseId: id,
+          productId: values.sku,
+          sku: values.sku,
+          quantity: values.quantity,
+          targetWarehouseId: values.targetWarehouseId
+        });
+        message.success('调拨成功');
       }
       setInventoryFormModalVisible(false);
       setInventoryModalVisible(true);
@@ -309,6 +328,7 @@ const WarehouseDetail = () => {
           <Space>
             <Button type="primary" icon={<ImportOutlined />} onClick={() => openInventoryForm('IN')}>入库</Button>
             <Button icon={<ExportOutlined />} onClick={() => openInventoryForm('OUT')}>出库</Button>
+            <Button icon={<SwapOutlined />} onClick={() => openInventoryForm('TRANSFER')}>调拨</Button>
           </Space>
         </div>
         <Table
@@ -320,9 +340,9 @@ const WarehouseDetail = () => {
         />
       </Modal>
 
-      {/* 出入库弹窗 */}
+      {/* 出入库/调拨弹窗 */}
       <Modal
-        title={inventoryFormType === 'IN' ? '库存入库' : '库存出库'}
+        title={inventoryFormType === 'IN' ? '库存入库' : inventoryFormType === 'OUT' ? '库存出库' : '库存调拨'}
         open={inventoryFormModalVisible}
         onCancel={() => setInventoryFormModalVisible(false)}
         onOk={handleInventorySubmit}
@@ -338,12 +358,29 @@ const WarehouseDetail = () => {
             <Input placeholder="请输入SKU编码" />
           </Form.Item>
           <Form.Item
-            label={inventoryFormType === 'IN' ? '入库数量' : '出库数量'}
+            label={inventoryFormType === 'IN' ? '入库数量' : inventoryFormType === 'OUT' ? '出库数量' : '调拨数量'}
             name="quantity"
             rules={[{ required: true, message: '请输入数量' }]}
           >
             <InputNumber style={{ width: '100%' }} min={1} placeholder="请输入数量" />
           </Form.Item>
+          {inventoryFormType === 'TRANSFER' && (
+            <Form.Item
+              label="目标仓库"
+              name="targetWarehouseId"
+              rules={[{ required: true, message: '请选择目标仓库' }]}
+            >
+              <Select placeholder="请选择目标仓库" showSearch optionFilterProp="children">
+                {allWarehouses
+                  .filter((wh) => wh.warehouseId !== id)
+                  .map((wh) => (
+                    <Option key={wh.warehouseId} value={wh.warehouseId}>
+                      {wh.warehouseName}（{wh.warehouseId}）
+                    </Option>
+                  ))}
+              </Select>
+            </Form.Item>
+          )}
         </Form>
       </Modal>
 

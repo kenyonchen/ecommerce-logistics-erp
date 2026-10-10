@@ -1,5 +1,7 @@
 package site.hexaarch.ecommerce.logistics.domain.order.entity;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Getter;
 
 import java.math.BigDecimal;
@@ -19,7 +21,14 @@ public class OrderItem {
     private final BigDecimal unitPrice;
     private final BigDecimal totalPrice;
 
-    private OrderItem(String id, String productId, String sku, String productName, int quantity, BigDecimal unitPrice, BigDecimal totalPrice) {
+    @JsonCreator
+    public OrderItem(@JsonProperty("id") String id,
+                     @JsonProperty("productId") String productId,
+                     @JsonProperty("sku") String sku,
+                     @JsonProperty("productName") String productName,
+                     @JsonProperty("quantity") int quantity,
+                     @JsonProperty("unitPrice") BigDecimal unitPrice,
+                     @JsonProperty("totalPrice") BigDecimal totalPrice) {
         this.id = id;
         this.productId = productId;
         this.sku = sku;

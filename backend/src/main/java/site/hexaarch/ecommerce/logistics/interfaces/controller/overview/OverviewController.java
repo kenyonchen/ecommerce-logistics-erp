@@ -3,6 +3,7 @@ package site.hexaarch.ecommerce.logistics.interfaces.controller.overview;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -29,6 +30,9 @@ import java.util.List;
 @RequestMapping("/api/overview")
 @Tag(name = "系统概览", description = "首页概览聚合统计接口")
 public class OverviewController {
+    private static final String HAS_ORDER_READ =
+            "hasRole('PLATFORM_ADMIN') or hasAuthority('order:read')";
+
     private final OverviewApplicationService overviewApplicationService;
     private final OrderMapper orderMapper;
 
@@ -39,6 +43,7 @@ public class OverviewController {
 
     @Operation(summary = "获取系统概览",
             description = "一次性返回订单/产品/仓库/客户/采购/平台集成/收入等关键指标及最近订单，避免前端多次分页查询拼装")
+    @PreAuthorize(HAS_ORDER_READ)
     @GetMapping
     public Result<SystemOverviewDto> getSystemOverview(
             @Parameter(description = "租户ID，不传则取当前登录租户") @RequestParam(required = false) String tenantId,
@@ -86,8 +91,9 @@ public class OverviewController {
      * 租户解析：优先取请求参数，其次取租户上下文，最后回退默认租户
      */
     private String resolveTenant(String tenantId) {
-        if (tenantId != null && !tenantId.isBlank()) {
-            return tenantId.trim();
+        String requested = TenantContext.normalizeRequested(tenantId);
+        if (requested != null) {
+            return requested;
         }
         if (TenantContext.hasTenantId()) {
             return TenantContext.getTenantId();

@@ -120,7 +120,7 @@ const CreateLogistics = () => {
                 onBlur={handleOrderNumberBlur}
               />
               {orderTip && (
-                <Alert style={{ marginTop: 8 }} type={orderTip.type} message={orderTip.text} showIcon />
+                <Alert style={{ marginTop: 8 }} type={orderTip.type} title={orderTip.text} showIcon />
               )}
             </div>
             <div style={{ marginBottom: 16 }}>

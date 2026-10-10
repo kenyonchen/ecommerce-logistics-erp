@@ -37,8 +37,8 @@
 
 | 前端 | 端口 | 服务对象 | 路由方式 | 现状 |
 |---|---|---|---|---|
-| `frontend/user-web` | 5173 | 卖家团队 | `<Routes>` 组件式（`src/routes.jsx`） | ~~34 个页面文件（33 条路由），其中 9 个页面有真实 API 调用~~ → **2026-01-25 实测：`src/pages/` 下 45 个 `.jsx`、`routes.jsx` 有 42 个 `path`（49 个 `<Route>` 元素，含守卫/布局容器），其中 42 个页面走真实接口**（`services/api.js` = 21 个 api 模块 / 194 个方法），仍写死的只有 `home/Home.jsx`、`platform/PlatformDashboard.jsx`、`platform/SystemConfig.jsx` |
-| `frontend/admin-web` | 5174 | 平台运营 | `createBrowserRouter` 数据式 | ~~4 个页面，全 mock，无登录页~~ → **2026-01-25 实测：5 个页面，且已有登录页 + `AdminGuard` + 真实 `authApi`**（M-09/ISS-026 已修）。数据是 **3 真 2 假**：`Login`/`TenantList`/`UserList` 发真实请求，`PlatformDashboard`（无 `services/api` import）与 `SystemConfig`（有 import、**0 个调用点**，保存只 `console.log`）仍是硬编码；其 `platformApi`（`admin-web/src/services/api.js:116-143`）是**内存桩** |
+| `frontend/user-web` | ~~5173~~ → **5120**（🔄 2026-10-10：`vite.config.js:9` 已写死） | 卖家团队 | `<Routes>` 组件式（`src/routes.jsx`） | ~~34 个页面文件（33 条路由），其中 9 个页面有真实 API 调用~~ → **2026-01-25 实测：`src/pages/` 下 45 个 `.jsx`、`routes.jsx` 有 42 个 `path`（49 个 `<Route>` 元素，含守卫/布局容器），其中 42 个页面走真实接口**（`services/api.js` = 21 个 api 模块 / 194 个方法），仍写死的只有 `home/Home.jsx`、`platform/PlatformDashboard.jsx`、`platform/SystemConfig.jsx` |
+| `frontend/admin-web` | ~~5174~~ → **5110**（🔄 2026-10-10：`vite.config.js:9` 已写死） | 平台运营 | `createBrowserRouter` 数据式 | ~~4 个页面，全 mock，无登录页~~ → **2026-01-25 实测：5 个页面，且已有登录页 + `AdminGuard` + 真实 `authApi`**（M-09/ISS-026 已修）。数据是 **3 真 2 假**：`Login`/`TenantList`/`UserList` 发真实请求，`PlatformDashboard`（无 `services/api` import）与 `SystemConfig`（有 import、**0 个调用点**，保存只 `console.log`）仍是硬编码；其 `platformApi`（`admin-web/src/services/api.js:116-143`）是**内存桩** |
 
 技术栈统一：React 19 + Vite 7 + Ant Design 6 + React Router 7 + Axios，纯 JavaScript（无 TypeScript）。
 

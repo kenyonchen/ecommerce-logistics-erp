@@ -52,6 +52,14 @@ public interface UserRepository {
     List<User> findByTenantId(String tenantId);
 
     /**
+     * 全平台用户列表，仅供平台管理员的跨租户概览使用
+     * （调用点必须先把住 ROLE_PLATFORM_ADMIN 门槛，见 {@code UserController#getUsers}）
+     *
+     * @return 全部用户
+     */
+    List<User> findAll();
+
+    /**
      * 删除用户
      *
      * @param id 用户ID

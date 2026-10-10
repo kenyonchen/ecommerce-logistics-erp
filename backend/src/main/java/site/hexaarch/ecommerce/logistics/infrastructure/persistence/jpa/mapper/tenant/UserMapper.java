@@ -40,46 +40,29 @@ public interface UserMapper {
 
     /**
      * 将JPA实体转换为用户领域模型
+     * <p>
+     * 重建必须走 {@link User#restore}：create() 会把 createdAt 写成 now()，
+     * 既让读接口返回"本次请求的时刻"，又让下一次 save() 把库里的 created_at 覆盖掉（ISS-125）。
+     * </p>
      */
     default User toDomainEntity(UserJpaEntity userJpaEntity) {
         if (userJpaEntity == null) {
             return null;
         }
 
-        // 使用User类的工厂方法创建User实例
-        User user = User.create(
+        return User.restore(
+                userJpaEntity.getId(),
                 userJpaEntity.getTenantId(),
                 userJpaEntity.getUsername(),
                 userJpaEntity.getPassword(),
                 userJpaEntity.getEmail(),
                 userJpaEntity.getPhone(),
                 userJpaEntity.getFirstName(),
-                userJpaEntity.getLastName()
+                userJpaEntity.getLastName(),
+                stringToUserStatus(userJpaEntity.getStatus()),
+                userJpaEntity.getCreatedAt(),
+                userJpaEntity.getUpdatedAt()
         );
-
-        // 设置其他属性
-        user.setId(userJpaEntity.getId());
-
-        // 设置状态
-        try {
-            UserStatus status = UserStatus.valueOf(userJpaEntity.getStatus());
-            switch (status) {
-                case ACTIVE:
-                    user.activate();
-                    break;
-                case INACTIVE:
-                    user.deactivate();
-                    break;
-                case LOCKED:
-                    user.lock();
-                    break;
-            }
-        } catch (IllegalArgumentException e) {
-            // 默认状态为ACTIVE
-            user.activate();
-        }
-
-        return user;
     }
 
     /**

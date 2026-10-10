@@ -73,7 +73,9 @@ public class Product {
         this.id = id;
         this.tenantId = tenantId;
         this.category = category;
-        this.domainEvents = domainEvents;
+        // 兜底初始化：从持久层重建（Mapper/Builder 未传入 domainEvents）时该字段为 null，
+        // 注册领域事件会 NPE（ISS-068），此处保证事件列表恒非空
+        this.domainEvents = domainEvents == null ? new ArrayList<>() : domainEvents;
         this.name = name;
         this.description = description;
         this.skus = skus;

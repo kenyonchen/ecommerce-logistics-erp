@@ -30,6 +30,11 @@ public interface PlatformIntegrationMapper {
     @Mapping(source = "authType", target = "authType", qualifiedByName = "jpaEntityToAuthType")
     PlatformIntegration toDomain(PlatformIntegrationJpaEntity jpaEntity);
 
+    /**
+     * 字段级拷贝。仓储在托管实体上就地解密会被 Hibernate 当成变更写回库，读凭据前先拷一份。
+     */
+    PlatformIntegrationJpaEntity copy(PlatformIntegrationJpaEntity jpaEntity);
+
     @Named("authTypeToJpaEntity")
     default PlatformAuthTypeJpaEntity authTypeToJpaEntity(PlatformAuthType authType) {
         if (authType == null) {

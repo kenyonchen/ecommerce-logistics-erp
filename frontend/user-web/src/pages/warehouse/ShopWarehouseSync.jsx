@@ -10,6 +10,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { shopWarehouseApi, warehouseApi, warehouseImportApi, platformIntegrationApi } from '../../services/api';
 
+import Can from '../../components/Auth/Can.jsx';
 const { Title, Text } = Typography;
 const { Option } = Select;
 
@@ -43,11 +44,11 @@ const ShopWarehouseSync = () => {
     try {
       const [integrationsData, warehousesData, shopWarehousesData] = await Promise.all([
         platformIntegrationApi.getIntegrations().catch(() => []),
-        warehouseApi.getWarehouses().catch(() => []),
+        warehouseApi.getWarehouses({ page: 0, size: 200 }).catch(() => []),
         shopWarehouseApi.getShopWarehouses({}).catch(() => [])
       ]);
       setIntegrations(Array.isArray(integrationsData) ? integrationsData : []);
-      setWarehouses(Array.isArray(warehousesData) ? warehousesData : []);
+      setWarehouses(Array.isArray(warehousesData) ? warehousesData : (warehousesData?.content ?? []));
       setShopWarehouses(Array.isArray(shopWarehousesData) ? shopWarehousesData : []);
     } finally {
       setLoading(false);
@@ -250,14 +251,16 @@ const ShopWarehouseSync = () => {
       width: 160,
       render: (_, record) => (
         <Space>
-          <Button type="link" size="small" icon={<LinkOutlined />} onClick={() => openBind(record)}>
-            {record.bound ? '重新绑定' : '绑定'}
-          </Button>
-          {record.bound && (
-            <Popconfirm title="确认解除绑定？" onConfirm={() => handleUnbind(record)}>
-              <Button type="link" size="small" danger icon={<DisconnectOutlined />}>解绑</Button>
-            </Popconfirm>
-          )}
+          <Can permission="warehouse:write">
+            <Button type="link" size="small" icon={<LinkOutlined />} onClick={() => openBind(record)}>
+              {record.bound ? '重新绑定' : '绑定'}
+            </Button>
+            {record.bound && (
+              <Popconfirm title="确认解除绑定？" onConfirm={() => handleUnbind(record)}>
+                <Button type="link" size="small" danger icon={<DisconnectOutlined />}>解绑</Button>
+              </Popconfirm>
+            )}
+          </Can>
         </Space>
       )
     }
@@ -343,16 +346,18 @@ const ShopWarehouseSync = () => {
           <Checkbox checked={useSampleData} onChange={(e) => setUseSampleData(e.target.checked)}>
             使用示例数据（未联调真实平台时勾选）
           </Checkbox>
-          <Button type="primary" icon={<SyncOutlined spin={syncing} />} loading={syncing} onClick={handleSync}>
-            开始同步
-          </Button>
+          <Can permission="shop:sync">
+            <Button type="primary" icon={<SyncOutlined spin={syncing} />} loading={syncing} onClick={handleSync}>
+              开始同步
+            </Button>
+          </Can>
         </Space>
 
         {syncResult && (
           <div style={{ marginTop: 12 }}>
             <Alert
               type={syncResult.failureCount > 0 ? 'warning' : 'success'}
-              message={`同步结果：共拉取 ${syncResult.totalFetched} 条，新增 ${syncResult.createdCount}，更新 ${syncResult.updatedCount}，自动绑定 ${syncResult.autoBoundCount}，失败 ${syncResult.failureCount}`}
+              title={`同步结果：共拉取 ${syncResult.totalFetched} 条，新增 ${syncResult.createdCount}，更新 ${syncResult.updatedCount}，自动绑定 ${syncResult.autoBoundCount}，失败 ${syncResult.failureCount}`}
               description={syncResult.failures && syncResult.failures.length > 0
                 ? syncResult.failures.map((f, i) => <div key={i}>{f}</div>)
                 : null}
@@ -384,20 +389,22 @@ const ShopWarehouseSync = () => {
           <Checkbox checked={updateExisting} onChange={(e) => setUpdateExisting(e.target.checked)}>
             平台仓库ID已存在时覆盖更新
           </Checkbox>
-          <Upload
-            beforeUpload={(file) => handleUpload(file, 'preview')}
-            showUploadList={false}
-            accept=".csv,.json,.xlsx,.xls"
-          >
-            <Button icon={<UploadOutlined />} loading={importLoading}>上传文件预览 (CSV/JSON/Excel)</Button>
-          </Upload>
-          <Upload
-            beforeUpload={(file) => handleUpload(file, 'import')}
-            showUploadList={false}
-            accept=".csv,.json,.xlsx,.xls"
-          >
-            <Button icon={<ImportOutlined />} loading={importLoading}>上传并直接导入</Button>
-          </Upload>
+          <Can permission="warehouse:write">
+            <Upload
+              beforeUpload={(file) => handleUpload(file, 'preview')}
+              showUploadList={false}
+              accept=".csv,.json,.xlsx,.xls"
+            >
+              <Button icon={<UploadOutlined />} loading={importLoading}>上传文件预览 (CSV/JSON/Excel)</Button>
+            </Upload>
+            <Upload
+              beforeUpload={(file) => handleUpload(file, 'import')}
+              showUploadList={false}
+              accept=".csv,.json,.xlsx,.xls"
+            >
+              <Button icon={<ImportOutlined />} loading={importLoading}>上传并直接导入</Button>
+            </Upload>
+          </Can>
           <Button icon={<DownloadOutlined />} onClick={handleDownloadTemplate}>下载导入模板</Button>
           <Button icon={<HistoryOutlined />} onClick={fetchJobs}>刷新任务列表</Button>
         </Space>
@@ -412,7 +419,7 @@ const ShopWarehouseSync = () => {
             </Divider>
             <Alert
               type={importPreview.rowErrors && importPreview.rowErrors.length > 0 ? 'warning' : 'info'}
-              message={`行级校验错误 ${importPreview.rowErrors ? importPreview.rowErrors.length : 0} 条；存在错误的行导入时将被跳过并记录到任务明细`}
+              title={`行级校验错误 ${importPreview.rowErrors ? importPreview.rowErrors.length : 0} 条；存在错误的行导入时将被跳过并记录到任务明细`}
               style={{ marginBottom: 8 }}
             />
             <Table

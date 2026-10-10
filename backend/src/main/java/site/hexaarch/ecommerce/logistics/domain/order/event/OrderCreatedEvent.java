@@ -1,5 +1,7 @@
 package site.hexaarch.ecommerce.logistics.domain.order.event;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Getter;
 import site.hexaarch.ecommerce.logistics.domain.order.entity.OrderItem;
 import site.hexaarch.ecommerce.logistics.domain.order.valueobject.PaymentInfo;
@@ -23,6 +25,22 @@ public class OrderCreatedEvent {
     private final ShippingAddress shippingAddress;
     private final PaymentInfo paymentInfo;
     private final LocalDateTime createdAt;
+
+    /**
+     * MQ 消费侧的反序列化入口（ISS-052）：只有 builder 形态的私有构造时 Jackson 无 creator 可用，
+     * 消费者在 `cannot convert message` 上反复重试。
+     */
+    @JsonCreator
+    public static OrderCreatedEvent fromJson(@JsonProperty("orderId") String orderId,
+                                             @JsonProperty("tenantId") String tenantId,
+                                             @JsonProperty("customerId") String customerId,
+                                             @JsonProperty("orderItems") List<OrderItem> orderItems,
+                                             @JsonProperty("shippingAddress") ShippingAddress shippingAddress,
+                                             @JsonProperty("paymentInfo") PaymentInfo paymentInfo,
+                                             @JsonProperty("createdAt") LocalDateTime createdAt) {
+        return builder().orderId(orderId).tenantId(tenantId).customerId(customerId).orderItems(orderItems)
+                .shippingAddress(shippingAddress).paymentInfo(paymentInfo).createdAt(createdAt).build();
+    }
 
     private OrderCreatedEvent(Builder builder) {
         this.orderId = Objects.requireNonNull(builder.orderId, "Order ID cannot be null");

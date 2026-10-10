@@ -1,5 +1,7 @@
 package site.hexaarch.ecommerce.logistics.domain.order.valueobject;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 import lombok.Getter;
@@ -32,7 +34,11 @@ public class PaymentInfo {
      * @param transactionId 交易ID
      * @param amount        付款金额
      */
-    private PaymentInfo(String paymentMethod, String paymentStatus, String transactionId, BigDecimal amount) {
+    @JsonCreator
+    private PaymentInfo(@JsonProperty("paymentMethod") String paymentMethod,
+                        @JsonProperty("paymentStatus") String paymentStatus,
+                        @JsonProperty("transactionId") String transactionId,
+                        @JsonProperty("amount") BigDecimal amount) {
         this.paymentMethod = Objects.requireNonNull(paymentMethod, "Payment method cannot be null");
         this.paymentStatus = Objects.requireNonNull(paymentStatus, "Payment status cannot be null");
         this.transactionId = Objects.requireNonNull(transactionId, "Transaction ID cannot be null");

@@ -6,6 +6,7 @@ import { customerApi } from '../../services/api';
 import { DEFAULT_TENANT_ID, platformLabel } from '../../constants/product';
 import { customerStatusMap, customerStatusOptions } from '../../constants/customer';
 
+import Can from '../../components/Auth/Can.jsx';
 const { Title } = Typography;
 const { RangePicker } = DatePicker;
 
@@ -126,12 +127,16 @@ const CustomerList = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
         <Title level={4}>客户列表</Title>
         <Space>
-          <Button icon={<ImportOutlined />} onClick={() => navigate('/customers/import')}>
-            导入客户
-          </Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/customers/create')}>
-            添加客户
-          </Button>
+          <Can permission="customer:import">
+            <Button icon={<ImportOutlined />} onClick={() => navigate('/customers/import')}>
+              导入客户
+            </Button>
+          </Can>
+          <Can permission="customer:write">
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/customers/create')}>
+              添加客户
+            </Button>
+          </Can>
         </Space>
       </div>
 

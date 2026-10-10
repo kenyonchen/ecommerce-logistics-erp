@@ -5,7 +5,6 @@ import { useNavigate } from 'react-router-dom';
 import { productApi } from '../../services/api';
 import {
   DEFAULT_CURRENCY,
-  DEFAULT_TENANT_ID,
   kgToGram,
   gramToKg,
   parseAttributes,
@@ -65,24 +64,33 @@ const ProductForm = ({ mode = 'create', productId }) => {
   }, [mode, productId, form]);
 
   const handleSubmit = async (values) => {
+    const skus = (values.skus || [])
+      .filter((sku) => sku && sku.skuCode)
+      .map((sku) => ({
+        skuCode: sku.skuCode,
+        skuName: sku.skuName || sku.skuCode,
+        sellingPrice: sku.sellingPrice ?? 0,
+        costPrice: sku.costPrice ?? 0,
+        currency: sku.currency || DEFAULT_CURRENCY,
+        weightInGrams: kgToGram(sku.weight),
+        attributes: parseAttributes(sku.attributes),
+        active: sku.active !== false
+      }));
+
+    // 编辑态护栏：后端 replaceSkus 为整体覆盖语义，提交空 SKU 集合会删光该商品全部 SKU。
+    // 表单行缺失或全部被过滤（如未填SKU编码）时禁止提交（ISS-069）。
+    if (mode === 'edit' && skus.length === 0) {
+      message.error('SKU列表为空：编辑保存会用本次提交整体覆盖原有SKU，将删除该商品的全部SKU。请至少填写一行有效SKU。');
+      return;
+    }
+
     const payload = {
-      tenantId: DEFAULT_TENANT_ID,
+      // 不传 tenantId：由后端从 JWT 租户上下文解析（ISS-051），避免硬编码默认租户
       name: values.name,
       description: values.description,
       categoryName: values.categoryName,
       active: values.active !== false,
-      skus: (values.skus || [])
-        .filter((sku) => sku && sku.skuCode)
-        .map((sku) => ({
-          skuCode: sku.skuCode,
-          skuName: sku.skuName || sku.skuCode,
-          sellingPrice: sku.sellingPrice ?? 0,
-          costPrice: sku.costPrice ?? 0,
-          currency: sku.currency || DEFAULT_CURRENCY,
-          weightInGrams: kgToGram(sku.weight),
-          attributes: parseAttributes(sku.attributes),
-          active: sku.active !== false
-        }))
+      skus
     };
 
     setSubmitting(true);
@@ -102,6 +110,8 @@ const ProductForm = ({ mode = 'create', productId }) => {
     }
   };
 
+  // SKU表格直接以 Form.List 的 fields 作为行记录（每项为 { name, key }），
+  // render 的第二参即该记录，故 field.name 为有效的行索引（ISS-069）。
   const skuColumns = [
     {
       title: 'SKU编码 *',
@@ -242,8 +252,8 @@ const ProductForm = ({ mode = 'create', productId }) => {
                 {fields.length > 0 && (
                   <Table
                     size="small"
-                    rowKey={(record, index) => record.key ?? index}
-                    dataSource={fields.map((field) => ({ key: field.key, field }))}
+                    rowKey={(record) => record.key}
+                    dataSource={fields}
                     pagination={false}
                     scroll={{ x: 1200 }}
                     columns={[
@@ -253,12 +263,12 @@ const ProductForm = ({ mode = 'create', productId }) => {
                         key: 'operation',
                         width: 80,
                         fixed: 'right',
-                        render: (_, record) => (
+                        render: (_, field) => (
                           <Button
                             type="link"
                             danger
                             icon={<DeleteOutlined />}
-                            onClick={() => remove(record.field.name)}
+                            onClick={() => remove(field.name)}
                           />
                         )
                       }

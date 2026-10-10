@@ -264,7 +264,8 @@ const CustomerDetail = () => {
           <Descriptions.Item label="客户名称">{customer.customerName}</Descriptions.Item>
           <Descriptions.Item label="邮箱">{customer.email || '-'}</Descriptions.Item>
           <Descriptions.Item label="联系电话">{customer.phone || '-'}</Descriptions.Item>
-          <Descriptions.Item label="公司名称">{customer.company || '-'}</Descriptions.Item>
+          {/* column=2 时单格项与 span=2 的地址同行会凑成 3 格，antd 会告警并把地址挤回单格宽 */}
+          <Descriptions.Item label="公司名称" span={2}>{customer.company || '-'}</Descriptions.Item>
           <Descriptions.Item label="收货地址" span={2}>
             {customer.address || '-'}
           </Descriptions.Item>

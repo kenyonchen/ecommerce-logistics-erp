@@ -97,7 +97,7 @@ ecommerce-logistics-erp/
 | 创建订单 | 🟡 | `POST /api/orders`（tenant 目前硬编码 `default-tenant`） |
 | 订单详情 | 🟡 | `GET /api/orders/{id}` |
 | 按客户查订单 | 🟡 | `GET /api/orders/customer/{customerId}` |
-| 订单状态变更 | 🟡 | `PUT /api/orders/{id}/status` |
+| 订单状态变更 | 🟡 | `PUT /api/orders/{id}/status`；🔄 2026-10-07 发货联动库存已打通（首次 SHIPPED 逐行扣减出库仓库存，缺货/无仓库回滚，BR-04） |
 | 订单列表 | ✅ | ~~无 list-all 端点~~ → `GET /api/orders`（`OrderController.java:64`，分页 + 9 个筛选条件），前端 `OrderList` 已去 mock |
 | 订单取消 | ⚪ | 无专用端点（可用 status 变通） |
 | 订单同步（平台） | 🟡 | ~~`OrderSyncService` 为桩实现~~（该类已不存在）→ `POST /api/platform-integrations/{id}/sync-orders` 走 `PlatformFetcherRegistry` 分派：`CUSTOM_SHOP` 真实 HTTP、`SHOPIFY` 按官方 Admin REST、`SAMPLE` 示例数据；结果落 `order_import_jobs`/`_errors`。⚠️ **未经真实平台验证**（ISS-064），且**无定时调度**（只能人工触发，`R-204`） |
@@ -113,10 +113,10 @@ ecommerce-logistics-erp/
 ### 3. 仓储管理
 | 功能 | 状态 | 说明 |
 |---|---|---|
-| 仓库创建/详情/列表 | 🟡 | 3 个端点 |
+| 仓库创建/详情/列表 | 🟡 | 3 个端点；🔄 2026-10-07 列表改分页 + 租户过滤（tenantId 缺省取 JWT 上下文，ISS-050 仓库段） |
 | 库存记录查询 | 🟡 | `GET /api/warehouses/{id}/inventory` |
 | 库存盘点 | 🟡 | `POST .../inventory/count`（应用层为简化实现） |
-| 库存移动 | ⚪ | `POST .../inventory/move` 因 `InventoryMovement` 无 Jackson 反序列化能力，**大概率 400** |
+| 库存移动 | 🟡 | 🔄 2026-10-07 前后端已通：详情页库存弹窗支持调拨（TRANSFER + 目标仓库），接口真实可用；仍无变动流水表 |
 | **库位管理** | ⚪ | 有 `locations` 表，**无 API** |
 
 ### 4. 产品管理

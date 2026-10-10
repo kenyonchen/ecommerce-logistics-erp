@@ -573,7 +573,7 @@ const LogisticsImport = () => {
             <Alert
               type="info"
               showIcon
-              message="选择平台集成后，系统按其 storeUrl 调用 {storeUrl}/logistics 拉取店铺物流数据（鉴权：X-API-Key / X-API-Secret 请求头）。未完成平台联调时，勾选「使用示例数据」即可验证「获取 → 映射 → 导入 → 结果反馈」完整链路。「一键同步导入」跳过预览直接落库。"
+              title="选择平台集成后，系统按其 storeUrl 调用 {storeUrl}/logistics 拉取店铺物流数据（鉴权：X-API-Key / X-API-Secret 请求头）。未完成平台联调时，勾选「使用示例数据」即可验证「获取 → 映射 → 导入 → 结果反馈」完整链路。「一键同步导入」跳过预览直接落库。"
             />
           </div>
         </Card>
@@ -697,7 +697,7 @@ const LogisticsImport = () => {
               type="warning"
               showIcon
               style={{ marginBottom: 8 }}
-              message={previewMeta.warnings.join('；')}
+              title={previewMeta.warnings.join('；')}
             />
           )}
           <Table
@@ -767,7 +767,7 @@ const LogisticsImport = () => {
                       : 'info'
               }
               showIcon
-              message={
+              title={
                 <Space>
                   <Tag color={(importJobStatusMap[result.status] || {}).color || 'default'}>
                     {result.statusLabel || (importJobStatusMap[result.status] || {}).text || result.status}

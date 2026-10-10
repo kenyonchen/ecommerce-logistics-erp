@@ -92,15 +92,18 @@ const Home = () => {
     fetchStats();
   }, [fetchStats]);
 
+  // 百分比统一保留一位小数：文字与进度条内嵌文字共用同一数值（ISS-081②）
+  const roundRate = (rate) => Math.round(rate * 10) / 10;
+
   // 计算订单完成率
-  const orderCompletionRate = stats.totalOrders > 0
-    ? (stats.completedOrders / stats.totalOrders) * 100
-    : 0;
+  const orderCompletionRate = roundRate(
+    stats.totalOrders > 0 ? (stats.completedOrders / stats.totalOrders) * 100 : 0
+  );
 
   // 计算订单发货率
-  const orderShippingRate = stats.totalOrders > 0
-    ? ((stats.shippedOrders + stats.completedOrders) / stats.totalOrders) * 100
-    : 0;
+  const orderShippingRate = roundRate(
+    stats.totalOrders > 0 ? ((stats.shippedOrders + stats.completedOrders) / stats.totalOrders) * 100 : 0
+  );
 
   const formatDateTime = (value) => {
     if (!value) return '-';
@@ -132,7 +135,7 @@ const Home = () => {
         <Alert
           type="error"
           showIcon
-          message="系统概览数据加载失败"
+          title="系统概览数据加载失败"
           description={error}
           style={{ marginBottom: 16 }}
           action={<Button size="small" onClick={fetchStats}>重试</Button>}

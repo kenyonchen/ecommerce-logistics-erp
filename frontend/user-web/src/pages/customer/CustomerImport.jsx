@@ -534,7 +534,7 @@ const CustomerImport = () => {
                   <Alert
                     type="info"
                     showIcon
-                    message="数据来源为「平台买家数据」时调用 {storeUrl}/customers；为「平台订单」时调用 {storeUrl}/orders 并按买家维度去重抽取（鉴权：X-API-Key / X-API-Secret 请求头）。未完成平台联调时，可勾选「使用示例数据」验证完整导入链路。"
+                    title="数据来源为「平台买家数据」时调用 {storeUrl}/customers；为「平台订单」时调用 {storeUrl}/orders 并按买家维度去重抽取（鉴权：X-API-Key / X-API-Secret 请求头）。未完成平台联调时，可勾选「使用示例数据」验证完整导入链路。"
                   />
                 </div>
               </Card>
@@ -636,7 +636,7 @@ const CustomerImport = () => {
               type="warning"
               showIcon
               style={{ marginBottom: 8 }}
-              message={previewMeta.warnings.join('；')}
+              title={previewMeta.warnings.join('；')}
             />
           )}
           <Table
@@ -694,7 +694,7 @@ const CustomerImport = () => {
               <Descriptions.Item label="跳过">{result.skippedCount}</Descriptions.Item>
             </Descriptions>
             {result.errorMessage && (
-              <Alert type="error" showIcon style={{ marginTop: 12 }} message={result.errorMessage} />
+              <Alert type="error" showIcon style={{ marginTop: 12 }} title={result.errorMessage} />
             )}
             <div style={{ marginTop: 16 }}>
               <Text strong>失败行明细</Text>

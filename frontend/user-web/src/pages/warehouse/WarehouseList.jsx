@@ -1,64 +1,69 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Table, Button, Space, Input, Typography, Card, Tag, Popconfirm, message } from 'antd';
-import { PlusOutlined, SearchOutlined, EyeOutlined, EditOutlined, DeleteOutlined, ShopOutlined } from '@ant-design/icons';
-import { Link, useNavigate } from 'react-router-dom';
+import { Table, Button, Space, Input, Select, Typography, Card, Tag, Popconfirm, message } from 'antd';
+import { PlusOutlined, SearchOutlined, EyeOutlined, DeleteOutlined, ShopOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { warehouseApi } from '../../services/api';
 
+import Can from '../../components/Auth/Can.jsx';
 const { Title } = Typography;
+const { Option } = Select;
 
 const WarehouseList = () => {
   const navigate = useNavigate();
   const [warehouses, setWarehouses] = useState([]);
-  const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [pagination, setPagination] = useState({
+    current: 1,
+    pageSize: 10,
+    total: 0
+  });
   const [searchParams, setSearchParams] = useState({
-    warehouseId: '',
+    warehouseCode: '',
     warehouseName: '',
     address: '',
-    status: ''
+    status: undefined
   });
 
-  // 获取仓库列表
+  // 服务端分页取当前页（后端 /warehouses 只有 page/size 参数，且不接收 tenantId，由登录令牌解析）
   const fetchWarehouses = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await warehouseApi.getWarehouses();
-      const list = Array.isArray(data) ? data : [];
-      setWarehouses(list);
-      setFiltered(list);
+      const data = await warehouseApi.getWarehouses({
+        page: (pagination.current || 1) - 1,
+        size: pagination.pageSize || 10
+      });
+      setWarehouses(data?.content ?? []);
+      setPagination((prev) => ({
+        ...prev,
+        total: data?.total ?? 0,
+        current: (data?.page ?? 0) + 1
+      }));
     } catch (error) {
       console.error('获取仓库列表失败:', error);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [pagination.current, pagination.pageSize]);
 
-  // 初始化加载数据
   useEffect(() => {
     fetchWarehouses();
   }, [fetchWarehouses]);
 
-  // 处理查询
-  const handleSearch = () => {
-    const { warehouseId, warehouseName, address, status } = searchParams;
-    const result = warehouses.filter(item => {
-      if (warehouseId && !(item.warehouseId || '').toLowerCase().includes(warehouseId.toLowerCase())) return false;
-      if (warehouseName && !(item.warehouseName || '').toLowerCase().includes(warehouseName.toLowerCase())) return false;
-      if (address && !(item.address || '').toLowerCase().includes(address.toLowerCase())) return false;
-      if (status === 'ACTIVE' && !item.active) return false;
-      if (status === 'INACTIVE' && item.active) return false;
-      return true;
-    });
-    setFiltered(result);
-  };
+  // 后端不支持按条件过滤，编码/名称/地址/状态只在当前页内做客户端筛选
+  const { warehouseCode, warehouseName, address, status } = searchParams;
+  const filtered = warehouses.filter(item => {
+    if (warehouseCode && !(item.warehouseCode || '').toLowerCase().includes(warehouseCode.trim().toLowerCase())) return false;
+    if (warehouseName && !(item.warehouseName || '').toLowerCase().includes(warehouseName.trim().toLowerCase())) return false;
+    if (address && !(item.address || '').toLowerCase().includes(address.trim().toLowerCase())) return false;
+    if (status === 'ACTIVE' && !item.active) return false;
+    if (status === 'INACTIVE' && item.active) return false;
+    return true;
+  });
 
-  // 处理重置
   const handleReset = () => {
-    setSearchParams({ warehouseId: '', warehouseName: '', address: '', status: '' });
-    setFiltered(warehouses);
+    setSearchParams({ warehouseCode: '', warehouseName: '', address: '', status: undefined });
   };
 
-  // 删除仓库
   const handleDelete = async (id) => {
     try {
       await warehouseApi.deleteWarehouse(id);
@@ -69,13 +74,6 @@ const WarehouseList = () => {
     }
   };
 
-  // 仓库状态映射
-  const statusMap = {
-    ACTIVE: { text: '启用', color: 'success' },
-    INACTIVE: { text: '停用', color: 'default' }
-  };
-
-  // 表格列配置
   const columns = [
     {
       title: '仓库编码',
@@ -88,6 +86,13 @@ const WarehouseList = () => {
       dataIndex: 'warehouseName',
       key: 'warehouseName',
       width: 160
+    },
+    {
+      title: '仓库ID',
+      dataIndex: 'warehouseId',
+      key: 'warehouseId',
+      width: 220,
+      ellipsis: true
     },
     {
       title: '详细地址',
@@ -113,9 +118,7 @@ const WarehouseList = () => {
       key: 'active',
       width: 90,
       render: (active) => (
-        <Tag color={active ? statusMap.ACTIVE.color : statusMap.INACTIVE.color}>
-          {active ? statusMap.ACTIVE.text : statusMap.INACTIVE.text}
-        </Tag>
+        <Tag color={active ? 'success' : 'default'}>{active ? '启用' : '停用'}</Tag>
       )
     },
     {
@@ -132,10 +135,11 @@ const WarehouseList = () => {
       render: (_, record) => (
         <Space size="middle">
           <Button type="link" icon={<EyeOutlined />} onClick={() => navigate(`/warehouses/${record.warehouseId}`)}>查看</Button>
-          <Button type="link" icon={<EditOutlined />} onClick={() => navigate(`/warehouses/${record.warehouseId}`)}>编辑</Button>
-          <Popconfirm title="确认删除该仓库？" onConfirm={() => handleDelete(record.warehouseId)}>
-            <Button type="link" danger icon={<DeleteOutlined />}>删除</Button>
-          </Popconfirm>
+          <Can permission="warehouse:write">
+            <Popconfirm title="确认删除该仓库？" onConfirm={() => handleDelete(record.warehouseId)}>
+              <Button type="link" danger icon={<DeleteOutlined />}>删除</Button>
+            </Popconfirm>
+          </Can>
         </Space>
       )
     }
@@ -147,19 +151,21 @@ const WarehouseList = () => {
         <Title level={4}>仓库列表</Title>
         <Space>
           <Button icon={<ShopOutlined />} onClick={() => navigate('/warehouses/shop')}>店铺仓库对接</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/warehouses/create')}>添加仓库</Button>
+          <Can permission="warehouse:write">
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/warehouses/create')}>添加仓库</Button>
+          </Can>
         </Space>
       </div>
 
-      {/* 查询条件 */}
+      {/* 查询条件（仅作用于当前页） */}
       <Card style={{ marginBottom: 5 }}>
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 5 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>仓库编码：</span>
             <Input
               placeholder="请输入仓库编码"
-              value={searchParams.warehouseId}
-              onChange={(e) => setSearchParams(prev => ({ ...prev, warehouseId: e.target.value }))}
+              value={searchParams.warehouseCode}
+              onChange={(e) => setSearchParams(prev => ({ ...prev, warehouseCode: e.target.value }))}
               style={{ width: 140 }}
               allowClear
             />
@@ -189,19 +195,21 @@ const WarehouseList = () => {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>状态：</span>
-            <Input
-              placeholder="ACTIVE / INACTIVE"
+            <Select
+              placeholder="请选择状态"
               value={searchParams.status}
-              onChange={(e) => setSearchParams(prev => ({ ...prev, status: e.target.value.toUpperCase() }))}
+              onChange={(value) => setSearchParams(prev => ({ ...prev, status: value }))}
               style={{ width: 140 }}
               allowClear
-            />
+            >
+              <Option value="ACTIVE">启用</Option>
+              <Option value="INACTIVE">停用</Option>
+            </Select>
           </div>
         </div>
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <Button onClick={handleReset}>重置</Button>
-          <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>查询</Button>
         </div>
       </Card>
 
@@ -212,7 +220,18 @@ const WarehouseList = () => {
           dataSource={filtered}
           rowKey="warehouseId"
           loading={loading}
-          pagination={{ pageSize: 10, showTotal: (total) => `共 ${total} 条` }}
+          onChange={(pageInfo) => setPagination((prev) => ({
+            ...prev,
+            current: pageInfo.current || 1,
+            pageSize: pageInfo.pageSize || 10
+          }))}
+          pagination={{
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+            total: pagination.total,
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 条`
+          }}
           scroll={{ x: 1100 }}
         />
       </Card>

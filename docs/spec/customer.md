@@ -67,9 +67,10 @@ stateDiagram-v2
 ```
 
 - 删除为**软删除**（置 `DELETED`），历史订单关联保留可查。
+- 客户是**全仓唯一**采用软删除的业务聚合，因此"`DELETE /api/tenants/{id}` 前置检查"必须把 `DELETED` 墓碑排除在"仍有业务数据"之外（`TenantRepositoryImpl.INVISIBLE_ROW_PREDICATES`，R-31 / ISS-119）：否则"把这个租户的客户删干净"这个动作本身就让该租户永远删不掉，而挡它的那条行用户在列表里根本看不见。代价是删租户后其墓碑成为不可达行，不级联删除是明确接受的取舍。
 - `DELETED` 为终态：`changeStatus` 与 `updateProfile` 均 `assertNotDeleted`，再操作抛 `InvalidOperationException`（HTTP 400）。
 - 状态未变化时为空操作，不刷新 `updatedAt`、不发事件。
-- 尚无「按最近下单时间自动刷新 ACTIVE/INACTIVE」的定时任务（BR-08 仍未实现）。
+- 尚无「按最近下单时间自动刷新 ACTIVE/INACTIVE」的定时任务（BR-11 仍未实现；全仓 `@Scheduled`/`@EnableScheduling` 实测为 0 处）。
 
 ---
 

@@ -62,7 +62,7 @@
 |---|---|---|---|
 | 1 | 改结构顺序：改实体 → 本地重启看 Hibernate 输出 → 同步 `schema.sql` 与 `data-dictionary.md` | 强制 | — |
 | 2 | 引入 Flyway：以 `schema.sql` 生成 `V1__baseline.sql`，然后改为 `ddl-auto=validate` | **准生产前必须完成** | 见下方「迁移路径」 |
-| 3 | 纠错 `DOUBLE` → `DECIMAL(19,2)`（金额类字段）时需要显式迁移脚本 | P2 | ISS-023 |
+| 3 | 纠错 `DOUBLE` → `DECIMAL(19,2)`（金额类字段）时需要显式迁移脚本 | P2 | ISS-023。✅ **2026-10-10 已按本条预言的方式做完**：`V7`/`V7.1`/`V7.2`/`V7.2.1` 是手工执行的显式脚本（Flyway 仍未接入），并实测坐实了本 ADR 的机制——`ddl-auto: update` **从不 MODIFY 既有列**，所以"实体写 `precision/scale`"与"手工 ALTER"两件必须都做；见 [../qa/known-issues.md](../qa/known-issues.md) §20 |
 | 4 | 补缺失的唯一约束（`sku_code+warehouse_id`、`warehouse_id+location_code`）与索引 | P0 | 数据字典 R-05 |
 | 5 | `scripts/docker` 增加 MySQL 容器编排，消除"环境自己准备"的漂移 | P2 | ISS-020 |
 

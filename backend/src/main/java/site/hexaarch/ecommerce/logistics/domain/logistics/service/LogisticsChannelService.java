@@ -9,8 +9,6 @@ import site.hexaarch.ecommerce.logistics.domain.logistics.repository.LogisticsCh
 import site.hexaarch.ecommerce.logistics.domain.logistics.repository.LogisticsOrderRepository;
 import site.hexaarch.ecommerce.logistics.domain.logistics.valueobject.LogisticsFee;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.List;
 import java.util.Optional;
 
@@ -71,6 +69,9 @@ public class LogisticsChannelService {
 
     /**
      * 计算物流费用：首重费用 + 重量（克）× 每克续重费用。
+     * <p>
+     * 公式本身在 {@link LogisticsChannel#estimateFee(double)}，建单落库与这里必须同出一处。
+     * </p>
      *
      * @param channelId 物流渠道ID
      * @param weight    重量（克）
@@ -85,16 +86,7 @@ public class LogisticsChannelService {
             throw new ValidationException("物流渠道不支持该国家/地区: " + country);
         }
 
-        BigDecimal weightFee = logisticsChannel.getPricePerGram()
-                .multiply(BigDecimal.valueOf(Math.max(weight, 0D)))
-                .setScale(2, RoundingMode.HALF_UP);
-        BigDecimal baseFee = logisticsChannel.getBasePrice().setScale(2, RoundingMode.HALF_UP);
-        return LogisticsFee.builder()
-                .baseFee(baseFee)
-                .weightFee(weightFee)
-                .totalFee(baseFee.add(weightFee))
-                .currency(logisticsChannel.getCurrency())
-                .build();
+        return logisticsChannel.estimateFee(weight);
     }
 
     /**

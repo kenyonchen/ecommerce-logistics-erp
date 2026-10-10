@@ -52,7 +52,9 @@ export const orderStatusFlow = {
   CANCELLED: []
 };
 
-/** 来源平台（MANUAL=系统内手工创建，FILE=文件导入） */
+/** 来源平台（MANUAL=系统内手工创建，FILE=文件导入）
+ *  取值以后端 PlatformName（domain/platform/valueobject/PlatformName.java）为准，
+ *  少一项就等于界面上选不到那个平台（ISS-086 的前端面）。 */
 export const platformOptions = [
   { value: 'AMAZON', label: 'Amazon' },
   { value: 'EBAY', label: 'eBay' },
@@ -60,6 +62,11 @@ export const platformOptions = [
   { value: 'ALIEXPRESS', label: 'AliExpress' },
   { value: 'WISH', label: 'Wish' },
   { value: 'MAGENTO', label: 'Magento' },
+  { value: 'TEMU', label: 'Temu' },
+  { value: 'TIKTOK_SHOP', label: 'TikTok Shop' },
+  { value: 'SHOPEE', label: 'Shopee' },
+  { value: 'MERCADO_LIBRE', label: 'Mercado Libre' },
+  { value: 'OZON', label: 'Ozon' },
   { value: 'OTHER', label: '其他平台' }
 ];
 

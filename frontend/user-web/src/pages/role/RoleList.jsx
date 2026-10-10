@@ -62,7 +62,7 @@ const RoleList = () => {
     try {
       const response = await roleApi.getRoles(currentTenantId);
       setRoles(Array.isArray(response) ? response : []);
-    } catch (error) {
+    } catch {
       message.error('加载角色列表失败');
     } finally {
       setLoading(false);

@@ -71,9 +71,11 @@ public class HttpPlatformConnectionTester implements PlatformConnectionTester {
                     "HTTP " + e.getStatusCode().value() + " " + e.getStatusText()
                             + "：请检查店铺地址与 apiKey/apiSecret");
         } catch (Exception e) {
-            log.warn("[PlatformConnectionTest] 自建店铺探测异常 url={} err={}", baseUrl, e.getMessage());
+            log.warn("[PlatformConnectionTest] 自建店铺探测异常 url={} err={}",
+                    baseUrl, PlatformFailures.causeChain(e));
+            // 探活失败是结果不是异常：按族给一句话（地址/连接/超时），不要把包装层的 ": null" 尾巴回显给用户
             return PlatformConnectionTestResult.failed(type(), elapsedMs(startedAt),
-                    e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+                    PlatformFailures.userReason(e));
         }
     }
 

@@ -61,6 +61,15 @@ public class UserServiceImpl implements UserService {
         return userRepository.findByTenantId(tenantId);
     }
 
+    /**
+     * 全平台用户列表：门槛在控制器（{@code UserController#getUsers} 只在平台管理员留空 tenantId 时调用），
+     * 租户用户走的仍是按租户查询分支。
+     */
+    @Override
+    public List<User> getAllUsers() {
+        return userRepository.findAll();
+    }
+
     @Override
     @Transactional
     public User updateUser(String id, String email, String phone, String firstName, String lastName) {

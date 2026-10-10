@@ -44,4 +44,18 @@ public interface PurchaseOrderRepository {
      * @return 分页结果
      */
     PageResult<PurchaseOrder> search(PurchaseQuery query, int page, int size);
+
+    /**
+     * 统计指向某张仓库的采购单数量（删仓库时的引用守卫，ISS-142）。
+     * <p>
+     * 这是本接口里<b>唯一</b>不带 {@code tenantId} 的读方法，因为它不是业务列表读路径：
+     * 仓库ID是 UUID 且全局唯一，"这张仓被多少张采购单指向"按仓ID统计才是完整答案——多带一层租户过滤
+     * 只会让别的租户的断链从守卫眼前漏掉。调用方必须先通过 {@code TenantAccessGuard.requireOwned}
+     * 拥有该仓库才能问到这个数字（docs/qa/known-issues.md ISS-142），所以这里不构成越权读面。
+     * </p>
+     *
+     * @param warehouseId 仓库ID
+     * @return 指向该仓库的采购单数量
+     */
+    long countByWarehouseId(String warehouseId);
 }

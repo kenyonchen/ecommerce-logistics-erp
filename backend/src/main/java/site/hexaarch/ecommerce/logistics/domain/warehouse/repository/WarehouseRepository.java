@@ -1,5 +1,6 @@
 package site.hexaarch.ecommerce.logistics.domain.warehouse.repository;
 
+import site.hexaarch.ecommerce.logistics.domain.common.PageResult;
 import site.hexaarch.ecommerce.logistics.domain.warehouse.aggregate.Warehouse;
 
 import java.util.List;
@@ -44,6 +45,32 @@ public interface WarehouseRepository {
      * @return 仓库聚合列表
      */
     List<Warehouse> findAll();
+
+    /**
+     * 取租户下第一个仓库（按 ID 升序，稳定）。
+     *
+     * @param tenantId 租户ID
+     * @return 仓库聚合
+     */
+    Optional<Warehouse> findFirstByTenantId(String tenantId);
+
+    /**
+     * 列出租户下的全部仓库（按 ID 升序，稳定），供发货出库仓择仓遍历各仓库存。
+     *
+     * @param tenantId 租户ID
+     * @return 仓库聚合列表
+     */
+    List<Warehouse> listByTenantId(String tenantId);
+
+    /**
+     * 按租户分页查询仓库（tenantId 为空时不过滤）。
+     *
+     * @param tenantId 租户ID（可空）
+     * @param page     页码，从0开始
+     * @param size     每页条数
+     * @return 分页结果
+     */
+    PageResult<Warehouse> search(String tenantId, int page, int size);
 
     /**
      * 删除仓库。

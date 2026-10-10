@@ -34,6 +34,7 @@ import {
 } from '../../constants/logistics';
 import BatchShipModal from './BatchShipModal.jsx';
 
+import Can from '../../components/Auth/Can.jsx';
 const { Title } = Typography;
 const { RangePicker } = DatePicker;
 
@@ -251,11 +252,15 @@ const LogisticsList = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
         <Title level={4} style={{ margin: 0 }}>物流单列表</Title>
         <Space>
-          <Button icon={<ImportOutlined />} onClick={() => navigate('/logistics/import')}>平台物流导入</Button>
-          <Button icon={<RocketOutlined />} onClick={() => setBatchShipVisible(true)}>批量发货</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/logistics/create')}>
-            创建物流单
-          </Button>
+          <Can permission="logistics:import">
+            <Button icon={<ImportOutlined />} onClick={() => navigate('/logistics/import')}>平台物流导入</Button>
+          </Can>
+          <Can permission="logistics:write">
+            <Button icon={<RocketOutlined />} onClick={() => setBatchShipVisible(true)}>批量发货</Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/logistics/create')}>
+              创建物流单
+            </Button>
+          </Can>
         </Space>
       </div>
 

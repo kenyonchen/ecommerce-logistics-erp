@@ -19,10 +19,14 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
+  // 权限点明细只有 /auth/me 会返回，登录响应里没有。未加载完成前界面退回按角色控制，
+  // 否则登录成功的那一瞬 permissions 还是空数组，整个菜单会被判成"无权限"而全部消失。
+  const [permissionsLoaded, setPermissionsLoaded] = useState(false);
 
   // 清空本地存储会话
   const clearSession = () => {
     Object.values(KEYS).forEach(key => localStorage.removeItem(key));
+    setPermissionsLoaded(false);
   };
 
   // 从 /auth/me 同步当前用户资料（用于刷新页面后恢复会话）
@@ -31,7 +35,7 @@ export const AuthProvider = ({ children }) => {
       const me = await authApi.getMe();
       applyProfile(me);
       return me;
-    } catch (error) {
+    } catch {
       // 会话失效（token 过期/非法）
       clearSession();
       setUser(null);
@@ -51,6 +55,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem(KEYS.permissions, JSON.stringify(permissions));
     setUser({ ...me, roles, permissions });
     setIsAuthenticated(true);
+    setPermissionsLoaded(true);
   };
 
   // 初始化：有 token 时拉取当前用户信息校验会话
@@ -82,6 +87,7 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem(KEYS.tenantId, responseData.tenantId);
     }
     localStorage.setItem(KEYS.roles, JSON.stringify(responseData.roles || []));
+    setPermissionsLoaded(false);
     setUser({
       username: responseData.username,
       tenantId: responseData.tenantId,
@@ -98,7 +104,7 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     try {
       await authApi.logout();
-    } catch (error) {
+    } catch {
       // 后端登出失败不阻塞本地登出（JWT 无状态）
     }
     clearSession();
@@ -125,15 +131,25 @@ export const AuthProvider = ({ children }) => {
     return required.some(permission => user.permissions.includes(permission));
   };
 
+  // 界面级权限判定（菜单/按钮/路由入口）。两个约定：
+  // 1. 权限点明细没到位时放行，交由角色控制兜底，避免登录成功那一瞬入口全消失；
+  // 2. 这里只决定「展示什么入口」，拦截靠后端 @PreAuthorize —— 藏起按钮不是安全边界。
+  const can = (permission) => {
+    if (!permission || !permissionsLoaded) return true;
+    return hasPermission(permission);
+  };
+
   const value = {
     user,
     isAuthenticated,
     loading,
+    permissionsLoaded,
     login,
     logout,
     checkAuth,
     hasRole,
     hasPermission,
+    can,
     refreshProfile,
   };
 
@@ -144,7 +160,8 @@ export const AuthProvider = ({ children }) => {
   );
 };
 
-// 使用认证上下文的钩子
+// Provider 与钩子同文件是 Context 惯例，豁免 react-refresh 限制
+// eslint-disable-next-line react-refresh/only-export-components
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {

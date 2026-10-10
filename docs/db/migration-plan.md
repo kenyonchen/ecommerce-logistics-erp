@@ -11,7 +11,7 @@
 |---|---|
 | `ddl-auto: update` **只加不改不删** | 实体删字段不会回收列；改类型可能启动失败或静默留旧列。**回滚一次实体变更 ≠ 回滚一次库结构**（[deployment.md §6](../deployment.md)） |
 | 无迁移工具 → schema 变更不可评审、不可复现 | 新环境只能靠「跑一遍应用让它自己建表」，且建出的结构与 [schema.sql](schema.sql) 快照不一致（原写法「快照含物理外键，Hibernate 默认不生成同名约束」已被实测推翻：`ddl-auto: update` **会**为 `@ManyToOne` 建出 19 个物理外键，两边的差异是**索引名哈希化 + 原生 ENUM/binary(16) 类型**而不是 FK 有无，见 §5；另有更硬的一条：保留字列名会让建表**静默失败**，见 [ISS-049](../qa/known-issues.md)——6 张 `*_import_job_errors` 曾因 `row_number` 报 1064 而从未建出来，启动只有一个 WARN） |
-| 数据风险已固化在库结构里 | `R-05` 无唯一约束（可写重复库存行）、`R-07` 业务表无 `tenant_id`（越权无法用 DB 兜底）、`R-09` 金额用 `DOUBLE`、`R-11` 主键三套策略 |
+| 数据风险已固化在库结构里 | `R-05` 无唯一约束（可写重复库存行）、`R-07` 业务表无 `tenant_id`（越权无法用 DB 兜底）、`R-09` 金额用 `DOUBLE`（✅ **2026-10-10 已收口**：V7 系列迁移已手工执行完毕，15 个金额列全部定点、全库无浮点金额列，见 [../qa/known-issues.md](../qa/known-issues.md) §20；迁移脚本已于 2026-10-10 清理，理由见下文）、`R-11` 主键三套策略 |
 
 ## 2. 目标态
 
@@ -35,19 +35,26 @@
 ### M1 引入 Flyway 与基线脚本
 
 ```
-db/migration/
+db/migration/   ⚠️ **2026-10-10 已清理**：Flyway 从未接入（pom.xml 无依赖、application.yml 无配置），V7* 系列迁移已通过手工 SQL 执行完毕。系统未上线，无需版本化迁移脚本，保留只会增加未来误执行风险。详见本节末「为什么删除迁移脚本」。
 ├── V1__baseline.sql                 # 42 张表 + 已有索引/唯一键，由 M0 的快照生成
 ├── V2__add_missing_unique_keys.sql
 ├── V3__add_hot_path_indexes.sql
 ├── V4__add_tenant_id_to_business_tables.sql
 ├── V5__backfill_tenant_id.sql
 ├── V6__narrow_tenant_unique_keys.sql
-├── V7__money_to_decimal.sql
+├── ~~V7__money_to_decimal.sql~~        # ✅ 已手工执行后删除（2026-10-10）：10 列 DOUBLE → DECIMAL(19,2)/price_per_gram DECIMAL(19,4)
+├── ~~V7.1__money_to_decimal_finalize.sql~~   # ✅ 已执行后删除：DROP 老列 + 影子列 CHANGE 改名
+├── ~~V7.2__money_decimal_width_convergence.sql~~  # ✅ 已执行后删除：purchase_*/financial_transactions 四列 38,2 → 19,2（R-53）
+├── ~~V7.2.1__money_decimal_width_finalize.sql~~   # ✅ 已执行后删除：同影子流程改名收紧
+├── ~~U7__money_to_decimal.undo.sql~~   # 仅本地/测试：反向放大宽度，用来证明守卫有牙 —— 已删除
+├── ~~U7.2__money_decimal_width_convergence.undo.sql~~  # 仅本地/测试：同上 —— 已删除
 ├── V8__timestamp_column_type_unification.sql
 ├── V9__add_version_column.sql
 ├── V10__soft_delete_unification.sql
-└── U1__*.sql                        # 仅本地/测试用的 undo（Flyway Teams 才有 undo；社区版见 §6）
+└── U1__*.sql                        # 仅本地/测试用的 undo（Flyway Teams 才有 undo；社区版见 §6）—— 已删除
 ```
+
+> ✅ **2026-10-10 现状订正（本节是"计划"，不是"已接入"）**：实测 `backend/src/main/resources/application.yml` 与 `backend/pom.xml` 里 **grep `flyway` 0 命中** —— 既没有 `spring.flyway.*` 配置项，也没有 Flyway 依赖，迁移工具**从未接入**（ISS-020 的边界按指示未动），上表的目录结构因此**只是命名约定**。但 `V7*` 这一族**已经以手工脚本的方式执行完毕**：`docker exec -i mysql mysql -uroot -p… ecommerce_logistics_erp < backend/src/main/resources/db/migration/V7…sql`（⚠️ 必须带 `-i`，否则客户端读不到 stdin，**一条语句都不执行、不报错、exit 0** —— 本轮实测踩过，见 [../qa/known-issues.md](../qa/known-issues.md) §20 卫生 ⑯），执行前各留一份 `mysqldump` 备份。所以"没有 Flyway"**不等于**"不能改列类型"——过去三年用前者挡掉后者，是本文件最需要订正的一句。
 
 配置：
 
@@ -114,7 +121,7 @@ ALTER TABLE users  DROP INDEX uk_users_email,
 
 | 脚本 | 内容 | 配套代码改动 |
 |---|---|---|
-| `V7` | `DOUBLE` → `DECIMAL(19,2)`：`orders`、`order_items`、`skus`、`logistics_*` 的金额列（`R-09`；~~purchase/finance 已是 `DECIMAL(19,2)`~~ → 🔄 **2026-03-22 实测：purchase/finance 是 `DECIMAL(38,2)`**——`PurchaseOrderJpaEntity:51` 的 `total_amount`、`PurchaseOrderItemJpaEntity:43`（`unit_price`）/`:46`（`total_price`）、`FinancialTransactionJpaEntity:33` 的 `amount` 都没写 `precision/scale`，Hibernate 默认给 38；全库唯一显式 19,2 的仍是 `payment_infos.amount`。⇒ `V7` 的范围要重新界定：目标若统一成 19,2，这 4 列也得 `MODIFY`，不能把「已经是 DECIMAL」当成「已经达标」）。**2026-01-25 实测范围**：运行时库还有 **12 个 double 列 / 6 张表**（`orders.total_amount`、`order_items.unit_price`+`total_price`、`skus.price`+`cost_price`+`weight`、`logistics_channels.base_price`+`price_per_gram`、`logistics_fees.base_fee`+`weight_fee`+`total_fee`、`logistics_labels.package_weight`）；对应实体侧 **12 个 `private Double`** 字段，代码里也没有集中精度口径 | 实体字段 `Double` → `BigDecimal`；`ProductPrice`/`LogisticsFee` 等值对象、`calculateTotal()` 精度与舍入口径需在 `spec/order.md` 的 `BR-xx` 明确 |
+| `V7` | `DOUBLE` → `DECIMAL(19,2)`：`orders`、`order_items`、`skus`、`logistics_*` 的金额列（`R-09`；~~purchase/finance 已是 `DECIMAL(19,2)`~~ → 🔄 **2026-03-22 实测：purchase/finance 是 `DECIMAL(38,2)`**——`PurchaseOrderJpaEntity:51` 的 `total_amount`、`PurchaseOrderItemJpaEntity:43`（`unit_price`）/`:46`（`total_price`）、`FinancialTransactionJpaEntity:33` 的 `amount` 都没写 `precision/scale`，Hibernate 默认给 38；全库唯一显式 19,2 的仍是 `payment_infos.amount`。⇒ `V7` 的范围要重新界定：目标若统一成 19,2，这 4 列也得 `MODIFY`，不能把「已经是 DECIMAL」当成「已经达标」）。**2026-01-25 实测范围**：运行时库还有 **12 个 double 列 / 6 张表**（`orders.total_amount`、`order_items.unit_price`+`total_price`、`skus.price`+`cost_price`+`weight`、`logistics_channels.base_price`+`price_per_gram`、`logistics_fees.base_fee`+`weight_fee`+`total_fee`、`logistics_labels.package_weight`）；对应实体侧 **12 个 `private Double`** 字段，代码里也没有集中精度口径 | 实体字段 `Double` → `BigDecimal`；`ProductPrice`/`LogisticsFee` 等值对象、`calculateTotal()` 精度与舍入口径需在 `spec/order.md` 的 `BR-xx` 明确。✅ **2026-10-10 `V7`/`V7.1` 与 `V7.2`/`V7.2.1` 已全部手工执行，ISS-023 关闭**（口径见 [../qa/known-issues.md](../qa/known-issues.md) §20 的 R-52~R-54）：`V7` 收 10 个浮点金额列（其中 `price_per_gram` 收成 `DECIMAL(19,4)`，见 R-52）、`V7.2` 把这里点名的 4 个 `38,2` 列收平成 `19,2`。实测现状：全库定点金额列 **15 个 = 14 × `19,2` + 1 × `19,4`**、`decimal` 且不等于这两种宽度的列 **0 行**、金额名次的 `DOUBLE`/`FLOAT` 列 **0 行**、浮点列只剩 `skus.weight` 与 `logistics_labels.package_weight` 两个重量列；实体侧 15 个金额字段全部 `BigDecimal` + 显式 `precision/scale`。⚠️ **一句会重复踩的口径**：列类型改了**不等于**Java 侧改了——`skus.price` 在列已是 `DECIMAL` 时照样因实体是 `Double` 而把 76 行求和回显成 `828.399999999999`，损失发生在 JDBC→Java 那一跳；反向也成立，实体声明了宽度而 `ddl-auto: update` **不会 MODIFY 既有列**，所以 ALTER 与 `precision/scale` 两件事必须都做 |
 | `V8` | `BIGINT` epoch → `DATETIME(6)`：`logistics_orders`（`LogisticsOrderJpaEntity:57-60` 用 `Long`）（`R-10`）。**行号更正**：实际是 `:94`（`createdAt`）与 `:97`（`updatedAt`）两个 `Long`；同表的 `shippedAt`/`estimatedArrivalAt`/`deliveredAt`（`:79,82,85`）已经是 `LocalDateTime`，所以 V8 只需处理这两个审计列 | Mapper 转换与前端时间格式约定 |
 | `V9` | 状态迁移类聚合加 `version INT NOT NULL DEFAULT 0`（`R-03`：全仓 `@Version` 0 处，并发更新丢写） | 实体加 `@Version`；冲突走 `B00004`（[error-codes.md §3](../api/error-codes.md)） |
 | `V10` | 软删除统一：`active` 布尔（products/skus/warehouses/locations/channels）+ `DELETED` 状态（`CustomerStatusJpaEntity:12`）+ `orphanRemoval` 硬删（其余）三套并存（`R-08`）→ 统一 `deleted TINYINT(1) NOT NULL DEFAULT 0` + 查询过滤 | 需要 Hibernate `@Where(clause="deleted=0")` 或 `@SQLRestriction`，并逐个改仓储查询 |
@@ -130,7 +137,7 @@ ALTER TABLE users  DROP INDEX uk_users_email,
 |---|---|---|
 | 字符集/排序 | `utf8mb4` / `utf8mb4_general_ci`（与建库语句一致，[dev-guide §2](../tech/dev-guide.md)） | emoji 与多语言 SKU 名 |
 | 主键 | `VARCHAR(64)`（业务编码型）或 `BINARY(16)`（UUID 型），**一表一策，不混用** | 现状 `customers`/`platform_integrations` 用 UUID `@GeneratedValue` |
-| 金额 | `DECIMAL(19,2)`，禁用 `FLOAT/DOUBLE` | `R-09` |
+| 金额 | `DECIMAL(19,2)`，禁用 `FLOAT/DOUBLE` | `R-09`；✅ **2026-10-10 已全库达标**（14 × `19,2`），唯一成文例外是 `logistics_channels.price_per_gram` = **`DECIMAL(19,4)`**（**R-52**：库里实测费率 `0.0050`/`0.0150`，按 19,2 建列会把 `0.005` 变 `0.01` 并让运费翻倍，所以"19,2"读作金额列的**默认**宽度而不是唯一宽度）；浮点列只剩 `skus.weight`、`logistics_labels.package_weight` 两个重量列（物理量，不在本条约束内）。巡检：`smoke.sh` §14 的 `14.0`/`14.0b`/`14.1`，见 [../qa/known-issues.md](../qa/known-issues.md) §20 |
 | 时间 | `DATETIME(6)`，禁用 epoch `BIGINT` | `R-10`；注意 JDBC URL 已有 `serverTimezone=UTC`（`application.yml:17`），改列类型前要确认历史数据语义 |
 | 状态枚举 | `VARCHAR(32)` 存**枚举 name**，禁用 `ORDINAL` | 枚举三套口径（`R-02`，见 [data-dictionary §4](data-dictionary.md)）；`CON_FIRMED`↔`CONFIRMED` 类名称漂移必须由 Mapper 显式桥接，不能靠顺序 |
 | 租户列 | `tenant_id VARCHAR(64) NOT NULL` + 复合索引首列 | M3 |
@@ -153,6 +160,9 @@ ALTER TABLE users  DROP INDEX uk_users_email,
 **回滚**：Flyway 社区版**无 undo**。因此：
 - 所有脚本按「向前修复」设计：加列/加索引类可直接再执行反向 DDL（`DROP INDEX`/`DROP COLUMN`），单独写成 `rollback/` 目录下的手工脚本并**与主脚本同 PR 评审**；
 - 改列类型类（`V7/V8/V10`）**不可逆**——迁移前必须做列影子方案：先 `ADD COLUMN total_dec DECIMAL(19,2)` → 双写 → 回填校验 → `RENAME`，禁止 `ALTER TABLE ... MODIFY` 一步到位。
+  - ✅ **2026-10-10 `V7`/`V7.1`/`V7.2`/`V7.2.1` 就是按这一条做的**（不是事后追认）：每一步都是 `ADD *_dec` → `UPDATE … CAST(...)` → **两段"必须 0 行"校验**（3.1 空值错位、3.2 非预期漂移）→ `DROP` 老列 → `CHANGE` 影子列改名并重新声明 `NOT NULL`（影子列建出来是可空的，`NOT NULL` 必须重写，否则改名后约束变松）→ 三段 post-verify（宽度是否达标、有无 `*_dec` 残留、逐列合计对照）。执行前 `mysqldump --single-transaction` 留档。
+  - ⚠️ **`V7.2` 是纯收窄（38,2 → 19,2）也照样走影子**，理由成文为 **R-53**：不给"看起来安全的那一支"开 `MODIFY` 先例；影子流程本身带可复算的校验资产（0 行门槛 + 逐列合计对照），`MODIFY` 只有一句"我判断它安全"。
+  - ⚠️ **执行方式**：Flyway 从未接入（`application.yml` 与 `pom.xml` grep `flyway` = 0 命中），这些脚本靠 `docker exec -i mysql mysql -uroot -p… ecommerce_logistics_erp < ./backend/src/main/resources/db/migration/V7.2__….sql` 手工跑。⚠️ **`-i` 不是可选项**：不带 `-i` 时容器里的客户端读不到 stdin，**一条语句都不执行、没有任何输出、退出码 0** —— 本轮就是这样"执行成功"过一次，靠查影子列不存在（`ERROR 1054 Unknown column 'total_amount_dec'`）才发现，见 [../qa/known-issues.md](../qa/known-issues.md) §20 卫生 ⑯。
 - 一旦切到 Flyway，「回滚一次实体变更」变成「执行反向迁移」，可评审可复现（对齐 [deployment.md §6](../deployment.md)）。
 
 ## 7. 已落地的 product 改动与快照漂移（2026-01-25 更新）
@@ -204,7 +214,7 @@ ALTER TABLE users  DROP INDEX uk_users_email,
 
 ### 9.2 为什么仍然要写显式 DDL（不能图省事让 Hibernate 建）
 
-`platform_integrations.platform_name` 在运行库是 MySQL **ENUM，只有 7 个值**，而 `PlatformName` 枚举有 12 个。回滚式插探针实测：
+`platform_integrations.platform_name` 在运行库是 MySQL **ENUM，只有 ~~7 个值~~（🔄 **2026-10-10 复测：本库已放宽为 12 值**，与 `PlatformName` 相等；复现语句见 [schema.sql 的 enum 截断段](./schema.sql)。本节结论不变——**新建库仍必须走显式 DDL**，因为放宽是靠手工 `ALTER` 落在本机库上的，没有任何迁移脚本承载它）**，而 `PlatformName` 枚举有 12 个。回滚式插探针实测（当时的原始报错，保留作为"为什么会窄化"的证据）：
 
 ```
 INSERT ... platform_name='OZON'  →  ERROR 1265 (01000): Data truncated for column 'platform_name'
@@ -261,3 +271,44 @@ SELECT (SELECT COUNT(*) FROM tenants)            AS tenants_ge_1,
 ### 9.6 快照连带
 
 实现落地后 `docs/db/schema.sql` 需同步：新增 `shops` 块（表数 42→43）、`orders` 加 `shop_id` 与索引、`platform_integrations` 改写为对接定义形状、`shop_warehouses` 的 `shop_code`→`shop_id`。**在代码落地前不要改快照**——本文件是 As-Is 记录，To-Be 在此节与 ADR-0013。
+
+## 10. 为什么删除迁移脚本（2026-10-10）
+
+本节说明 `backend/src/main/resources/db/migration/` 目录被删除的原因，避免未来有人误以为"迁移工具被意外删除"。
+
+### 10.1 删除理由
+
+1. **Flyway 从未接入**：`pom.xml` 无 `flyway-core` 依赖，`application.yml` 无 `spring.flyway.*` 配置，数据库里也没有 `flyway_schema_history` 表。这些脚本只是放在那里，从未被执行过。
+
+2. **系统未上线**：没有真实用户数据，开发环境用容器化 MySQL，数据可以随时重建（`DataInitializationConfig` 每次启动都会重新种子）。版本化迁移的价值在于保护生产数据，而当前没有生产数据需要保护。
+
+3. **V7* 系列已通过手工 SQL 执行完毕**：ISS-023 的金额列收敛是通过 `docker exec -i mysql mysql -uroot -p… < V7*.sql` 手工执行的，不是通过 Flyway。执行后脚本已完成使命，保留只会增加未来误执行的风险（某天有人不小心引入 Flyway 依赖，这些旧脚本会自动执行，可能破坏现有 schema）。
+
+4. **未来真正需要迁移时应基于那时的实际 schema 重新设计**：现在的脚本是为早期开发阶段设计的（例如从 DOUBLE 转 DECIMAL），如果未来引入 Flyway，应该基于生产环境的实际状态重新编写迁移脚本，而不是复用这些开发阶段的中间产物。
+
+### 10.2 历史执行记录
+
+虽然脚本已删除，但 V7 系列的执行过程仍有文档价值，记录如下：
+
+- **V7__money_to_decimal.sql**：10 个浮点金额列 → DECIMAL(19,2)，其中 `price_per_gram` 收成 DECIMAL(19,4)（R-52，因为费率有 0.005 这种小数值）
+- **V7.1__money_to_decimal_finalize.sql**：DROP 老列 + 影子列 CHANGE 改名
+- **V7.2__money_decimal_width_convergence.sql**：purchase_orders/purchase_order_items/financial_transactions 四列从 DECIMAL(38,2) 收窄到 19,2（R-53，纯收窄也走影子流程，不给"看起来安全的那一支"开 MODIFY 先例）
+- **V7.2.1__money_decimal_width_finalize.sql**：同影子流程改名收紧
+
+执行方式：`docker exec -i mysql mysql -uroot -p123456 ecommerce_logistics_erp < backend/src/main/resources/db/migration/V7__….sql`（⚠️ `-i` 不是可选项：不带 `-i` 时容器里的客户端读不到 stdin，一条语句都不执行、没有任何输出、退出码 0 —— 本轮实测踩过这个坑，见 [../qa/known-issues.md](../qa/known-issues.md) §20 卫生 ⑯）。
+
+执行前备份：`mysqldump --single-transaction ecommerce_logistics_erp orders order_items skus logistics_fees logistics_channels > /tmp/erp-pre-v7-$(date +%Y%m%d%H%M%S).sql`。
+
+### 10.3 未来何时引入 Flyway
+
+当项目满足以下条件时，应考虑引入 Flyway：
+
+1. **有真实生产数据**：不能再随时重建数据库
+2. **多环境部署**：dev/staging/prod 需要同步 schema 变更
+3. **团队协作**：多人同时修改 schema，需要版本控制和评审机制
+
+引入步骤：
+1. 基于当前生产库的实际状态生成 `V1__baseline.sql`
+2. 添加 `flyway-core` 和 `flyway-mysql` 依赖
+3. 配置 `spring.flyway.enabled=true` 和 `spring.flyway.locations=classpath:db/migration`
+4. 设置 `spring.jpa.hibernate.ddl-auto=validate`（从 update 改为 validate，让 Hibernate 只做校验，不再自动建表）

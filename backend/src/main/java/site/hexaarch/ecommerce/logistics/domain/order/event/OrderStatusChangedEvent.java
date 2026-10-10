@@ -1,5 +1,7 @@
 package site.hexaarch.ecommerce.logistics.domain.order.event;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Getter;
 import site.hexaarch.ecommerce.logistics.domain.order.valueobject.OrderStatus;
 
@@ -17,6 +19,17 @@ public class OrderStatusChangedEvent {
     private final OrderStatus oldStatus;
     private final OrderStatus newStatus;
     private final LocalDateTime changedAt;
+
+    /**
+     * MQ 消费侧的反序列化入口（ISS-052）：类只有 builder 形态的私有构造，Jackson 无 creator 可用。
+     */
+    @JsonCreator
+    public static OrderStatusChangedEvent fromJson(@JsonProperty("orderId") String orderId,
+                                                   @JsonProperty("oldStatus") OrderStatus oldStatus,
+                                                   @JsonProperty("newStatus") OrderStatus newStatus,
+                                                   @JsonProperty("changedAt") LocalDateTime changedAt) {
+        return builder().orderId(orderId).oldStatus(oldStatus).newStatus(newStatus).changedAt(changedAt).build();
+    }
 
     private OrderStatusChangedEvent(Builder builder) {
         this.orderId = Objects.requireNonNull(builder.orderId, "Order ID cannot be null");

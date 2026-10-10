@@ -29,6 +29,21 @@ import {
 const { Title, Paragraph } = Typography;
 const { Option } = Select;
 
+// 付款方式/付款状态中文映射（后端为字符串字段，取值与 CreateOrder 表单选项及导入默认值对齐；
+// constants/order.js 暂无此映射，故在本页定义，未识别取值回退原始码）（ISS-081①）
+const paymentMethodLabelMap = {
+  CREDIT_CARD: '信用卡',
+  PAYPAL: 'PayPal',
+  BANK_TRANSFER: '银行转账'
+};
+
+const paymentStatusLabelMap = {
+  PENDING: '待支付',
+  PAID: '已支付',
+  FAILED: '支付失败',
+  REFUNDED: '已退款'
+};
+
 const OrderDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -47,7 +62,9 @@ const OrderDetail = () => {
     try {
       const data = await orderApi.getOrderById(id);
       setOrder(data);
-      setSelectedStatus(data?.status);
+      // 选项仅来自 allowedNext（候选流转状态），当前状态不在其中；
+      // 若选中当前状态，antd 会回显原始枚举码（如 PROCESSING），故保持未选（ISS-080）
+      setSelectedStatus(undefined);
     } catch (err) {
       setError(err?.message || '获取订单详情失败');
     } finally {
@@ -69,6 +86,7 @@ const OrderDetail = () => {
     try {
       const updated = await orderApi.updateOrderStatus(id, selectedStatus);
       setOrder(updated);
+      setSelectedStatus(undefined);
       message.success('订单状态更新成功');
       setStatusModalVisible(false);
     } catch (err) {
@@ -170,7 +188,8 @@ const OrderDetail = () => {
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: 60 }}>
-        <Spin size="large" tip="加载中..." />
+        <Spin size="large" />
+        <div style={{ marginTop: 8 }}>加载中...</div>
       </div>
     );
   }
@@ -178,7 +197,7 @@ const OrderDetail = () => {
   if (error || !order) {
     return (
       <div>
-        <Alert type="error" message={error || '订单不存在'} showIcon />
+        <Alert type="error" title={error || '订单不存在'} showIcon />
         <div style={{ marginTop: 16 }}>
           <Link to="/orders">返回订单列表</Link>
         </div>
@@ -275,10 +294,12 @@ const OrderDetail = () => {
       <Card title="付款信息" style={{ marginBottom: 5 }}>
         {order.paymentInfo ? (
           <Descriptions column={1} size="small">
-            <Descriptions.Item label="付款方式">{order.paymentInfo.paymentMethod}</Descriptions.Item>
+            <Descriptions.Item label="付款方式">
+              {paymentMethodLabelMap[order.paymentInfo.paymentMethod] || order.paymentInfo.paymentMethod || '-'}
+            </Descriptions.Item>
             <Descriptions.Item label="付款状态">
               <Tag color={order.paymentInfo.paymentStatus === 'PAID' ? 'success' : 'processing'}>
-                {order.paymentInfo.paymentStatus === 'PAID' ? '已支付' : order.paymentInfo.paymentStatus}
+                {paymentStatusLabelMap[order.paymentInfo.paymentStatus] || order.paymentInfo.paymentStatus || '-'}
               </Tag>
             </Descriptions.Item>
             <Descriptions.Item label="交易ID">{order.paymentInfo.transactionId}</Descriptions.Item>
@@ -350,11 +371,17 @@ const OrderDetail = () => {
             onChange={setSelectedStatus}
             placeholder="请选择订单状态"
           >
-            {allowedNext.map((status) => (
-              <Option key={status} value={status}>
-                {orderStatusMap[status]?.text || orderStatusOptions.find((o) => o.value === status)?.label || status}
-              </Option>
-            ))}
+            {/* 当前状态以中文标签展示为禁用项：既可视化来源状态，又避免回显裸枚举码（ISS-080） */}
+            <Option key={`current-${order.status}`} value={order.status} disabled>
+              {statusMeta.text}（当前状态）
+            </Option>
+            {allowedNext
+              .filter((status) => status !== order.status)
+              .map((status) => (
+                <Option key={status} value={status}>
+                  {orderStatusMap[status]?.text || orderStatusOptions.find((o) => o.value === status)?.label || status}
+                </Option>
+              ))}
           </Select>
         </div>
       </Modal>

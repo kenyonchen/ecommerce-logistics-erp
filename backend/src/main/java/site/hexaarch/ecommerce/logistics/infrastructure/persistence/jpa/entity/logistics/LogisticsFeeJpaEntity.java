@@ -7,6 +7,8 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
+
 /**
  * 物流费用JPA实体，用于持久化物流费用值对象。
  *
@@ -21,14 +23,14 @@ public class LogisticsFeeJpaEntity {
     @Column(name = "id", updatable = false, nullable = false)
     private String id;
 
-    @Column(name = "base_fee")
-    private Double baseFee;
+    @Column(name = "base_fee", precision = 19, scale = 2)
+    private BigDecimal baseFee;
 
-    @Column(name = "weight_fee")
-    private Double weightFee;
+    @Column(name = "weight_fee", precision = 19, scale = 2)
+    private BigDecimal weightFee;
 
-    @Column(name = "total_fee", nullable = false)
-    private Double totalFee;
+    @Column(name = "total_fee", nullable = false, precision = 19, scale = 2)
+    private BigDecimal totalFee;
 
     @Column(name = "currency", nullable = false)
     private String currency;

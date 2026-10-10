@@ -34,14 +34,16 @@ const authStatusMap = {
 };
 
 const ShopList = () => {
-  const { user, hasRole, hasPermission } = useAuth();
-  // 后端按登录租户过滤，tenantId 入参仅平台管理员需要
+  const { hasRole, hasPermission } = useAuth();
+  // tenantId 由 shopApi 分组集中注入（平台管理员必带，租户用户带了也会被后端收敛）
   const canWrite = hasRole('PLATFORM_ADMIN') || hasPermission('shop:write');
   const canWriteCredentials = hasRole('PLATFORM_ADMIN') || hasPermission('shop:credential_write');
 
   const [shops, setShops] = useState([]);
   const [integrations, setIntegrations] = useState([]);
   const [loading, setLoading] = useState(false);
+  // 拉取失败的原因：非空时列表空态要显示「加载失败」而不是「没有店铺」
+  const [fetchError, setFetchError] = useState(null);
   const [createVisible, setCreateVisible] = useState(false);
   const [editingShop, setEditingShop] = useState(null);
   const [credentialShop, setCredentialShop] = useState(null);
@@ -59,10 +61,15 @@ const ShopList = () => {
     try {
       const data = await shopApi.getShops();
       setShops(data || []);
+      // 只有请求成功才回到正常空态
+      setFetchError(null);
     } catch (error) {
+      const reason = error?.message || '获取店铺列表失败';
+      // 403 已由响应拦截器提示过，这里不重复弹窗，但仍记录错误状态避免被读成「没有店铺」
       if (error?.status !== 403) {
-        message.error(error?.message || '获取店铺列表失败');
+        message.error(reason);
       }
+      setFetchError(error?.status === 403 ? '没有店铺查看权限（shop:read）' : reason);
     } finally {
       setLoading(false);
     }
@@ -349,7 +356,11 @@ const ShopList = () => {
       <div className="page__header">
         <div>
           <h1 className="page__title">店铺管理</h1>
-          <p className="page__subtitle">共 {shops.length} 个店铺，接入第三方平台站点的经营实体</p>
+          <p className="page__subtitle">
+            {fetchError
+              ? '店铺数据加载失败，请重试'
+              : `共 ${shops.length} 个店铺，接入第三方平台站点的经营实体`}
+          </p>
         </div>
         <Space>
           <Button icon={<ReloadOutlined />} onClick={fetchShops}>
@@ -368,7 +379,22 @@ const ShopList = () => {
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-          message="你只有店铺查看权限，如需建店或配置凭据请联系管理员分配 shop:write / shop:credential_write 权限"
+          title="你只有店铺查看权限，如需建店或配置凭据请联系管理员分配 shop:write / shop:credential_write 权限"
+        />
+      )}
+
+      {fetchError && (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 16 }}
+          title={`店铺列表加载失败：${fetchError}`}
+          description="下面的空白是请求失败，不代表当前租户没有店铺"
+          action={
+            <Button size="small" icon={<ReloadOutlined />} onClick={fetchShops} loading={loading}>
+              重试
+            </Button>
+          }
         />
       )}
 
@@ -378,6 +404,7 @@ const ShopList = () => {
         rowKey="id"
         loading={loading}
         scroll={{ x: 'max-content' }}
+        locale={{ emptyText: fetchError ? '店铺数据加载失败，请重试' : '暂无店铺' }}
         pagination={{
           pageSize: 10,
           showSizeChanger: true,
@@ -399,7 +426,7 @@ const ShopList = () => {
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-          message="建店只落主数据，凭据为空、授权状态为待验证；创建成功后请再点「凭据」配置密钥"
+          title="建店只落主数据，凭据为空、授权状态为待验证；创建成功后请再点「凭据」配置密钥"
         />
         <Form form={createForm} layout="vertical" onFinish={handleCreateSubmit}>
           <Form.Item
@@ -507,7 +534,7 @@ const ShopList = () => {
           type="warning"
           showIcon
           style={{ marginBottom: 16 }}
-          message="不填 = 保留原值；填空串 = 清除该字段。任何写入都会把授权状态打回「待验证」，需重新做连通性验证"
+          title="不填 = 保留原值；填空串 = 清除该字段。任何写入都会把授权状态打回「待验证」，需重新做连通性验证"
         />
         <Form form={credentialForm} layout="vertical" onFinish={handleCredentialsSubmit}>
           <Form.Item name="apiKey" label="API Key / Client ID">

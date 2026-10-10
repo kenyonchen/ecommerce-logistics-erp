@@ -22,10 +22,13 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import site.hexaarch.ecommerce.logistics.interfaces.controller.platform.PlatformIntegrationController;
+import site.hexaarch.ecommerce.logistics.interfaces.handler.GlobalExceptionHandler;
 
 class PlatformIntegrationControllerTest {
 
@@ -43,7 +46,11 @@ class PlatformIntegrationControllerTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        mockMvc = MockMvcBuilders.standaloneSetup(platformIntegrationController).build();
+        // 按 ID 的写操作在控制器入口做租户归属校验（ISS-122），抛出的 EntityNotFoundException
+        // 由全局异常处理器映射成 404；standaloneSetup 不会自动带上 @ControllerAdvice，需显式注册
+        mockMvc = MockMvcBuilders.standaloneSetup(platformIntegrationController)
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
     }
 
     @AfterEach
@@ -77,6 +84,17 @@ class PlatformIntegrationControllerTest {
                 .apiSecret("test-api-secret")
                 .status(PlatformStatus.ACTIVE)
                 .build();
+    }
+
+    /**
+     * 按 ID 的写操作会先做租户归属校验（ISS-122），这里以租户用户身份登录并把该 ID 的数据
+     * 挂到登录租户下，让用例聚焦在业务行为而不是守卫本身。
+     */
+    private PlatformIntegration stubOwnedIntegration(UUID id) {
+        loginAsTenantUser(TENANT_A);
+        PlatformIntegration owned = mockIntegration(TENANT_A);
+        when(platformIntegrationApplicationService.getPlatformIntegrationById(eq(id))).thenReturn(owned);
+        return owned;
     }
 
     @Test
@@ -188,6 +206,7 @@ class PlatformIntegrationControllerTest {
     @Test
     void testUpdatePlatformIntegration() throws Exception {
         UUID platformId = UUID.randomUUID();
+        stubOwnedIntegration(platformId);
         PlatformIntegration mockPlatform = PlatformIntegration.builder()
                 .id(platformId)
                 .platformName(PlatformName.AMAZON)
@@ -217,15 +236,35 @@ class PlatformIntegrationControllerTest {
     @Test
     void testDeletePlatformIntegration() throws Exception {
         UUID platformId = UUID.randomUUID();
+        stubOwnedIntegration(platformId);
 
         mockMvc.perform(delete("/api/platform-integrations/" + platformId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
     }
 
+    /**
+     * 负例：租户用户拿着他租户的集成 ID 做写操作，按 ID 的写接口一律 404
+     * （跨租户与不存在同码，不给他租户资源存在性的信号）。
+     */
+    @Test
+    void testDeletePlatformIntegration_TenantAccessDenied() throws Exception {
+        loginAsTenantUser(TENANT_A);
+        UUID platformId = UUID.randomUUID();
+        when(platformIntegrationApplicationService.getPlatformIntegrationById(eq(platformId)))
+                .thenReturn(mockIntegration(TENANT_B));
+
+        mockMvc.perform(delete("/api/platform-integrations/" + platformId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("ENTITY_NOT_FOUND"));
+
+        verify(platformIntegrationApplicationService, never()).deletePlatformIntegration(any());
+    }
+
     @Test
     void testActivatePlatformIntegration() throws Exception {
         UUID platformId = UUID.randomUUID();
+        stubOwnedIntegration(platformId);
         PlatformIntegration mockPlatform = PlatformIntegration.builder()
                 .id(platformId)
                 .platformName(PlatformName.AMAZON)
@@ -245,6 +284,7 @@ class PlatformIntegrationControllerTest {
     @Test
     void testDeactivatePlatformIntegration() throws Exception {
         UUID platformId = UUID.randomUUID();
+        stubOwnedIntegration(platformId);
         PlatformIntegration mockPlatform = PlatformIntegration.builder()
                 .id(platformId)
                 .platformName(PlatformName.AMAZON)
@@ -264,6 +304,7 @@ class PlatformIntegrationControllerTest {
     @Test
     void testSyncOrdersFromPlatform() throws Exception {
         UUID platformId = UUID.randomUUID();
+        stubOwnedIntegration(platformId);
 
         mockMvc.perform(post("/api/platform-integrations/" + platformId + "/sync-orders"))
                 .andExpect(status().isOk())
@@ -273,6 +314,7 @@ class PlatformIntegrationControllerTest {
     @Test
     void testSyncProductsFromPlatform() throws Exception {
         UUID platformId = UUID.randomUUID();
+        stubOwnedIntegration(platformId);
 
         mockMvc.perform(post("/api/platform-integrations/" + platformId + "/sync-products"))
                 .andExpect(status().isOk())
@@ -282,6 +324,7 @@ class PlatformIntegrationControllerTest {
     @Test
     void testSyncInventoryToPlatform() throws Exception {
         UUID platformId = UUID.randomUUID();
+        stubOwnedIntegration(platformId);
 
         mockMvc.perform(post("/api/platform-integrations/" + platformId + "/sync-inventory"))
                 .andExpect(status().isOk())

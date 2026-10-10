@@ -81,7 +81,7 @@
 |---|---|---|
 | `/actuator/health/liveness` | K8s livenessProbe | 是（无鉴权或独立端口） |
 | `/actuator/health/readiness` | readinessProbe（含 DB、MQ 连通） | 是 |
-| `/actuator/metrics` | 指标抓取 | **仅内网**，或 `management.server.port=9090` 独立端口 + `SecurityConfig` 放行规则同步（现状只放行 5173 且无 `anyRequest()` 兜底，L-01） |
+| `/actuator/metrics` | 指标抓取 | **仅内网**，或 `management.server.port=9090` 独立端口 + `SecurityConfig` 放行规则同步（🔄 2026-10-10 订正：CORS 现状放行 **5110 / 5120**（`SecurityConfig:63`）而不是旧文的 5173；`anyRequest()` 兜底现已存在（`/api/**` `authenticated()`），Actuator 端点仍未纳入，L-01） |
 | `/actuator/env`、`/configprops`、`/beans`、`/heapdump` | — | **禁止暴露**（会泄漏 `jwt.secret`、DB 口令——两者现在是明文） |
 
 ```yaml

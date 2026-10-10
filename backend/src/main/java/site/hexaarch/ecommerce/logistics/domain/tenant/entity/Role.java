@@ -51,6 +51,34 @@ public class Role extends BaseEntity {
         this.isSystemRole = false;
     }
 
+    private Role(LocalDateTime createdAt, LocalDateTime updatedAt) {
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
+        this.isSystemRole = false;
+    }
+
+    /**
+     * 从持久化数据重建角色：落库时间必须由入参带入。
+     * <p>
+     * 不能用 {@link #create} 重建——{@code createdAt} 是 final 且只在构造里赋 {@code now()}，
+     * 走 create() 会让「读回来的创建时间」变成「本次请求的时刻」，
+     * 并让随后的 {@code save()} 把库里的 {@code created_at} 覆盖成当前时间（真实数据丢失）。
+     * </p>
+     */
+    public static Role restore(String id, String tenantId, String name, String description,
+                               boolean systemRole, Set<String> permissions,
+                               LocalDateTime createdAt, LocalDateTime updatedAt) {
+        Role.validateName(name);
+        Role role = new Role(createdAt, updatedAt);
+        role.id = id;
+        role.tenantId = tenantId;
+        role.name = name;
+        role.description = description;
+        role.isSystemRole = systemRole;
+        role.permissions = permissions == null ? new HashSet<>() : new HashSet<>(permissions);
+        return role;
+    }
+
     // 工厂方法
     public static Role create(String tenantId, String name, String description) {
         validateName(name);

@@ -3,7 +3,7 @@ import { Routes, Route, Outlet } from 'react-router-dom';
 import AppLayout from './components/Layout.jsx';
 
 // 认证相关组件
-import { AuthGuard, PlatformAdminGuard, TenantAdminGuard } from './components/Auth/AuthGuard.jsx';
+import { AuthGuard, PlatformAdminGuard, PermissionGuard } from './components/Auth/AuthGuard.jsx';
 import Login from './pages/auth/Login.jsx';
 
 // 页面组件
@@ -76,52 +76,109 @@ const AppRoutes = () => {
       <Route element={<AuthGuard />}>
         <Route element={<LayoutWrapper />}>
           <Route index element={<Home />} />
-          <Route path="orders" element={<OrderList />} />
-          <Route path="orders/import" element={<OrderImport />} />
-          <Route path="orders/create" element={<CreateOrder />} />
-          <Route path="orders/:id" element={<OrderDetail />} />
-          <Route path="logistics" element={<LogisticsList />} />
-          <Route path="logistics/import" element={<LogisticsImport />} />
-          <Route path="logistics/channels" element={<LogisticsChannels />} />
-          <Route path="logistics/create" element={<CreateLogistics />} />
-          <Route path="logistics/:id" element={<LogisticsDetail />} />
-          <Route path="products" element={<ProductList />} />
-          <Route path="products/create" element={<CreateProduct />} />
-          <Route path="products/import" element={<ProductImport />} />
-          <Route path="products/:id/edit" element={<EditProduct />} />
-          <Route path="products/:id" element={<ProductDetail />} />
-          <Route path="warehouses" element={<WarehouseList />} />
-          <Route path="warehouses/shop" element={<ShopWarehouseSync />} />
-          <Route path="warehouses/create" element={<CreateWarehouse />} />
-          <Route path="warehouses/:id" element={<WarehouseDetail />} />
-          <Route path="customers" element={<CustomerList />} />
-          <Route path="customers/import" element={<CustomerImport />} />
-          <Route path="customers/:id" element={<CustomerDetail />} />
-          <Route path="customers/create" element={<CreateCustomer />} />
-          <Route path="finance" element={<FinanceList />} />
-          <Route path="finance/import" element={<FinanceImport />} />
-          <Route path="finance/:id" element={<FinanceDetail />} />
-          <Route path="finance/create" element={<CreateFinance />} />
-          <Route path="purchase" element={<PurchaseList />} />
-          <Route path="purchase/:id" element={<PurchaseDetail />} />
-          <Route path="purchase/create" element={<CreatePurchase />} />
+
+          {/* 交易管理：列表/详情按 :read 收敛，建单与导入各按自己的权限点 */}
+          <Route element={<PermissionGuard permission="order:read" />}>
+            <Route path="orders" element={<OrderList />} />
+            <Route path="orders/:id" element={<OrderDetail />} />
+          </Route>
+          <Route element={<PermissionGuard permission="order:write" />}>
+            <Route path="orders/create" element={<CreateOrder />} />
+          </Route>
+          <Route element={<PermissionGuard permission="order:import" />}>
+            <Route path="orders/import" element={<OrderImport />} />
+          </Route>
+          <Route element={<PermissionGuard permission="customer:read" />}>
+            <Route path="customers" element={<CustomerList />} />
+            <Route path="customers/:id" element={<CustomerDetail />} />
+          </Route>
+          <Route element={<PermissionGuard permission="customer:write" />}>
+            <Route path="customers/create" element={<CreateCustomer />} />
+          </Route>
+          <Route element={<PermissionGuard permission="customer:import" />}>
+            <Route path="customers/import" element={<CustomerImport />} />
+          </Route>
+
+          {/* 物流履约 */}
+          <Route element={<PermissionGuard permission="logistics:read" />}>
+            <Route path="logistics" element={<LogisticsList />} />
+            <Route path="logistics/:id" element={<LogisticsDetail />} />
+            <Route path="logistics/channels" element={<LogisticsChannels />} />
+          </Route>
+          <Route element={<PermissionGuard permission="logistics:write" />}>
+            <Route path="logistics/create" element={<CreateLogistics />} />
+          </Route>
+          <Route element={<PermissionGuard permission="logistics:import" />}>
+            <Route path="logistics/import" element={<LogisticsImport />} />
+          </Route>
+
+          {/* 商品与仓储 */}
+          <Route element={<PermissionGuard permission="product:read" />}>
+            <Route path="products" element={<ProductList />} />
+            <Route path="products/:id" element={<ProductDetail />} />
+          </Route>
+          <Route element={<PermissionGuard permission="product:write" />}>
+            <Route path="products/create" element={<CreateProduct />} />
+            <Route path="products/:id/edit" element={<EditProduct />} />
+          </Route>
+          <Route element={<PermissionGuard permission="product:import" />}>
+            <Route path="products/import" element={<ProductImport />} />
+          </Route>
+          <Route element={<PermissionGuard permission="warehouse:read" />}>
+            <Route path="warehouses" element={<WarehouseList />} />
+            <Route path="warehouses/:id" element={<WarehouseDetail />} />
+            {/* 店铺仓库对接页要读本地仓库列表，入口跟着 warehouse:read 走 */}
+            <Route path="warehouses/shop" element={<ShopWarehouseSync />} />
+          </Route>
+          <Route element={<PermissionGuard permission="warehouse:write" />}>
+            <Route path="warehouses/create" element={<CreateWarehouse />} />
+          </Route>
+          <Route element={<PermissionGuard permission="shop:read" />}>
+            <Route path="shops" element={<ShopList />} />
+          </Route>
+
+          {/* 采购与财务 */}
+          <Route element={<PermissionGuard permission="purchase:read" />}>
+            <Route path="purchase" element={<PurchaseList />} />
+            <Route path="purchase/:id" element={<PurchaseDetail />} />
+          </Route>
+          <Route element={<PermissionGuard permission="purchase:write" />}>
+            <Route path="purchase/create" element={<CreatePurchase />} />
+          </Route>
+          <Route element={<PermissionGuard permission="finance:read" />}>
+            <Route path="finance" element={<FinanceList />} />
+            <Route path="finance/:id" element={<FinanceDetail />} />
+          </Route>
+          <Route element={<PermissionGuard permission="finance:write" />}>
+            <Route path="finance/create" element={<CreateFinance />} />
+          </Route>
+          <Route element={<PermissionGuard permission="finance:import" />}>
+            <Route path="finance/import" element={<FinanceImport />} />
+          </Route>
+
+          {/* 平台集成：列表与详情后端对已认证用户开放，建/改/同步才要 platform:manage */}
           <Route path="platform-integration" element={<PlatformIntegration />} />
           <Route path="platform-integration/:id" element={<PlatformIntegrationDetail />} />
-          <Route path="platform-integration/create" element={<CreatePlatformIntegration />} />
-          <Route path="shops" element={<ShopList />} />
-          
-          {/* 租户管理 */}
-          <Route path="tenants" element={<TenantList />} />
-          <Route path="tenants/create" element={<CreateTenant />} />
-          <Route path="tenants/:id" element={<TenantDetail />} />
-          
-          {/* 用户管理 */}
-          <Route path="users" element={<UserList />} />
-          <Route path="users/create" element={<CreateUser />} />
-          <Route path="users/:id" element={<UserDetail />} />
+          <Route element={<PermissionGuard permission="platform:manage" />}>
+            <Route path="platform-integration/create" element={<CreatePlatformIntegration />} />
+          </Route>
 
-          {/* 角色管理 */}
-          <Route path="roles" element={<RoleList />} />
+          {/* 本租户内的子账号与角色 */}
+          <Route element={<PermissionGuard permission="user:manage" />}>
+            <Route path="users" element={<UserList />} />
+            <Route path="users/create" element={<CreateUser />} />
+            <Route path="users/:id" element={<UserDetail />} />
+          </Route>
+          <Route element={<PermissionGuard permission="role:manage" />}>
+            <Route path="roles" element={<RoleList />} />
+          </Route>
+
+          {/* 租户管理：整段只给平台管理员（与 SecurityConfig 对 /api/tenants/** 的角色要求一致） */}
+          <Route element={<PlatformAdminGuard />}>
+            <Route path="tenants" element={<TenantList />} />
+            <Route path="tenants/create" element={<CreateTenant />} />
+            <Route path="tenants/:id" element={<TenantDetail />} />
+          </Route>
         </Route>
       </Route>
       
@@ -130,13 +187,6 @@ const AppRoutes = () => {
         <Route element={<LayoutWrapper />}>
           <Route path="platform/dashboard" element={<PlatformDashboard />} />
           <Route path="platform/config" element={<SystemConfig />} />
-        </Route>
-      </Route>
-      
-      {/* 租户管理员路由 */}
-      <Route element={<TenantAdminGuard />}>
-        <Route element={<LayoutWrapper />}>
-          {/* 租户管理员专属路由 */}
         </Route>
       </Route>
     </Routes>

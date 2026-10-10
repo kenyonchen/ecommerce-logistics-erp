@@ -68,7 +68,7 @@ stateDiagram-v2
 | BR-03 | 产品必须属于某个分类 | ⚪ | 无分类主数据，classification 只能填冗余字符串 |
 | BR-04 | 同一产品可有多个 SKU | 🟡 | 模型支持，但无独立 SKU 维护端点 |
 | BR-05 | 下架不影响历史订单 | ✅ | 订单行项是快照设计 |
-| BR-06 | SKU 需维护重量与体积以支撑运费计费 | 🟡 | `weight`/`dimensions` 存在，但 `dimensions` 是自由字符串，无单位约定 |
+| BR-06 | SKU 需维护重量与体积以支撑运费计费 | 🟡 | `weight`/`dimensions` 存在，但 `dimensions` 是自由字符串，无单位约定。**2026-10-10 实测补记**：运费计费链路已经接通（[logistics.md](logistics.md) BR-04 / [../qa/known-issues.md](../qa/known-issues.md) R-57，计费重＝`Σ skus.weight × 件数`，单位克），但**库里 88 行 SKU 的 `weight` 有值的是 0 行** ⇒ 现有全部商品的续重都是 `0.00`，运费只收得到首重。这一半是**录入缺口不是代码缺口**：`POST /api/products` 接受 `weightInGrams`（探针就是这么建出 500 克的），`ProductForm.jsx:173-177` 有"重量"列（kg ⇄ 克换算在 `:52`/`:75`），`ProductDetail.jsx:169`、`ProductList.jsx:210`、`ProductImport.jsx:363` 都带该字段。缺重量时按 0 克计、**不拒建物流单**（R-55）；抛重所需的尺寸字段只有 `volumeInCubicCentimeters`，且没有任何计费路径读它 |
 | BR-07 | SKU 价格需带币种 | ⚪ | `skus.price` 无币种字段 |
 | BR-08 | 支持多语言标题/描述以上架不同站点 | ⚪ | 无字段 |
 | BR-09 | 属性可组合生成 SKU 变体 | ⚪ | `ProductAttribute` 未持久化 |

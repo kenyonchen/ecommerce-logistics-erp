@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import site.hexaarch.ecommerce.logistics.application.service.support.TenantAccessGuard;
 import site.hexaarch.ecommerce.logistics.domain.common.PageResult;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.EntityNotFoundException;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.ValidationException;
@@ -148,8 +149,10 @@ public class OrderImportApplicationService {
     }
 
     /**
-     * 批量导入：逐行处理，行级异常不影响其他行，最终产出导入任务与结果反馈
+     * 批量导入：逐行处理，行级异常不影响其他行，最终产出导入任务与结果反馈。
+     * 任务在 complete() 之后单次持久化，落库即为终态（含错误明细），避免 orphanRemoval 集合替换异常导致作业卡在 RUNNING。
      */
+    @Transactional
     public OrderImportJobDto importOrders(OrderImportRequest request) {
         String tenantId = resolveTenant(request.getTenantId());
         PlatformIntegration integration = resolveIntegration(request.getIntegrationId());
@@ -180,7 +183,6 @@ public class OrderImportApplicationService {
         OrderImportJob job = OrderImportJob.create(tenantId, platform,
                 integration == null ? null : String.valueOf(integration.getId()), fileName);
         job.start(rows == null ? 0 : rows.size());
-        persistJob(job);
 
         if (rows != null) {
             for (int i = 0; i < rows.size(); i++) {
@@ -201,8 +203,10 @@ public class OrderImportApplicationService {
     }
 
     /**
-     * 从指定平台集成同步订单（供「平台集成-同步订单」入口调用）
+     * 从指定平台集成同步订单（供「平台集成-同步订单」入口调用）。
+     * 直接调用本类方法时不经过事务代理，因此与 {@link #importOrders} 同样声明 {@code @Transactional}。
      */
+    @Transactional
     public OrderImportJobDto syncFromPlatform(String integrationId, String tenantId, String orderNumber,
                                               String updatedFrom, String updatedTo, Integer limit,
                                               Boolean useSampleData) {
@@ -465,7 +469,7 @@ public class OrderImportApplicationService {
     }
 
     private String resolveTenant(String tenantId) {
-        return StringUtils.hasText(tenantId) ? tenantId.trim() : DEFAULT_TENANT_ID;
+        return TenantAccessGuard.resolveWriteTenant(tenantId, DEFAULT_TENANT_ID);
     }
 
     private LocalDateTime parseDateTime(String text) {

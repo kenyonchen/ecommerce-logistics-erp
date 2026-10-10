@@ -13,6 +13,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import site.hexaarch.ecommerce.logistics.application.service.config.SystemConfigApplicationService;
+import site.hexaarch.ecommerce.logistics.application.service.tenant.AccountLoginGuard;
+import site.hexaarch.ecommerce.logistics.application.service.tenant.LoginSecurityService;
+import site.hexaarch.ecommerce.logistics.domain.audit.Auditable;
+import site.hexaarch.ecommerce.logistics.domain.audit.AuditActions;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.BusinessException;
 import site.hexaarch.ecommerce.logistics.domain.tenant.entity.User;
 import site.hexaarch.ecommerce.logistics.domain.tenant.repository.UserRepository;
@@ -37,13 +42,22 @@ public class AuthController {
     private final AuthenticationManager authenticationManager;
     private final JwtTokenProvider jwtTokenProvider;
     private final UserRepository userRepository;
+    private final LoginSecurityService loginSecurityService;
+    private final SystemConfigApplicationService systemConfigApplicationService;
+    private final AccountLoginGuard accountLoginGuard;
 
     public AuthController(AuthenticationManager authenticationManager,
                           JwtTokenProvider jwtTokenProvider,
-                          UserRepository userRepository) {
+                          UserRepository userRepository,
+                          LoginSecurityService loginSecurityService,
+                          SystemConfigApplicationService systemConfigApplicationService,
+                          AccountLoginGuard accountLoginGuard) {
         this.authenticationManager = authenticationManager;
         this.jwtTokenProvider = jwtTokenProvider;
         this.userRepository = userRepository;
+        this.loginSecurityService = loginSecurityService;
+        this.systemConfigApplicationService = systemConfigApplicationService;
+        this.accountLoginGuard = accountLoginGuard;
     }
 
     /**
@@ -52,17 +66,30 @@ public class AuthController {
     @Operation(summary = "用户登录", description = "用户登录获取访问令牌，令牌中携带租户ID与角色信息")
     @PostMapping("/login")
     public ResponseEntity<Result<?>> login(@RequestBody LoginRequest loginRequest) {
-        Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(
-                        loginRequest.getUsername(),
-                        loginRequest.getPassword()
-                )
-        );
+        String username = loginRequest.getUsername();
+        // 失败锁定在认证之前：达到阈值直接拒绝，不再给爆破者打认证链路
+        loginSecurityService.assertLoginAllowed(username);
 
-        SecurityContextHolder.getContext().setAuthentication(authentication);
+        Authentication authentication;
+        User user;
+        try {
+            authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(
+                            username,
+                            loginRequest.getPassword()
+                    )
+            );
 
-        User user = userRepository.findByUsername(loginRequest.getUsername())
-                .orElseThrow(() -> new BusinessException("用户不存在: " + loginRequest.getUsername()));
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+
+            user = userRepository.findByUsername(username)
+                    .orElseThrow(() -> new BusinessException("用户不存在: " + username));
+        } catch (RuntimeException failure) {
+            // BR-12：认证失败同样是安全事件，爆破与撞库的信号全在这一侧
+            loginSecurityService.recordLoginAttempt(username, null, failure);
+            throw failure;
+        }
+        loginSecurityService.recordLoginAttempt(username, user.getTenantId(), null);
 
         List<String> roles = new ArrayList<>();
         List<String> permissions = new ArrayList<>();
@@ -79,7 +106,8 @@ public class AuthController {
         }
 
         String token = jwtTokenProvider.generateToken(user.getUsername(), user.getTenantId(),
-                roles.toArray(new String[0]), permissions.toArray(new String[0]));
+                roles.toArray(new String[0]), permissions.toArray(new String[0]),
+                sessionTimeoutMillis());
         String refreshToken = jwtTokenProvider.generateRefreshToken(user.getUsername());
 
         return ResponseEntity.ok(Result.success(new TokenResponse(token, refreshToken,
@@ -93,40 +121,50 @@ public class AuthController {
     @PostMapping("/refresh")
     public ResponseEntity<Result<?>> refreshToken(@RequestBody RefreshTokenRequest refreshTokenRequest) {
         String refreshToken = refreshTokenRequest.getRefreshToken();
-        if (refreshToken == null || refreshToken.isBlank()) {
-            throw new BusinessException("刷新令牌不能为空");
-        }
-        if (!jwtTokenProvider.validateToken(refreshToken)) {
-            throw new BusinessException("刷新令牌无效或已过期，请重新登录");
-        }
+        String username = resolveRefreshSubject(refreshToken);
+        try {
+            if (refreshToken == null || refreshToken.isBlank()) {
+                throw new BusinessException("刷新令牌不能为空");
+            }
+            if (!jwtTokenProvider.validateToken(refreshToken)) {
+                throw new BusinessException("刷新令牌无效或已过期，请重新登录");
+            }
+            if (username == null || username.isBlank()) {
+                throw new BusinessException("刷新令牌缺少用户信息，请重新登录");
+            }
 
-        String username = jwtTokenProvider.getUsernameFromToken(refreshToken);
-        if (username == null || username.isBlank()) {
-            throw new BusinessException("刷新令牌缺少用户信息，请重新登录");
+            User user = userRepository.findByUsername(username)
+                    .orElseThrow(() -> new BusinessException("用户不存在: " + username));
+            // 续期链路绕过了认证（不经过 UserDetailsService），账号/租户被停用后必须在这里挡住，
+            // 否则刷新令牌可以无限续期一个「名义上已停用」的会话
+            if (!accountLoginGuard.isUsable(user)) {
+                throw new BusinessException("账号不可用：" + accountLoginGuard.describeBlocker(user) + "，请重新登录");
+            }
+
+            List<String> roles = new ArrayList<>();
+            List<String> permissions = new ArrayList<>();
+            if (user.getRoles() != null) {
+                user.getRoles().forEach(role -> {
+                    if (role.getName() != null) {
+                        roles.add(role.getName());
+                    }
+                    if (role.getPermissions() != null) {
+                        role.getPermissions().stream()
+                                .filter(p -> p != null && !p.isBlank())
+                                .forEach(permissions::add);
+                    }
+                });
+            }
+
+            String newToken = jwtTokenProvider.generateToken(user.getUsername(), user.getTenantId(),
+                    roles.toArray(new String[0]), permissions.toArray(new String[0]), sessionTimeoutMillis());
+            loginSecurityService.recordRefreshAttempt(username, user.getTenantId(), null);
+            return ResponseEntity.ok(Result.success(new TokenResponse(newToken, refreshToken,
+                    user.getUsername(), user.getTenantId(), roles)));
+        } catch (RuntimeException failure) {
+            loginSecurityService.recordRefreshAttempt(username, null, failure);
+            throw failure;
         }
-
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new BusinessException("用户不存在: " + username));
-
-        List<String> roles = new ArrayList<>();
-        List<String> permissions = new ArrayList<>();
-        if (user.getRoles() != null) {
-            user.getRoles().forEach(role -> {
-                if (role.getName() != null) {
-                    roles.add(role.getName());
-                }
-                if (role.getPermissions() != null) {
-                    role.getPermissions().stream()
-                            .filter(p -> p != null && !p.isBlank())
-                            .forEach(permissions::add);
-                }
-            });
-        }
-
-        String newToken = jwtTokenProvider.generateToken(user.getUsername(), user.getTenantId(),
-                roles.toArray(new String[0]), permissions.toArray(new String[0]));
-        return ResponseEntity.ok(Result.success(new TokenResponse(newToken, refreshToken,
-                user.getUsername(), user.getTenantId(), roles)));
     }
 
     /**
@@ -134,9 +172,31 @@ public class AuthController {
      */
     @Operation(summary = "用户登出", description = "用户登出操作")
     @PostMapping("/logout")
+    @Auditable(action = AuditActions.AUTH_LOGOUT, label = "用户登出", targetType = "AuthSession")
     public ResponseEntity<Result<?>> logout() {
         SecurityContextHolder.clearContext();
         return ResponseEntity.ok(Result.success("登出成功"));
+    }
+
+    /**
+     * 访问令牌有效期取系统配置的会话超时（秒）：让界面上的安全参数真的作用到鉴权上
+     */
+    private long sessionTimeoutMillis() {
+        return systemConfigApplicationService.sessionTimeoutSeconds() * 1000L;
+    }
+
+    /**
+     * 刷新令牌里的主体名只用于留痕；令牌本身非法时按匿名处理，非法形态统一在下面拒绝并记失败
+     */
+    private String resolveRefreshSubject(String refreshToken) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return null;
+        }
+        try {
+            return jwtTokenProvider.getUsernameFromToken(refreshToken);
+        } catch (RuntimeException ex) {
+            return null;
+        }
     }
 
     /**

@@ -10,6 +10,8 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
+
 /**
  * 订单行项JPA实体，用于持久化订单行项。
  *
@@ -37,9 +39,9 @@ public class OrderItemJpaEntity {
     @Column(name = "quantity", nullable = false)
     private Integer quantity;
 
-    @Column(name = "unit_price", nullable = false)
-    private Double unitPrice;
+    @Column(name = "unit_price", nullable = false, precision = 19, scale = 2)
+    private BigDecimal unitPrice;
 
-    @Column(name = "total_price", nullable = false)
-    private Double totalPrice;
+    @Column(name = "total_price", nullable = false, precision = 19, scale = 2)
+    private BigDecimal totalPrice;
 }

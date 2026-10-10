@@ -5,6 +5,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import site.hexaarch.ecommerce.logistics.domain.common.BaseAggregateRoot;
 import site.hexaarch.ecommerce.logistics.domain.common.PageResult;
 import site.hexaarch.ecommerce.logistics.domain.logistics.aggregate.LogisticsOrder;
 import site.hexaarch.ecommerce.logistics.domain.logistics.repository.LogisticsOrderRepository;
@@ -41,7 +42,10 @@ public class LogisticsOrderRepositoryImpl implements LogisticsOrderRepository {
     public LogisticsOrder save(LogisticsOrder logisticsOrder) {
         var logisticsOrderJpaEntity = logisticsOrderMapper.toJpaEntity(logisticsOrder);
         var savedEntity = logisticsOrderJpaRepository.save(logisticsOrderJpaEntity);
-        return logisticsOrderMapper.toDomainAggregate(savedEntity);
+        LogisticsOrder savedOrder = logisticsOrderMapper.toDomainAggregate(savedEntity);
+        // save 重建的聚合副本不携带领域事件，补回后应用服务才能发布（ISS-062）
+        BaseAggregateRoot.carryOverEvents(logisticsOrder, savedOrder);
+        return savedOrder;
     }
 
     @Override

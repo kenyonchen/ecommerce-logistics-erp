@@ -3,6 +3,8 @@ package site.hexaarch.ecommerce.logistics.interfaces.dto.order;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
+import java.math.BigDecimal;
+
 /**
  * 订单行项DTO，用于接收订单行项的请求参数。
  *
@@ -17,7 +19,7 @@ public class OrderItemDto {
     @Schema(description = "数量", requiredMode = Schema.RequiredMode.REQUIRED, example = "2", minimum = "1")
     private Integer quantity;
     @Schema(description = "单价", requiredMode = Schema.RequiredMode.REQUIRED, example = "6999.00", minimum = "0")
-    private Double unitPrice;
+    private BigDecimal unitPrice;
     @Schema(description = "总价", requiredMode = Schema.RequiredMode.REQUIRED, example = "13998.00", minimum = "0")
-    private Double totalPrice;
+    private BigDecimal totalPrice;
 }

@@ -14,11 +14,15 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import site.hexaarch.ecommerce.logistics.application.service.finance.FinanceApplicationService;
+import site.hexaarch.ecommerce.logistics.domain.audit.AuditActions;
+import site.hexaarch.ecommerce.logistics.domain.audit.Auditable;
 import site.hexaarch.ecommerce.logistics.domain.common.PageResult;
+import site.hexaarch.ecommerce.logistics.domain.common.exception.BusinessException;
 import site.hexaarch.ecommerce.logistics.domain.finance.aggregate.FinancialTransaction;
 import site.hexaarch.ecommerce.logistics.domain.finance.valueobject.TransactionStatus;
 import site.hexaarch.ecommerce.logistics.domain.finance.valueobject.TransactionType;
 import site.hexaarch.ecommerce.logistics.infrastructure.persistence.jpa.mapper.finance.FinancialTransactionMapper;
+import site.hexaarch.ecommerce.logistics.infrastructure.security.TenantContext;
 import site.hexaarch.ecommerce.logistics.interfaces.common.Result;
 import site.hexaarch.ecommerce.logistics.interfaces.dto.finance.CreateFinancialTransactionRequest;
 import site.hexaarch.ecommerce.logistics.interfaces.dto.finance.FinancialTransactionDto;
@@ -54,6 +58,8 @@ public class FinanceController {
      */
     @Operation(summary = "创建财务交易", description = "创建一个新的财务交易（JSON请求体）")
     @PreAuthorize("hasRole('PLATFORM_ADMIN') or hasAuthority('finance:write')")
+    @Auditable(action = AuditActions.FINANCE_TRANSACTION_CREATE, label = "新建财务交易",
+            targetType = "FinancialTransaction", targetIdResult = "transactionId")
     @PostMapping
     public Result<FinancialTransactionDto> createFinancialTransaction(@RequestBody CreateFinancialTransactionRequest request) {
         try {
@@ -64,8 +70,15 @@ public class FinanceController {
                     request.getReferenceId(),
                     request.getReferenceType(),
                     request.getDescription(),
-                    request.getTenantId());
+                    // 必须过 resolveTenant：本端点此前直传 request.getTenantId()，而读侧走 resolveTenant，
+                    // 缺省 tenantId 时两边口径不一致——金额记录会落进谁也看不见的 default-tenant 桶（ISS-118）。
+                    resolveTenant(request.getTenantId()));
             return Result.success(financialTransactionMapper.toDto(financialTransaction));
+        } catch (BusinessException e) {
+            // ISS-136：业务拒绝必须原样交给 GlobalExceptionHandler（HTTP 400 + 业务码）。
+            // 被下面的兜底 catch 复述成 code 500 的字符串消息时，前端按 code 查文案表只会显示
+            // 「系统内部错误，请稍后重试」，已经拿到手的原因就此消失。
+            throw e;
         } catch (Exception e) {
             return Result.error("创建财务交易失败: " + e.getMessage());
         }
@@ -88,14 +101,28 @@ public class FinanceController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
             @Parameter(description = "创建时间止（ISO格式）") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
-            @Parameter(description = "租户ID") @RequestParam(required = false) String tenantId) {
+            @Parameter(description = "租户ID（可空，缺省取当前登录租户）") @RequestParam(required = false) String tenantId) {
         PageResult<FinancialTransaction> transactions = financeApplicationService.searchFinancialTransactions(
-                tenantId, type, status, referenceId, referenceType, from, to,
+                resolveTenant(tenantId), type, status, referenceId, referenceType, from, to,
                 page == null ? 0 : page, size == null ? 20 : size);
         List<FinancialTransactionDto> content = transactions.getContent().stream()
                 .map(financialTransactionMapper::toDto)
                 .toList();
         return Result.success(new PageResult<>(content, transactions.getTotal(), transactions.getPage(), transactions.getSize()));
+    }
+
+    /**
+     * 租户口径统一（ISS-050/051）：入参优先，缺省回退 JWT 上下文租户，再回退 default-tenant。
+     */
+    private String resolveTenant(String tenantId) {
+        String requested = TenantContext.normalizeRequested(tenantId);
+        if (requested != null) {
+            return requested;
+        }
+        if (TenantContext.hasTenantId()) {
+            return TenantContext.getTenantId();
+        }
+        return "default-tenant";
     }
 
     /**
@@ -108,6 +135,8 @@ public class FinanceController {
         try {
             var financialTransaction = financeApplicationService.findFinancialTransactionById(transactionId);
             return Result.success(financialTransactionMapper.toDto(financialTransaction));
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             return Result.error("查找财务交易失败: " + e.getMessage());
         }
@@ -125,6 +154,8 @@ public class FinanceController {
             return Result.success(financialTransactions.stream()
                     .map(financialTransactionMapper::toDto)
                     .toList());
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             return Result.error("查找财务交易失败: " + e.getMessage());
         }
@@ -142,6 +173,8 @@ public class FinanceController {
             return Result.success(financialTransactions.stream()
                     .map(financialTransactionMapper::toDto)
                     .toList());
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             return Result.error("查找财务交易失败: " + e.getMessage());
         }
@@ -161,6 +194,8 @@ public class FinanceController {
             return Result.success(financialTransactions.stream()
                     .map(financialTransactionMapper::toDto)
                     .toList());
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             return Result.error("查找财务交易失败: " + e.getMessage());
         }
@@ -171,11 +206,14 @@ public class FinanceController {
      */
     @Operation(summary = "根据交易ID完成财务交易", description = "根据交易ID完成财务交易")
     @PreAuthorize("hasRole('PLATFORM_ADMIN') or hasAuthority('finance:write')")
+    @Auditable(action = AuditActions.FINANCE_TRANSACTION_COMPLETE, label = "标记财务交易为已完成", targetType = "FinancialTransaction")
     @PutMapping("/{transactionId}/complete")
     public Result<FinancialTransactionDto> completeFinancialTransaction(@Parameter(description = "交易ID") @PathVariable String transactionId) {
         try {
             var financialTransaction = financeApplicationService.completeFinancialTransaction(transactionId);
             return Result.success(financialTransactionMapper.toDto(financialTransaction));
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             return Result.error("完成财务交易失败: " + e.getMessage());
         }
@@ -186,11 +224,14 @@ public class FinanceController {
      */
     @Operation(summary = "根据交易ID标记财务交易为失败", description = "根据交易ID标记财务交易为失败")
     @PreAuthorize("hasRole('PLATFORM_ADMIN') or hasAuthority('finance:write')")
+    @Auditable(action = AuditActions.FINANCE_TRANSACTION_FAIL, label = "标记财务交易为失败", targetType = "FinancialTransaction")
     @PutMapping("/{transactionId}/fail")
     public Result<FinancialTransactionDto> failFinancialTransaction(@Parameter(description = "交易ID") @PathVariable String transactionId) {
         try {
             var financialTransaction = financeApplicationService.failFinancialTransaction(transactionId);
             return Result.success(financialTransactionMapper.toDto(financialTransaction));
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             return Result.error("标记财务交易为失败: " + e.getMessage());
         }
@@ -201,11 +242,14 @@ public class FinanceController {
      */
     @Operation(summary = "取消财务交易", description = "根据交易ID取消财务交易")
     @PreAuthorize("hasRole('PLATFORM_ADMIN') or hasAuthority('finance:write')")
+    @Auditable(action = AuditActions.FINANCE_TRANSACTION_CANCEL, label = "取消财务交易", targetType = "FinancialTransaction")
     @PutMapping("/{transactionId}/cancel")
     public Result<FinancialTransactionDto> cancelFinancialTransaction(@Parameter(description = "交易ID") @PathVariable String transactionId) {
         try {
             var financialTransaction = financeApplicationService.cancelFinancialTransaction(transactionId);
             return Result.success(financialTransactionMapper.toDto(financialTransaction));
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             return Result.error("取消财务交易失败: " + e.getMessage());
         }

@@ -10,6 +10,8 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
+
 /**
  * SKU JPA实体，用于持久化SKU信息。
  *
@@ -37,14 +39,14 @@ public class SkuJpaEntity {
     /**
      * 销售单价
      */
-    @Column(name = "price")
-    private Double sellingPrice;
+    @Column(name = "price", precision = 19, scale = 2)
+    private BigDecimal sellingPrice;
 
     /**
      * 成本单价
      */
-    @Column(name = "cost_price")
-    private Double costPrice;
+    @Column(name = "cost_price", precision = 19, scale = 2)
+    private BigDecimal costPrice;
 
     @Column(name = "currency", length = 8)
     private String currency;

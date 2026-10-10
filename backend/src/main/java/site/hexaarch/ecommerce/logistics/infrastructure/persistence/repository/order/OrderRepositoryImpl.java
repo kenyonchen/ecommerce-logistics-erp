@@ -3,6 +3,7 @@ package site.hexaarch.ecommerce.logistics.infrastructure.persistence.repository.
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import site.hexaarch.ecommerce.logistics.domain.common.BaseAggregateRoot;
 import site.hexaarch.ecommerce.logistics.domain.common.PageResult;
 import site.hexaarch.ecommerce.logistics.domain.order.aggregate.Order;
 import site.hexaarch.ecommerce.logistics.domain.order.repository.OrderQuery;
@@ -38,7 +39,10 @@ public class OrderRepositoryImpl implements OrderRepository {
             }
         }
         OrderJpaEntity savedEntity = orderJpaRepository.save(orderJpaEntity);
-        return orderMapper.toDomainAggregate(savedEntity);
+        Order savedOrder = orderMapper.toDomainAggregate(savedEntity);
+        // save 重建的聚合副本不携带领域事件，补回后应用服务才能发布（ISS-062）
+        BaseAggregateRoot.carryOverEvents(order, savedOrder);
+        return savedOrder;
     }
 
     @Override

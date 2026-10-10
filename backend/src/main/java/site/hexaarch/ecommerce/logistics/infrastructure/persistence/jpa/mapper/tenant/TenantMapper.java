@@ -30,43 +30,38 @@ public interface TenantMapper {
 
     /**
      * 将JPA实体转换为租户领域模型
+     * <p>
+     * 重建必须走 {@link Tenant#restore}：create() 会把 createdAt 写成 now()，
+     * 既让读接口返回"本次请求的时刻"，又让下一次 save() 把库里的 created_at 覆盖掉（ISS-125）。
+     * </p>
      */
     default Tenant toDomainEntity(TenantJpaEntity tenantJpaEntity) {
         if (tenantJpaEntity == null) {
             return null;
         }
 
-        // 使用Tenant类的工厂方法创建Tenant实例
-        Tenant tenant = Tenant.create(
+        return Tenant.restore(
+                tenantJpaEntity.getId(),
                 tenantJpaEntity.getName(),
                 tenantJpaEntity.getDescription(),
                 tenantJpaEntity.getContactEmail(),
-                tenantJpaEntity.getContactPhone()
+                tenantJpaEntity.getContactPhone(),
+                stringToTenantStatus(tenantJpaEntity.getStatus()),
+                tenantJpaEntity.getCreatedAt(),
+                tenantJpaEntity.getUpdatedAt()
         );
+    }
 
-        // 设置其他属性
-        tenant.setId(tenantJpaEntity.getId());
-
-        // 设置状态
+    /**
+     * 将String转换为TenantStatus（非法值按 ACTIVE 处理，与原重建逻辑一致）
+     */
+    @Named("stringToTenantStatus")
+    default TenantStatus stringToTenantStatus(String status) {
         try {
-            TenantStatus status = TenantStatus.valueOf(tenantJpaEntity.getStatus());
-            switch (status) {
-                case ACTIVE:
-                    tenant.activate();
-                    break;
-                case SUSPENDED:
-                    tenant.suspend();
-                    break;
-                case INACTIVE:
-                    tenant.deactivate();
-                    break;
-            }
+            return TenantStatus.valueOf(status);
         } catch (IllegalArgumentException e) {
-            // 默认状态为ACTIVE
-            tenant.activate();
+            return TenantStatus.ACTIVE;
         }
-
-        return tenant;
     }
 
     /**

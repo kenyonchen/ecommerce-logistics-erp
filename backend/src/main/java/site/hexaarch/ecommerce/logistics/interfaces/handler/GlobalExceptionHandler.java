@@ -2,11 +2,17 @@ package site.hexaarch.ecommerce.logistics.interfaces.handler;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.DisabledException;
+import org.springframework.security.authentication.LockedException;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
@@ -14,6 +20,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.BusinessException;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.EntityNotFoundException;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.InvalidOperationException;
@@ -86,13 +93,101 @@ public class GlobalExceptionHandler {
      * @param ex 验证异常
      * @return 错误响应
      */
-    @ExceptionHandler(value = {ValidationException.class, BadCredentialsException.class})
-    public ResponseEntity<Result<?>> handleValidationException(Exception ex) {
+    @ExceptionHandler(ValidationException.class)
+    public ResponseEntity<Result<?>> handleValidationException(ValidationException ex) {
         //logger.error("Validation exception occurred: {}", ex.getMessage(), ex);
         Result<?> result = Result.fail(ex.getMessage());
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(result);
+    }
+
+    /**
+     * 处理登录凭据错误
+     * <p>
+     * 与参数校验同为调用方可修正的问题，但语义是"身份未建立"，按 HTTP 规范应回 401；
+     * 回 400 会让前端的"凭据错误"与"请求体不合法"共用一条分支。
+     * </p>
+     *
+     * @param ex 凭据异常
+     * @return 错误响应
+     */
+    @ExceptionHandler(BadCredentialsException.class)
+    public ResponseEntity<Result<?>> handleBadCredentialsException(BadCredentialsException ex) {
+        logger.warn("Login failed: {}", ex.getMessage());
+        return ResponseEntity
+                .status(HttpStatus.UNAUTHORIZED)
+                .body(Result.error("INVALID_CREDENTIALS", "用户名或密码错误"));
+    }
+
+    /**
+     * 处理账号或所属租户被停用/锁定的登录拒绝。
+     * <p>
+     * 这两类异常过去没有专用出口，会落到兜底 handler 变成 500 SYSTEM_ERROR——
+     * 用户看到的"系统故障"其实是"你的租户已被停用"，运维也会按故障去查。
+     * 租户维度之所以归到"账号被停用"，是因为 {@code users.status} 完好、
+     * 挡住它的是租户状态，文案里一并说明。
+     * </p>
+     *
+     * @param ex 认证异常（停用或锁定）
+     * @return 401 错误响应
+     */
+    @ExceptionHandler({DisabledException.class, LockedException.class})
+    public ResponseEntity<Result<?>> handleAccountNotUsable(AuthenticationException ex) {
+        logger.warn("Login rejected by account state: {}", ex.getMessage());
+        boolean locked = ex instanceof LockedException;
+        return ResponseEntity
+                .status(HttpStatus.UNAUTHORIZED)
+                .body(Result.error(locked ? "ACCOUNT_LOCKED" : "ACCOUNT_DISABLED",
+                        locked ? "账号已被锁定，请稍后重试或联系平台管理员"
+                                : "账号或其所属租户已被停用，请联系平台管理员"));
+    }
+
+    /**
+     * 处理路由与方法不匹配
+     * <p>
+     * 未映射路径（NoResourceFoundException）与方法不支持（405）都发生在派发阶段，
+     * 落到兜底 handler 会回 500 SYSTEM_ERROR，把调用方的拼错路径伪装成服务端崩溃，
+     * 前端与监控都据此判故障。
+     * </p>
+     *
+     * @param ex 路由异常
+     * @return 错误响应
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Result<?>> handleNoResourceFoundException(NoResourceFoundException ex) {
+        logger.warn("No handler for request: {}", ex.getResourcePath());
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(Result.error("RESOURCE_NOT_FOUND", "请求的接口不存在"));
+    }
+
+    /**
+     * 处理请求方法不支持（如该路径只有 POST 却用了 PUT）
+     *
+     * @param ex 方法不支持异常
+     * @return 错误响应
+     */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<Result<?>> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex) {
+        logger.warn("Unsupported method {} for {}", ex.getMethod(), ex.getSupportedHttpMethods());
+        return ResponseEntity
+                .status(HttpStatus.METHOD_NOT_ALLOWED)
+                .body(Result.error("METHOD_NOT_ALLOWED", "该路径不支持 " + ex.getMethod() + " 请求"));
+    }
+
+    /**
+     * 处理 Content-Type 不支持（如multipart端点收到 application/json）
+     *
+     * @param ex 媒体类型异常
+     * @return 错误响应
+     */
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<Result<?>> handleMediaTypeNotSupported(HttpMediaTypeNotSupportedException ex) {
+        logger.warn("Unsupported Content-Type: {}", ex.getContentType());
+        return ResponseEntity
+                .status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+                .body(Result.error("UNSUPPORTED_MEDIA_TYPE", "请求的 Content-Type 不被该接口支持"));
     }
 
     /**
@@ -153,6 +248,27 @@ public class GlobalExceptionHandler {
         Result<?> result = Result.error("ACCESS_DENIED", "没有权限执行该操作");
         return ResponseEntity
                 .status(HttpStatus.FORBIDDEN)
+                .body(result);
+    }
+
+    /**
+     * 处理唯一约束/外键等数据完整性冲突
+     * <p>
+     * 服务层的前置查重挡不住并发（两个请求同时通过校验后由 DB 的 UNIQUE 拦下），此前该类冲突
+     * 落到兜底 handler 变成 500 + SYSTEM_ERROR，调用方无从知道是"重名/重复编码"还是"服务故障"，
+     * 详见 docs/spec/warehouse.md 验收条件 1 与 ISS-116。冲突细节只写日志，响应不回显 SQL 与索引名。
+     * </p>
+     *
+     * @param ex 数据完整性异常
+     * @return 错误响应
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Result<?>> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+        logger.warn("Data integrity violation: {}", ex.getMostSpecificCause().getMessage());
+
+        Result<?> result = Result.error("DATA_CONFLICT", "数据冲突：该记录已存在，或仍被其他数据引用，无法完成本次操作");
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
                 .body(result);
     }
 

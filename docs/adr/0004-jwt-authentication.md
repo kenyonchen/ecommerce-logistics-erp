@@ -36,7 +36,7 @@
 | 密码加密 | `BCryptPasswordEncoder` |
 | Session 策略 | `STATELESS` |
 | CSRF | 关闭（无 Cookie 会话） |
-| CORS | 当前仅允许 `http://localhost:5173` |
+| CORS | ~~当前仅允许 `http://localhost:5173`~~ → 🔄 **2026-10-10 现状**：`SecurityConfig:63` 允许 `http://localhost:5120`（user-web）与 `http://localhost:5110`（admin-web）——旧文的 5173/5174 端口早已随 `vite.config.js:9` 的固定端口作废 |
 | 授权规则 | `/api/auth/**` 放行；`/api/platform/**`、`/api/tenants/**` 需 `ROLE_PLATFORM_ADMIN`；其余 `/api/**` 需认证 |
 | 过滤器 | `JwtAuthenticationFilter` 挂在 `UsernamePasswordAuthenticationFilter` 之前 |
 
@@ -82,7 +82,7 @@
 | 4 | 密钥与有效期改为环境变量 / 外部配置中心，且不再进入版本库 | **P0** | ISS-021 |
 | 5 | 统一 `jwt.refresh.expiration` 配置与代码注释的一致性 | P1 | — |
 | 6 | 实现刷新令牌与登出（黑名单或版本号机制） | P1 | US-904 |
-| 7 | 补充 CORS 来源管理并为 admin-web 开放 `:5174` | P2 | ISS-018 |
+| 7 | ~~补充 CORS 来源管理并为 admin-web 开放 `:5174`~~ → ✅ 已开放并随端口改造为 `:5110`（`SecurityConfig.java:63` 白名单 = 5110/5120，与两个 `vite.config.js:9` 一致）；**仍待做**：把来源外置为配置项 | P2 | ISS-018 |
 | 8 | 记录登录/登出的审计日志 | P2 | BR-12 |
 
 ## 复审触发条件

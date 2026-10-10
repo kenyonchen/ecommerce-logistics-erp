@@ -30,7 +30,7 @@ public class FinancialTransactionJpaEntity {
     @Column(name = "type", nullable = false)
     private String type;
 
-    @Column(name = "amount", nullable = false)
+    @Column(name = "amount", nullable = false, precision = 19, scale = 2)
     private BigDecimal amount;
 
     @Column(name = "currency", nullable = false, length = 3)

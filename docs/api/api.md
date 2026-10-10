@@ -20,7 +20,8 @@
 | Content-Type | `application/json`（但**大量写接口实际接收 query/form 参数**，见 §3） |
 | 字符/时间 | 未配置全局时区与日期格式；epoch-millis 与 ISO 字符串并存 |
 | 版本化 | **无**（无 `/v1`、无 Header 版本协商） |
-| 分页/排序/筛选 | **完全没有**：全仓无 `Pageable`/`Page`/`page`/`size`/`sort`，列表接口返回无界 `List<T>` |
+| 分页/排序/筛选 | ~~**完全没有**：全仓无 `Pageable`/`Page`/`page`/`size`/`sort`，列表接口返回无界 `List<T>`~~ → 🔄 **2026-10-09 复测已失效**：客户/订单/商品/物流/财务/仓储/采购等列表均带 `page`/`size` 查询参数，出参形状 `data.{content,total,page,size,totalPages}`。**`page` 从 0 起**（`docs/tech/backend-standards.md` §107「从 0 起，size 上限 200」，`docs/api/api.md` 各端点表里的「默认 `0`」与此一致；user-web 在请求前做 `page - 1`，所以传 `page=1` 拿到的是**第 2 页**，写探针时不要按 1 起算） |
+| `tenantId` 参数语义 | 🔄 **2026-10-09（ISS-120 / R-32）**：`tenantId` 缺省时一律取登录会话的租户；字面量 **`default-tenant` 被服务端归一化为「未指定」**（该值在 `tenants` 表里没有行，是历史幻影桶），等价于不传。**写**＝落登录租户；**读**＝按登录租户收敛，平台管理员不带该参数＝跨租户全量。**显式传真实他租户**仍 `400 TENANT_ACCESS_DENIED`；平台管理员在 Role/User/Shop 上带该字面量得到 `400「必须显式指定 tenantId」`而不是空列表 |
 
 ## 2. 响应信封 `Result<T>`
 
@@ -594,7 +595,7 @@
 | POST | `/api/warehouses` | body `CreateWarehouseRequest` | 创建仓库 | `authenticated()` |
 | GET | `/api/warehouses/{id}` | path `id` | 根据ID获取仓库 | `authenticated()` |
 | GET | `/api/warehouses/code/{code}` | path `code` | 根据编码获取仓库 | `authenticated()` |
-| GET | `/api/warehouses` | — | 获取所有仓库 | `authenticated()` |
+| GET | `/api/warehouses` | query `tenantId:String`（选填，缺省取 JWT 上下文租户） · query `page:Integer`（默认 `0`） · query `size:Integer`（默认 `10`） | 🔄 **2026-10-07 改为分页检索**：按租户过滤分页查询仓库，返回 `PageResult<Warehouse>`（ISS-050 仓库段修复） | `authenticated()` |
 | PUT | `/api/warehouses/{id}` | body `UpdateWarehouseRequest` · path `id` | 更新仓库 | `authenticated()` |
 | DELETE | `/api/warehouses/{id}` | path `id` | 删除仓库 | `authenticated()` |
 | PUT | `/api/warehouses/{id}/status` | path `id` · query `active:boolean`（**必填**） | 变更仓库状态 | `authenticated()` |
@@ -620,6 +621,41 @@
 | GET | `/api/warehouses/import/jobs/{jobId}` | path `jobId` | 查询导入任务详情 | `authenticated()` |
 | GET | `/api/warehouses/import/template` | — | 下载CSV导入模板 | `authenticated()` |
 
+## 4C. 端点清单复测（2026-10-09，按注解扫描）
+
+> ⚠️ **§4B 已过期**：它是 2026-01-25 由注解扫描生成的，只有 20 个控制器，**不含 `AuditLogController` 与 `SystemConfigController`**（BR-12 审计切片与系统配置切片之后才落地）。本节是同一次扫描的当前口径，§4B 保留作历史链。
+> 计数口径：方法级 `@GetMapping/@PostMapping/@PutMapping/@PatchMapping/@DeleteMapping` 之和；`@PreAuthorize` 与 `@Auditable` 含类级注解，故不等于"逐端点都有"。写端点的逐条留痕口径见 [../tech/security-design.md §5](../tech/security-design.md)（**126 个写端点 = 118 注解 + 8 带理由豁免**）与 [../qa/known-issues.md §15 R-37](../qa/known-issues.md)。
+
+| 控制器 | 基路径 | 端点 | `@PreAuthorize` | `@Auditable` |
+|---|---|---:|---:|---:|
+| `AuthController` | `/api/auth` | 4 | 0（放行端点，登录/刷新由 `LoginSecurityService` 显式留痕） | 1 |
+| `UserController` | `/api/users` | 11 | 1（类级） | 9 |
+| `RoleController` | `/api/roles` | 10 | 3 | 7 |
+| `TenantController` | `/api/tenants` | 9 | 0（类级 `hasRole("PLATFORM_ADMIN")` 写在 `SecurityConfig` 侧） | 7 |
+| `AuditLogController` | `/api/audit-logs` | 2 | 1（类级 `PLATFORM_ADMIN`） | 0（只读） |
+| `SystemConfigController` | `/api/system-config` | 2 | 1 | 1 |
+| `OverviewController` | `/api/overview` | 1 | 1 | 0（只读） |
+| `CustomerController` | `/api/customers` | 9 | 9 | 6 |
+| `ProductController` | `/api/products` | 12 | 12 | 9 |
+| `OrderController` | `/api/orders` | 9 | 9 | 4 |
+| `FinanceController` | `/api/finance/transactions` | 9 | 9 | 4 |
+| `PurchaseController` | `/api/purchases` | 12 | 12 | 9 |
+| `LogisticsController` | `/api/logistics` | 13 | 13 | 9 |
+| `LogisticsChannelController` | `/api/logistics-channels` | 7 | 7 | 4 |
+| `WarehouseController` | `/api/warehouses` | 13 | 13 | 9 |
+| `ShopWarehouseController` | `/api/warehouses/shop` | 5 | 5 | 3 |
+| `ShopController` | `/api/shops` | 7 | 7 | 5 |
+| `PlatformIntegrationController` | `/api/platform-integrations` | 15 | 14 | 12 |
+| `OrderImportController` | `/api/orders/import` | 11 | 1（类级） | 3 |
+| `ProductImportController` | `/api/products/import` | 10 | 1（类级） | 3 |
+| `CustomerImportController` | `/api/customers/import` | 10 | 1（类级） | 3 |
+| `FinanceImportController` | `/api/finance/import` | 11 | 1（类级） | 3 |
+| `LogisticsImportController` | `/api/logistics/import` | 12 | 1（类级） | 4 |
+| `WarehouseImportController` | `/api/warehouses/import` | 10 | 10 | 3 |
+| **合计** | **24 个控制器** | **214** | **132** | **118** |
+
+> `@Auditable` 合计 **118** 与 `scripts/smoke/audit-coverage-scan.js --strict` 的输出一致（该脚本另给出写端点分母 **126** 与 **8** 条带理由豁免，缺口 0）。6 个 `*ImportController` 的 `preview` 端点是其中 6 条豁免（只解析文件返回预览行，不落库），另 2 条是 `AuthController#login`/`#refreshToken`（认证前拿不到 actor，由 `LoginSecurityService` 记成功与失败两侧）。
+
 ## 5. 枚举取值
 
 查询参数/请求体按**领域枚举常量名**绑定（不是数据库落库值）：
@@ -638,7 +674,7 @@
 ## 6. 认证与鉴权（现状：链路已通，隔离只做了一半）
 
 - 令牌：`Authorization: Bearer <JWT>`，HS512（JJWT 0.12.5），密钥与过期在 `application.yml`（`jwt.secret` 明文、`jwt.expiration=86400000`、`jwt.refresh.expiration=86400000`）。
-- 🔄 2026-01-25：`SecurityConfig.java:63` 已改用 `authorizeHttpRequests`（不再用废弃的 `authorizeRequests`）；现规则为 `/api/auth/login|refresh|logout` permitAll（`:64`）→ `/api/auth/me` `authenticated()`（`:65`）→ `/api/tenants/**` `hasRole(PLATFORM_ADMIN)`（`:66`）→ `/api/**` `authenticated()`（`:67`）；已无 `/api/platform/**` 这条与真实路径不匹配的规则。CORS 白名单已含 `:5173` 与 `:5174`（`:49-50`）。
+- 🔄 2026-01-25：`SecurityConfig.java:63` 已改用 `authorizeHttpRequests`（不再用废弃的 `authorizeRequests`）；现规则为 `/api/auth/login|refresh|logout` permitAll（`:64`）→ `/api/auth/me` `authenticated()`（`:65`）→ `/api/tenants/**` `hasRole(PLATFORM_ADMIN)`（`:66`）→ `/api/**` `authenticated()`（`:67`）；已无 `/api/platform/**` 这条与真实路径不匹配的规则。~~CORS 白名单已含 `:5173` 与 `:5174`（`:49-50`）~~ → 🔄 **2026-10-10**：白名单现为 `:5110`（admin-web）与 `:5120`（user-web）（`SecurityConfig.java:63`，`corsConfigurationSource()` 在 `:59-68`），两端 `vite.config.js:9` 已把 `server.port` 写死并配 `strictPort: true`；旧的 Vite 默认端口 `:5173/:5174` **已不在白名单**，按旧文档起 dev server 会在浏览器里得到 CORS 错误而不是业务错误。
   ⚠️ 仍**无 `.anyRequest()`** 兜底 → `/swagger-ui.html`、`/v3/api-docs` 不在任何规则内（L-01）。
 
 原列的 5 项缺陷，2026-01-25 逐条复测（详见 [docs/security-findings.md](../security-findings.md) 的 S-01…S-06 / M-01…M-10）：

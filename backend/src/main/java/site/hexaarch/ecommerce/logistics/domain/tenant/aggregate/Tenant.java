@@ -38,6 +38,33 @@ public class Tenant extends BaseAggregateRoot<Tenant> {
         this.status = TenantStatus.ACTIVE;
     }
 
+    private Tenant(LocalDateTime createdAt, LocalDateTime updatedAt) {
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
+        this.status = TenantStatus.ACTIVE;
+    }
+
+    /**
+     * 从持久化数据重建租户：落库时间必须由入参带入。
+     * <p>
+     * 不能用 {@link #create} 重建——{@code createdAt} 是 final 且只在构造里赋 {@code now()}，
+     * 走 create() 会让「读回来的创建时间」变成「本次请求的时刻」，
+     * 并让随后的 {@code save()} 把库里的 {@code created_at} 覆盖成当前时间（真实数据丢失）。
+     * </p>
+     */
+    public static Tenant restore(String id, String name, String description,
+                                String contactEmail, String contactPhone, TenantStatus status,
+                                LocalDateTime createdAt, LocalDateTime updatedAt) {
+        Tenant tenant = new Tenant(createdAt, updatedAt);
+        tenant.id = id;
+        tenant.name = name;
+        tenant.description = description;
+        tenant.contactEmail = contactEmail;
+        tenant.contactPhone = contactPhone;
+        tenant.status = status == null ? TenantStatus.ACTIVE : status;
+        return tenant;
+    }
+
     // 工厂方法
     public static Tenant create(String name, String description, String contactEmail, String contactPhone) {
         Tenant tenant = new Tenant();

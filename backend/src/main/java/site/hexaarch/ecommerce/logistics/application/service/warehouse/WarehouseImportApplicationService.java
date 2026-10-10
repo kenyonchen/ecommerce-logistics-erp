@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import site.hexaarch.ecommerce.logistics.application.service.support.TenantAccessGuard;
 import site.hexaarch.ecommerce.logistics.domain.common.PageResult;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.BusinessException;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.EntityNotFoundException;
@@ -374,7 +375,7 @@ public class WarehouseImportApplicationService {
     }
 
     private String resolveTenant(String tenantId) {
-        return StringUtils.hasText(tenantId) ? tenantId.trim() : DEFAULT_TENANT_ID;
+        return TenantAccessGuard.resolveWriteTenant(tenantId, DEFAULT_TENANT_ID);
     }
 
     private List<ShopWarehouseFieldMapping> toDomainMappings(List<ShopWarehouseFieldMappingDto> dtos,

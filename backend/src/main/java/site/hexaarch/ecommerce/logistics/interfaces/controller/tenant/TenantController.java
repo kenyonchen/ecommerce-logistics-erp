@@ -6,7 +6,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
+import site.hexaarch.ecommerce.logistics.application.service.config.SystemConfigApplicationService;
 import site.hexaarch.ecommerce.logistics.application.service.tenant.TenantServiceImpl;
+import site.hexaarch.ecommerce.logistics.domain.audit.Auditable;
+import site.hexaarch.ecommerce.logistics.domain.audit.AuditActions;
 import site.hexaarch.ecommerce.logistics.application.service.tenant.UserServiceImpl;
 import site.hexaarch.ecommerce.logistics.domain.tenant.aggregate.Tenant;
 import site.hexaarch.ecommerce.logistics.domain.tenant.entity.User;
@@ -26,11 +29,14 @@ public class TenantController {
 
     private final TenantServiceImpl tenantService;
     private final UserServiceImpl userService;
+    private final SystemConfigApplicationService systemConfigApplicationService;
 
     @Autowired
-    public TenantController(TenantServiceImpl tenantService, UserServiceImpl userService) {
+    public TenantController(TenantServiceImpl tenantService, UserServiceImpl userService,
+                            SystemConfigApplicationService systemConfigApplicationService) {
         this.tenantService = tenantService;
         this.userService = userService;
+        this.systemConfigApplicationService = systemConfigApplicationService;
     }
 
     /**
@@ -38,7 +44,9 @@ public class TenantController {
      */
     @Operation(summary = "创建租户", description = "创建新租户，并同时创建该租户的管理员账号（自动授予租户管理员角色）")
     @PostMapping
+    @Auditable(action = AuditActions.TENANT_CREATE, label = "创建租户")
     public ResponseEntity<Result<?>> createTenant(@RequestBody CreateTenantRequest request) {
+        systemConfigApplicationService.requireAcceptablePassword(request.getAdminPassword());
         Tenant tenant = tenantService.createTenant(
                 request.getName(),
                 request.getDescription(),
@@ -78,6 +86,7 @@ public class TenantController {
      */
     @Operation(summary = "更新租户", description = "根据租户ID更新租户信息")
     @PutMapping("/{id}")
+    @Auditable(action = AuditActions.TENANT_UPDATE, label = "更新租户信息")
     public ResponseEntity<Result<?>> updateTenant(@PathVariable String id, @RequestBody UpdateTenantRequest request) {
         Tenant tenant = tenantService.updateTenant(
                 id,
@@ -94,6 +103,7 @@ public class TenantController {
      */
     @Operation(summary = "激活租户", description = "根据租户ID激活租户")
     @PutMapping("/{id}/activate")
+    @Auditable(action = AuditActions.TENANT_STATUS_UPDATE, label = "激活租户")
     public ResponseEntity<Result<?>> activateTenant(@PathVariable String id) {
         Tenant tenant = tenantService.activateTenant(id);
         return ResponseEntity.ok(Result.success(tenant));
@@ -104,6 +114,7 @@ public class TenantController {
      */
     @Operation(summary = "暂停租户", description = "根据租户ID暂停租户")
     @PutMapping("/{id}/suspend")
+    @Auditable(action = AuditActions.TENANT_STATUS_UPDATE, label = "暂停租户")
     public ResponseEntity<Result<?>> suspendTenant(@PathVariable String id) {
         Tenant tenant = tenantService.suspendTenant(id);
         return ResponseEntity.ok(Result.success(tenant));
@@ -114,6 +125,7 @@ public class TenantController {
      */
     @Operation(summary = "注销租户", description = "根据租户ID注销租户")        
     @PutMapping("/{id}/deactivate")
+    @Auditable(action = AuditActions.TENANT_STATUS_UPDATE, label = "停用租户")
     public ResponseEntity<Result<?>> deactivateTenant(@PathVariable String id) {
         Tenant tenant = tenantService.deactivateTenant(id);
         return ResponseEntity.ok(Result.success(tenant));
@@ -124,6 +136,7 @@ public class TenantController {
      */
     @Operation(summary = "删除租户", description = "根据租户ID删除租户")
     @DeleteMapping("/{id}")
+    @Auditable(action = AuditActions.TENANT_DELETE, label = "删除租户")
     public ResponseEntity<Result<?>> deleteTenant(@PathVariable String id) {
         tenantService.deleteTenant(id);
         return ResponseEntity.ok(Result.success("Tenant deleted successfully"));
@@ -139,7 +152,9 @@ public class TenantController {
      */
     @Operation(summary = "为租户创建管理员", description = "根据租户ID为租户创建管理员用户（自动授予租户管理员角色）")
     @PostMapping("/{id}/admin")
+    @Auditable(action = AuditActions.TENANT_ADMIN_CREATE, label = "为租户创建管理员账号")
     public ResponseEntity<Result<?>> createTenantAdmin(@PathVariable String id, @RequestBody CreateUserRequest request) {
+        systemConfigApplicationService.requireAcceptablePassword(request.getPassword());
         User user = tenantService.createTenantAdmin(
                 id,
                 request.getUsername(),

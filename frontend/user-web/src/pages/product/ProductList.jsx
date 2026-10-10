@@ -25,6 +25,7 @@ import {
   gramToKg
 } from '../../constants/product';
 
+import Can from '../../components/Auth/Can.jsx';
 const { Title } = Typography;
 
 const ProductList = () => {
@@ -237,22 +238,24 @@ const ProductList = () => {
           <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => navigate(`/products/${record.id}`)}>
             查看
           </Button>
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => navigate(`/products/${record.id}/edit`)}>
-            编辑
-          </Button>
-          <Button
-            type="link"
-            size="small"
-            icon={record.active ? <StopOutlined /> : <CheckCircleOutlined />}
-            onClick={() => handleToggleActive(record)}
-          >
-            {record.active ? '停用' : '启用'}
-          </Button>
-          <Popconfirm title="确定删除该商品吗？" onConfirm={() => handleDelete(record.id)} okText="确定" cancelText="取消">
-            <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-              删除
+          <Can permission="product:write">
+            <Button type="link" size="small" icon={<EditOutlined />} onClick={() => navigate(`/products/${record.id}/edit`)}>
+              编辑
             </Button>
-          </Popconfirm>
+            <Button
+              type="link"
+              size="small"
+              icon={record.active ? <StopOutlined /> : <CheckCircleOutlined />}
+              onClick={() => handleToggleActive(record)}
+            >
+              {record.active ? '停用' : '启用'}
+            </Button>
+            <Popconfirm title="确定删除该商品吗？" onConfirm={() => handleDelete(record.id)} okText="确定" cancelText="取消">
+              <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+                删除
+              </Button>
+            </Popconfirm>
+          </Can>
         </Space>
       )
     }
@@ -263,10 +266,14 @@ const ProductList = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
         <Title level={4} style={{ margin: 0 }}>商品列表</Title>
         <Space>
-          <Button icon={<ImportOutlined />} onClick={() => navigate('/products/import')}>商品导入</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/products/create')}>
-            新增商品
-          </Button>
+          <Can permission="product:import">
+            <Button icon={<ImportOutlined />} onClick={() => navigate('/products/import')}>商品导入</Button>
+          </Can>
+          <Can permission="product:write">
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/products/create')}>
+              新增商品
+            </Button>
+          </Can>
         </Space>
       </div>
 
@@ -319,15 +326,17 @@ const ProductList = () => {
         {selectedRowKeys.length > 0 && (
           <Space style={{ marginBottom: 8 }}>
             <span>已选 {selectedRowKeys.length} 项</span>
-            <Button size="small" icon={<CheckCircleOutlined />} onClick={() => handleBatchActive(true)}>
-              批量启用
-            </Button>
-            <Button size="small" icon={<StopOutlined />} onClick={() => handleBatchActive(false)}>
-              批量停用
-            </Button>
-            <Popconfirm title={`确定删除选中的 ${selectedRowKeys.length} 个商品吗？`} onConfirm={handleBatchDelete} okText="确定" cancelText="取消">
-              <Button size="small" danger icon={<DeleteOutlined />}>批量删除</Button>
-            </Popconfirm>
+            <Can permission="product:write">
+              <Button size="small" icon={<CheckCircleOutlined />} onClick={() => handleBatchActive(true)}>
+                批量启用
+              </Button>
+              <Button size="small" icon={<StopOutlined />} onClick={() => handleBatchActive(false)}>
+                批量停用
+              </Button>
+              <Popconfirm title={`确定删除选中的 ${selectedRowKeys.length} 个商品吗？`} onConfirm={handleBatchDelete} okText="确定" cancelText="取消">
+                <Button size="small" danger icon={<DeleteOutlined />}>批量删除</Button>
+              </Popconfirm>
+            </Can>
           </Space>
         )}
         <Table

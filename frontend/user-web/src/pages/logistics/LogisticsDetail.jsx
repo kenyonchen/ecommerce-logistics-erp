@@ -141,7 +141,7 @@ const LogisticsDetail = () => {
     return (
       <div>
         <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/logistics')}>返回列表</Button>
-        <Alert style={{ marginTop: 16 }} type="warning" showIcon message="物流单不存在或已被删除" />
+        <Alert style={{ marginTop: 16 }} type="warning" showIcon title="物流单不存在或已被删除" />
       </div>
     );
   }
@@ -205,7 +205,16 @@ const LogisticsDetail = () => {
           <Descriptions.Item label="平台来源">{detail?.platform || '系统内'}</Descriptions.Item>
           <Descriptions.Item label="平台物流单号">{detail?.externalLogisticsId || '-'}</Descriptions.Item>
           <Descriptions.Item label="运费">
-            {detail?.totalFee == null ? '-' : `${detail.currency || ''} ${formatAmount(detail.totalFee)}`}
+            {detail?.totalFee == null ? '-' : (
+              <>
+                {`${detail.currency || ''} ${formatAmount(detail.totalFee)}`}
+                {detail?.baseFee != null && detail?.weightFee != null && (
+                  <Typography.Text type="secondary" style={{ marginLeft: 8 }}>
+                    {`(首重 ${formatAmount(detail.baseFee)} + 续重 ${formatAmount(detail.weightFee)})`}
+                  </Typography.Text>
+                )}
+              </>
+            )}
           </Descriptions.Item>
           <Descriptions.Item label="发货时间">{formatDateTime(detail?.shippedAt)}</Descriptions.Item>
           <Descriptions.Item label="预计送达">{formatDateTime(detail?.estimatedArrivalAt)}</Descriptions.Item>

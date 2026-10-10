@@ -27,7 +27,7 @@ public class InventoryCountService {
      * @param actualQuantity 实际数量
      * @return 盘点后的库存记录
      */
-    public InventoryRecord countInventory(String warehouseId, String productId, int actualQuantity) {
+    public InventoryManagementService.InventoryOperationResult countInventory(String warehouseId, String productId, int actualQuantity) {
         // 查找仓库
         Warehouse warehouse = warehouseRepository.findById(warehouseId)
                 .orElseThrow(() -> new EntityNotFoundException("仓库不存在: " + warehouseId));
@@ -44,8 +44,8 @@ public class InventoryCountService {
 
         // 保存库存记录和仓库
         inventoryRecordRepository.save(inventoryRecord);
-        warehouseRepository.save(warehouse);
+        Warehouse savedWarehouse = warehouseRepository.save(warehouse);
 
-        return inventoryRecord;
+        return new InventoryManagementService.InventoryOperationResult(inventoryRecord, savedWarehouse);
     }
 }

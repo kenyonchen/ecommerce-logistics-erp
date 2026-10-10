@@ -3,6 +3,7 @@ package site.hexaarch.ecommerce.logistics.interfaces.controller.order;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -13,6 +14,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import site.hexaarch.ecommerce.logistics.application.service.order.OrderApplicationService;
+import site.hexaarch.ecommerce.logistics.domain.audit.AuditActions;
+import site.hexaarch.ecommerce.logistics.domain.audit.Auditable;
 import site.hexaarch.ecommerce.logistics.domain.common.PageResult;
 import site.hexaarch.ecommerce.logistics.domain.order.aggregate.Order;
 import site.hexaarch.ecommerce.logistics.domain.order.valueobject.OrderStatus;
@@ -35,6 +38,11 @@ import java.util.List;
 @RequestMapping("/api/orders")
 @Tag(name = "订单管理", description = "订单相关的API接口")
 public class OrderController {
+    private static final String HAS_ORDER_READ =
+            "hasRole('PLATFORM_ADMIN') or hasAuthority('order:read')";
+    private static final String HAS_ORDER_WRITE =
+            "hasRole('PLATFORM_ADMIN') or hasAuthority('order:write')";
+
     private final OrderApplicationService orderApplicationService;
     private final OrderMapper orderMapper;
 
@@ -44,6 +52,8 @@ public class OrderController {
     }
 
     @Operation(summary = "创建订单", description = "创建一个新的订单")
+    @PreAuthorize(HAS_ORDER_WRITE)
+    @Auditable(action = AuditActions.ORDER_CREATE, label = "创建订单", targetType = "Order")
     @PostMapping
     public Result<OrderDto> createOrder(@RequestBody CreateOrderDto createOrderDto) {
         var orderItems = orderMapper.toDomainEntityItemList(createOrderDto.getOrderItems());
@@ -61,6 +71,7 @@ public class OrderController {
     }
 
     @Operation(summary = "分页查询订单", description = "按订单号/客户/状态/平台/创建时间等条件分页查询订单")
+    @PreAuthorize(HAS_ORDER_READ)
     @GetMapping
     public Result<PageResult<OrderDto>> searchOrders(
             @Parameter(description = "租户ID") @RequestParam(required = false) String tenantId,
@@ -81,6 +92,7 @@ public class OrderController {
     }
 
     @Operation(summary = "订单状态字典", description = "返回全部订单状态及其中文名称，前端下拉框使用")
+    @PreAuthorize(HAS_ORDER_READ)
     @GetMapping("/statuses")
     public Result<List<TargetFieldDto>> statuses() {
         List<TargetFieldDto> statuses = new ArrayList<>();
@@ -91,6 +103,7 @@ public class OrderController {
     }
 
     @Operation(summary = "根据订单号获取订单", description = "根据系统订单号获取订单详情")
+    @PreAuthorize(HAS_ORDER_READ)
     @GetMapping("/number/{orderNumber}")
     public Result<OrderDto> getOrderByNumber(
             @Parameter(description = "订单号") @PathVariable String orderNumber) {
@@ -99,6 +112,7 @@ public class OrderController {
     }
 
     @Operation(summary = "根据ID获取订单", description = "根据订单ID获取订单详细信息")
+    @PreAuthorize(HAS_ORDER_READ)
     @GetMapping("/{id}")
     public Result<OrderDto> getOrderById(
             @Parameter(description = "订单ID") @PathVariable String id) {
@@ -107,6 +121,8 @@ public class OrderController {
     }
 
     @Operation(summary = "更新订单状态", description = "更新订单的状态（按状态机校验合法性）")
+    @PreAuthorize(HAS_ORDER_WRITE)
+    @Auditable(action = AuditActions.ORDER_STATUS_UPDATE, label = "更新订单状态", targetType = "Order")
     @PutMapping("/{id}/status")
     public Result<OrderDto> updateOrderStatus(
             @Parameter(description = "订单ID") @PathVariable String id,
@@ -116,6 +132,8 @@ public class OrderController {
     }
 
     @Operation(summary = "取消订单", description = "取消订单（已发货/已完成不可取消）")
+    @PreAuthorize(HAS_ORDER_WRITE)
+    @Auditable(action = AuditActions.ORDER_CANCEL, label = "取消订单", targetType = "Order")
     @PostMapping("/{id}/cancel")
     public Result<OrderDto> cancelOrder(
             @Parameter(description = "订单ID") @PathVariable String id) {
@@ -124,6 +142,8 @@ public class OrderController {
     }
 
     @Operation(summary = "删除订单", description = "根据订单ID删除订单")
+    @PreAuthorize(HAS_ORDER_WRITE)
+    @Auditable(action = AuditActions.ORDER_DELETE, label = "删除订单（连同联动物流单）", targetType = "Order")
     @DeleteMapping("/{id}")
     public Result<Void> deleteOrder(
             @Parameter(description = "订单ID") @PathVariable String id) {
@@ -132,6 +152,7 @@ public class OrderController {
     }
 
     @Operation(summary = "获取客户的所有订单", description = "根据客户ID获取所有订单")
+    @PreAuthorize(HAS_ORDER_READ)
     @GetMapping("/customer/{customerId}")
     public Result<List<OrderDto>> getOrdersByCustomer(
             @Parameter(description = "客户ID") @PathVariable String customerId) {
@@ -161,8 +182,9 @@ public class OrderController {
      * 租户解析：优先取请求参数，其次取租户上下文，最后回退默认租户
      */
     private String resolveTenant(String tenantId) {
-        if (tenantId != null && !tenantId.isBlank()) {
-            return tenantId.trim();
+        String requested = TenantContext.normalizeRequested(tenantId);
+        if (requested != null) {
+            return requested;
         }
         if (TenantContext.hasTenantId()) {
             return TenantContext.getTenantId();

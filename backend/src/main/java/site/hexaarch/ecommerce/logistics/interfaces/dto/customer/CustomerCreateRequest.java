@@ -10,7 +10,7 @@ import lombok.Data;
 @Data
 public class CustomerCreateRequest {
     /**
-     * 租户ID，缺省为 default-tenant
+     * 租户ID。缺省取登录租户；历史默认桶字面量 {@code default-tenant} 按「未指定」处理（见 R-32）
      */
     private String tenantId;
 

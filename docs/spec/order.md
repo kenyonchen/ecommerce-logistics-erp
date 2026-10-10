@@ -106,7 +106,7 @@ stateDiagram-v2
 | BR-15 | 订单必须归属租户，跨租户不可见 | ❌ | `createOrder` 中硬编码 `"default-tenant"`（ISS-002） |
 | BR-16 | 订单无 `tenant_id` 列，物理上无法隔离 | ❌ | `orders` 表结构（见数据字典 R-07） |
 | BR-17 | 同一平台订单号不可重复入库（幂等） | ⚪ | 无平台订单号字段 |
-| BR-18 | 金额字段应使用 `DECIMAL` 而非 `DOUBLE` | ❌ | `orders.total_amount` 为 `DOUBLE`（数据字典 R-09） |
+| BR-18 | 金额字段应使用 `DECIMAL` 而非 `DOUBLE` | ✅ | ~~`orders.total_amount` 为 `DOUBLE`（数据字典 R-09）~~ → ✅ **2026-10-10 已修（ISS-023 关闭，见 [../qa/known-issues.md](../qa/known-issues.md) §20 / R-52~R-54）**：`orders.total_amount`、`order_items.unit_price`/`total_price`、`payment_infos.amount` 现为 `DECIMAL(19,2)`，实体侧 `BigDecimal` 且显式声明 `precision=19, scale=2`，mapper 同类型直传（不再有 `doubleValue()` / `BigDecimal.valueOf(Double)` 中转）。全库 15 个金额列 = 14 × `19,2` + `logistics_channels.price_per_gram` `19,4`（每克费率必须 4 位，R-52），浮点列只剩两个重量列。常驻位：`MoneyPrecisionGuardTest` 6 例 + `MoneyPrecisionRoundTripTest` 4 例 + `smoke.sh` §14 12 条 |
 
 ---
 
@@ -167,7 +167,7 @@ stateDiagram-v2
 | **P1** | 状态机约束被接口绕过 | 数据可被改成非法状态 | `PUT /status` 改为调用 `OrderProcessingService` 的 process/ship/complete/cancel 分支 |
 | **P1** | 缺取消端点与取消原因 | 无法解释订单为何关闭 | 新增 `POST /api/orders/{id}/cancel` + `cancelReason` 字段 |
 | **P1** | 下单/发货/完成不联动其他上下文 | 流程不闭环 | 消费领域事件驱动库存与财务 |
-| **P2** | 金额用 `DOUBLE` | 精度丢失风险 | 改为 `DECIMAL(19,2)` |
+| **P2** | 金额用 `DOUBLE` | ~~精度丢失风险~~ → ✅ **2026-10-10 已消除**（ISS-023 关闭 / R-52~R-54，见 [../qa/known-issues.md](../qa/known-issues.md) §20）：修复前的现场产物是 76 行商品价格求和回显 `828.399999999999`，且损失发生在 JDBC→Java 那一跳，列改成 `DECIMAL` 也救不回来 | ~~改为 `DECIMAL(19,2)`~~ → ✅ 已按影子列流程改完（`V7`/`V7.1`），实体侧同步 `BigDecimal` + 显式 `precision=19, scale=2`（费率是 `scale=4`，R-52），并配静态守卫 + 往返测试 + `smoke.sh` §14 常驻位 |
 | **P2** | `Order` 未继承 `BaseAggregateRoot` | 领域事件实现重复 | 统一基类 |
 | **P2** | 缺平台订单号字段 | 无法做同步幂等 | 新增 `platform_order_no` 唯一索引 |
 

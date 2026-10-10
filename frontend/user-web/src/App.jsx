@@ -13,7 +13,8 @@ class ErrorBoundary extends React.Component {
   }
 
   static getDerivedStateFromError(error) {
-    return { hasError: true };
+    // 需在此处即写入 error（componentDidCatch 在 render 之后才执行）；errorInfo 保持 null，渲染处已容错（ISS-078）
+    return { hasError: true, error };
   }
 
   componentDidCatch(error, errorInfo) {
@@ -33,7 +34,8 @@ class ErrorBoundary extends React.Component {
           <details style={{ whiteSpace: 'pre-wrap' }}>
             {this.state.error && this.state.error.toString()}
             <br />
-            {this.state.errorInfo.componentStack}
+            {/* componentDidCatch 在 render 之后才执行，首次错误 render 时 errorInfo 仍为 null，须容错（ISS-078） */}
+            {this.state.errorInfo && this.state.errorInfo.componentStack}
           </details>
         </div>
       );

@@ -56,8 +56,8 @@ public interface ProductMapper {
     @Mapping(source = "id", target = "id")
     @Mapping(source = "skuCode", target = "skuCode")
     @Mapping(source = "name", target = "skuName")
-    @Mapping(source = "price.sellingPrice", target = "sellingPrice", qualifiedByName = "bigDecimalToDouble")
-    @Mapping(source = "price.costPrice", target = "costPrice", qualifiedByName = "bigDecimalToDouble")
+    @Mapping(source = "price.sellingPrice", target = "sellingPrice")
+    @Mapping(source = "price.costPrice", target = "costPrice")
     @Mapping(source = "price.currency", target = "currency", defaultValue = DEFAULT_CURRENCY)
     @Mapping(source = "weightInGrams", target = "weightInGrams", qualifiedByName = "intToDouble")
     @Mapping(source = "volumeInCubicCentimeters", target = "volumeInCubicCentimeters")
@@ -160,11 +160,6 @@ public interface ProductMapper {
         }
     }
 
-    @Named("bigDecimalToDouble")
-    default Double bigDecimalToDouble(BigDecimal bigDecimal) {
-        return bigDecimal != null ? bigDecimal.doubleValue() : null;
-    }
-
     @Named("intToDouble")
     default Double intToDouble(Integer value) {
         return value != null ? value.doubleValue() : null;
@@ -205,14 +200,10 @@ public interface ProductMapper {
                 ? DEFAULT_CURRENCY
                 : skuJpaEntity.getCurrency();
         return ProductPrice.builder()
-                .sellingPrice(toBigDecimal(skuJpaEntity.getSellingPrice()))
-                .costPrice(toBigDecimal(skuJpaEntity.getCostPrice()))
+                .sellingPrice(skuJpaEntity.getSellingPrice())
+                .costPrice(skuJpaEntity.getCostPrice())
                 .currency(currency)
                 .build();
-    }
-
-    default BigDecimal toBigDecimal(Double value) {
-        return value != null ? BigDecimal.valueOf(value) : null;
     }
 
     default String resolveProductId(SkuJpaEntity skuJpaEntity) {

@@ -14,7 +14,10 @@ import site.hexaarch.ecommerce.logistics.domain.logistics.event.LogisticsComplet
  * @author kenyon
  */
 @Component
-@ConditionalOnProperty(prefix = "rocketmq", name = "enabled", havingValue = "true")
+// 单体内部编排只由进程内 EventHandler 执行一次；MQ 消费端默认不装配，
+// 否则同一事件会被"进程内 + MQ"各跑一遍（重复物流单/重复采购单，ISS-054）。
+// 需要跨进程消费内部事件时显式设 rocketmq.internal-consumers.enabled=true。
+@ConditionalOnProperty(prefix = "rocketmq", name = "internal-consumers.enabled", havingValue = "true")
 @RocketMQMessageListener(topic = "logistics-events", consumerGroup = "finance-group")
 public class LogisticsCompletedEventConsumer implements RocketMQListener<LogisticsCompletedEvent> {
 

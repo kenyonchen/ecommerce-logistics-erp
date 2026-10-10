@@ -20,10 +20,12 @@ spring:
       max-request-size: 20MB
 
   # 数据库配置
+  # 口令与 JWT 密钥支持环境变量覆盖（ADR-0009 / ISS-021）：默认值保持开箱可用，
+  # 生产必须注入 ERP_DB_PASSWORD / JWT_SECRET，不能依赖仓库里的字面量。
   datasource:
-    url: jdbc:mysql://localhost:3306/ecommerce_logistics_erp?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
-    username: root
-    password: 123456
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:${ERP_MYSQL_HOST_PORT:3306}/ecommerce_logistics_erp?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true}
+    username: ${ERP_DB_USERNAME:root}
+    password: ${ERP_DB_PASSWORD:123456}
     driver-class-name: com.mysql.cj.jdbc.Driver
   
   # JPA配置
@@ -38,6 +40,10 @@ spring:
 # enabled=false 时不装配 RocketMQTemplate 与消费者容器，领域事件只走进程内 EventHandler 通道，本机无需 broker
 rocketmq:
   enabled: true
+  # 内部事件消费开关：默认关。单体内跨聚合编排由进程内 EventHandler 唯一执行，
+  # 打开会让同一事件被"进程内 + MQ"各跑一遍（重复物流单/重复采购单，ISS-054）
+  internal-consumers:
+    enabled: false
   name-server: localhost:9876
   producer:
     group: ecommerce-logistics-producer-group
@@ -109,7 +115,8 @@ logging:
     org.springdoc: INFO
 
 jwt:
-  secret: mySecretKeyMustBeAtLeast256BitsLongForHS512AlgorithmAndShouldContainComplexCharacters12345!
+  # 生产必须注入 JWT_SECRET；默认值仅供本地开箱可用（ISS-021 / ADR-0009）
+  secret: ${JWT_SECRET:mySecretKeyMustBeAtLeast256BitsLongForHS512AlgorithmAndShouldContainComplexCharacters12345!}
   expiration: 86400000
   refresh:
     expiration: 86400000

@@ -1,8 +1,10 @@
 package site.hexaarch.ecommerce.logistics.domain.logistics.entity;
 
 import lombok.Getter;
+import site.hexaarch.ecommerce.logistics.domain.logistics.valueobject.LogisticsFee;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 import java.util.UUID;
 
@@ -67,6 +69,31 @@ public class LogisticsChannel {
             return true;
         }
         return countries.contains(country);
+    }
+
+    /**
+     * 按本渠道的计费口径试算运费：首重 {@code basePrice} + 续重 {@code pricePerGram} × 克。
+     * <p>
+     * 这是全仓唯一的运费公式（{@code GET /api/logistics-channels/{id}/fee} 与建单落库共用），
+     * 分两处写必然让"页面看到的"和"库里存的"对不上（ISS-137）。
+     * 费率是 {@code DECIMAL(19,4)}、费用列是 {@code DECIMAL(19,2)}，首重与续重各自按分 HALF_UP 取整，
+     * 因此 0.0050/克这类费率能按 4 位小数参与乘法后再取整，不会因为列宽被截成 0.01 而让运费翻倍。
+     * </p>
+     *
+     * @param weightInGrams 计费重（克），与 {@code pricePerGram} 同单位；非正数按 0 计
+     * @return 运费明细，币种跟随渠道
+     */
+    public LogisticsFee estimateFee(double weightInGrams) {
+        BigDecimal weightFee = pricePerGram
+                .multiply(BigDecimal.valueOf(Math.max(weightInGrams, 0D)))
+                .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal baseFee = basePrice.setScale(2, RoundingMode.HALF_UP);
+        return LogisticsFee.builder()
+                .baseFee(baseFee)
+                .weightFee(weightFee)
+                .totalFee(baseFee.add(weightFee))
+                .currency(currency)
+                .build();
     }
 
     public LogisticsChannel activate() {

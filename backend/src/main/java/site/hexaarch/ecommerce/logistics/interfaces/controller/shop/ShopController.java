@@ -17,6 +17,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import site.hexaarch.ecommerce.logistics.application.service.shop.ShopApplicationService;
+import site.hexaarch.ecommerce.logistics.domain.audit.Auditable;
+import site.hexaarch.ecommerce.logistics.domain.audit.AuditActions;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.ValidationException;
 import site.hexaarch.ecommerce.logistics.domain.shop.valueobject.PushBackPolicy;
 import site.hexaarch.ecommerce.logistics.domain.tenant.RoleNames;
@@ -105,6 +107,7 @@ public class ShopController {
             + "凭据请用 PUT /api/shops/{id}/credentials")
     @PreAuthorize(HAS_SHOP_WRITE)
     @PostMapping
+    @Auditable(action = AuditActions.SHOP_CREATE, label = "新建店铺")
     public Result<ShopDto> createShop(
             @Parameter(description = "租户ID，平台管理员必填") @RequestParam(required = false) String tenantId,
             @RequestBody ShopCreateRequest request) {
@@ -116,6 +119,7 @@ public class ShopController {
             + "店铺编码也不可改（改编码等于换店）")
     @PreAuthorize(HAS_SHOP_WRITE)
     @PutMapping("/{id}")
+    @Auditable(action = AuditActions.SHOP_UPDATE, label = "更新店铺主数据")
     public Result<ShopDto> updateShop(
             @Parameter(description = "租户ID，平台管理员必填") @RequestParam(required = false) String tenantId,
             @Parameter(description = "店铺ID") @PathVariable String id,
@@ -129,6 +133,7 @@ public class ShopController {
             + "任何写入都会把授权状态打回 PENDING，需重跑连通性测试。回显只有掩码，不含提交值")
     @PreAuthorize(HAS_SHOP_CREDENTIAL_WRITE)
     @PutMapping("/{id}/credentials")
+    @Auditable(action = AuditActions.SHOP_CREDENTIAL_UPDATE, label = "更新店铺平台凭据")
     public Result<ShopDto> bindCredentials(
             @Parameter(description = "租户ID，平台管理员必填") @RequestParam(required = false) String tenantId,
             @Parameter(description = "店铺ID") @PathVariable String id,
@@ -141,6 +146,7 @@ public class ShopController {
             + "不重写物流单上已有的单级推送状态")
     @PreAuthorize(HAS_SHOP_WRITE)
     @PutMapping("/{id}/push-back-policy")
+    @Auditable(action = AuditActions.SHOP_PUSHBACK_POLICY_UPDATE, label = "修改店铺发货回写策略")
     public Result<ShopDto> changePushBackPolicy(
             @Parameter(description = "租户ID，平台管理员必填") @RequestParam(required = false) String tenantId,
             @Parameter(description = "店铺ID") @PathVariable String id,
@@ -153,6 +159,7 @@ public class ShopController {
     @Operation(summary = "删除店铺", description = "按租户删除店铺绑定")
     @PreAuthorize(HAS_SHOP_WRITE)
     @DeleteMapping("/{id}")
+    @Auditable(action = AuditActions.SHOP_DELETE, label = "删除店铺")
     public Result<Void> deleteShop(
             @Parameter(description = "租户ID，平台管理员必填") @RequestParam(required = false) String tenantId,
             @Parameter(description = "店铺ID") @PathVariable String id) {
@@ -170,10 +177,11 @@ public class ShopController {
      */
     private String resolveTenantScope(String requestedTenantId) {
         if (isPlatformAdmin()) {
-            if (requestedTenantId == null || requestedTenantId.isBlank()) {
+            String requested = TenantContext.normalizeRequested(requestedTenantId);
+            if (requested == null) {
                 throw new ValidationException("平台管理员操作店铺数据必须显式指定 tenantId");
             }
-            return requestedTenantId.trim();
+            return requested;
         }
         return TenantContext.hasTenantId() ? TenantContext.getTenantId() : "";
     }

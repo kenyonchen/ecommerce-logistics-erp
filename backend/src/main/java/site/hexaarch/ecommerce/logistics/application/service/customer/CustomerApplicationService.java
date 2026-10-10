@@ -2,6 +2,7 @@ package site.hexaarch.ecommerce.logistics.application.service.customer;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import site.hexaarch.ecommerce.logistics.application.service.support.TenantAccessGuard;
 import site.hexaarch.ecommerce.logistics.domain.common.PageResult;
 import site.hexaarch.ecommerce.logistics.domain.customer.aggregate.Customer;
 import site.hexaarch.ecommerce.logistics.domain.customer.repository.CustomerQuery;
@@ -51,7 +52,8 @@ public class CustomerApplicationService {
     public Customer createCustomer(String tenantId, String customerName, String email, String phone, String address,
                                    String company) {
         Customer customer = customerService.createCustomer(
-                tenantId == null ? DEFAULT_TENANT_ID : tenantId.trim(), customerName, email, phone, address, company);
+                TenantAccessGuard.resolveWriteTenant(tenantId, DEFAULT_TENANT_ID),
+                customerName, email, phone, address, company);
         // 发布客户聚合中的所有领域事件
         domainEventPublisher.publishEventsFrom(customer);
         return customer;
@@ -75,7 +77,8 @@ public class CustomerApplicationService {
                                                String address, String company, String sourcePlatform,
                                                String externalBuyerId) {
         Customer customer = customerService.createCustomerFromPlatform(
-                tenantId == null ? DEFAULT_TENANT_ID : tenantId.trim(), customerName, email, phone, address, company,
+                TenantAccessGuard.resolveWriteTenant(tenantId, DEFAULT_TENANT_ID),
+                customerName, email, phone, address, company,
                 sourcePlatform, externalBuyerId);
         // 发布客户聚合中的所有领域事件
         domainEventPublisher.publishEventsFrom(customer);
@@ -89,7 +92,10 @@ public class CustomerApplicationService {
      * @return 客户实例
      */
     public Customer findCustomerById(String customerId) {
-        return customerService.findCustomerById(customerId);
+        Customer customer = customerService.findCustomerById(customerId);
+        // 按ID直读客户不校验租户，先收敛归属（ISS-050）
+        TenantAccessGuard.requireOwned("Customer", customer.getTenantId(), customerId);
+        return customer;
     }
 
     /**
@@ -99,7 +105,10 @@ public class CustomerApplicationService {
      * @return 客户实例
      */
     public Optional<Customer> findOptionalCustomerById(String customerId) {
-        return customerService.findOptionalCustomerById(customerId);
+        Optional<Customer> customer = customerService.findOptionalCustomerById(customerId);
+        // 命中其他租户客户按不存在处理（ISS-050）
+        customer.ifPresent(c -> TenantAccessGuard.requireOwned("Customer", c.getTenantId(), customerId));
+        return customer;
     }
 
     /**
@@ -109,7 +118,12 @@ public class CustomerApplicationService {
      * @return 分页结果
      */
     public PageResult<Customer> searchCustomers(CustomerQuery query) {
-        return customerService.searchCustomers(query);
+        // 列表按登录租户收敛：tenantId 为空仓储层不加租户条件，会返回全平台客户（ISS-050）
+        CustomerQuery scopedQuery = new CustomerQuery(TenantAccessGuard.scopedTenantId(query.tenantId()),
+                query.customerId(), query.customerName(), query.email(), query.phone(), query.status(),
+                query.sourcePlatform(), query.keyword(), query.createdFrom(), query.createdTo(),
+                query.page(), query.size(), query.sort());
+        return customerService.searchCustomers(scopedQuery);
     }
 
     /**
@@ -126,6 +140,8 @@ public class CustomerApplicationService {
     public Customer updateCustomer(String customerId, String customerName, String email, String phone, String address,
                                    String company) {
         Customer customer = customerService.updateCustomer(customerId, customerName, email, phone, address, company);
+        // 领域服务按ID直改客户，返回后校验归属，跨租户改动随事务回滚（ISS-050）
+        TenantAccessGuard.requireOwned("Customer", customer.getTenantId(), customerId);
         domainEventPublisher.publishEventsFrom(customer);
         return customer;
     }
@@ -137,7 +153,8 @@ public class CustomerApplicationService {
      * @return 客户列表
      */
     public List<Customer> findCustomersByStatus(CustomerStatus status) {
-        return customerService.findCustomersByStatus(status);
+        // 领域服务构造的查询不带租户条件，按登录租户收敛（ISS-050）
+        return withinCurrentTenant(customerService.findCustomersByStatus(status));
     }
 
     /**
@@ -149,6 +166,7 @@ public class CustomerApplicationService {
     @Transactional
     public Customer activateCustomer(String customerId) {
         Customer customer = customerService.activateCustomer(customerId);
+        TenantAccessGuard.requireOwned("Customer", customer.getTenantId(), customerId);
         domainEventPublisher.publishEventsFrom(customer);
         return customer;
     }
@@ -162,6 +180,7 @@ public class CustomerApplicationService {
     @Transactional
     public Customer deactivateCustomer(String customerId) {
         Customer customer = customerService.deactivateCustomer(customerId);
+        TenantAccessGuard.requireOwned("Customer", customer.getTenantId(), customerId);
         domainEventPublisher.publishEventsFrom(customer);
         return customer;
     }
@@ -175,6 +194,7 @@ public class CustomerApplicationService {
     @Transactional
     public Customer suspendCustomer(String customerId) {
         Customer customer = customerService.suspendCustomer(customerId);
+        TenantAccessGuard.requireOwned("Customer", customer.getTenantId(), customerId);
         domainEventPublisher.publishEventsFrom(customer);
         return customer;
     }
@@ -188,7 +208,21 @@ public class CustomerApplicationService {
     @Transactional
     public Customer deleteCustomer(String customerId) {
         Customer customer = customerService.deleteCustomer(customerId);
+        TenantAccessGuard.requireOwned("Customer", customer.getTenantId(), customerId);
         domainEventPublisher.publishEventsFrom(customer);
         return customer;
+    }
+
+    /**
+     * 列表按登录租户收敛；平台管理员或无租户上下文时不过滤（ISS-050）。
+     */
+    private List<Customer> withinCurrentTenant(List<Customer> customers) {
+        String tenantId = TenantAccessGuard.currentTenantId();
+        if (tenantId == null) {
+            return customers;
+        }
+        return customers.stream()
+                .filter(customer -> tenantId.equals(customer.getTenantId()))
+                .toList();
     }
 }

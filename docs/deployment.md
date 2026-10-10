@@ -65,12 +65,12 @@ API 文档：`http://localhost:8082/swagger-ui.html`，OpenAPI JSON：`/v3/api-d
 ### 2.4 启动前端
 
 ```bash
-cd frontend/user-web  && npm install && npm run dev   # http://localhost:5173
-cd frontend/admin-web && npm install && npm run dev   # http://localhost:5174
+cd frontend/user-web  && npm install && npm run dev   # http://localhost:5120
+cd frontend/admin-web && npm install && npm run dev   # http://localhost:5110
 ```
 
-- 两个 `vite.config.js` 都没有 `server.port` 与 `proxy`：**5173/5174 是 Vite 默认端口占用后自动递增的结果**，不是配置出来的。若固定端口需自行加 `server: { port }`。
-- 前端 `baseURL` 硬编码 `http://localhost:8082/api`（`user-web/src/services/api.js:6`），跨域直连后端 → 依赖后端 CORS 白名单。
+- ~~两个 `vite.config.js` 都没有 `server.port` 与 `proxy`：5173/5174 是 Vite 默认端口占用后自动递增的结果，不是配置出来的。若固定端口需自行加 `server: { port }`。~~ → 🔄 **2026-10-10 订正：端口已经写死在配置里**，`user-web/vite.config.js:9` `port: 5120`、`admin-web/vite.config.js:9` `port: 5110`（已提交，非本机改动）。所以**访问地址必须按 5120 / 5110 记**，本文旧版写的 5173/5174 会打开一个不存在的服务；仍**没有 `/api` proxy**，跨域依旧靠后端 CORS 白名单。
+- 前端 `baseURL` 硬编码 `http://localhost:8082/api`（~~`user-web/src/services/api.js:6`~~ → 实测在 `user-web/src/services/api.js:48` 与 `admin-web/src/services/api.js:6`），跨域直连后端 → 依赖后端 CORS 白名单。**换端口部署时这三处（两个 `api.js` + `SecurityConfig:63`）必须一起改。**
 - **admin-web 当前完全不联后端**（其 `src/services/api.js` 是纯 mock 模块，不 import axios）。
 
 ## 3. 配置面清单（`application.yml`，全仓唯一配置文件）
@@ -99,8 +99,8 @@ cd frontend/admin-web && npm install && npm run dev   # http://localhost:5174
 
 | 来源 | 状态 |
 |---|---|
-| `http://localhost:5173`（user-web） | ✅ 在 `SecurityConfig.java:50` 白名单内（~~`:31`~~ 为旧行号，`corsConfigurationSource()` 现在 `:47-56`） |
-| `http://localhost:5174`（admin-web） | ~~❌ **不在白名单**（目前因 admin-web 不联后端而未暴露）~~ → ✅ **2026-01-25 已在白名单内**：`:50` 为 `List.of("http://localhost:5173", "http://localhost:5174")`，且 admin-web 已接后端（M-09 已修） |
+| ~~`http://localhost:5173`~~ → **`http://localhost:5120`（user-web）** | ✅ 在 `SecurityConfig.java:63` 白名单内（旧行号 `:31`、`:50` 均已失效，`corsConfigurationSource()` 现 `:59-68`；白名单值随端口一起改为 5120/5110，🔄 2026-10-10 复测） |
+| ~~`http://localhost:5174`~~ → **`http://localhost:5110`（admin-web）** | ~~❌ **不在白名单**（目前因 admin-web 不联后端而未暴露）~~ → ✅ **2026-01-25 已在白名单内**（🔄 2026-10-10：白名单现为 `List.of("http://localhost:5110","http://localhost:5120")`，浏览器实测两端各 0 个 HTTP ≥ 400，跨域已通）：`:50` 为 `List.of("http://localhost:5173", "http://localhost:5174")`，且 admin-web 已接后端（M-09 已修） |
 | 其他任意来源 / 生产域名 | ❌ 无配置 |
 
 生产化时必须把允许的 origin 外部化（当前是代码里硬编码的单值），或改为通过 Vite/Nginx 同源代理 `/api` 从而绕开 CORS。

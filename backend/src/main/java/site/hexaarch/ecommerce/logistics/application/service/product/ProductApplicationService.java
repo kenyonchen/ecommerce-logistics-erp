@@ -7,6 +7,7 @@ import site.hexaarch.ecommerce.logistics.application.command.product.CreateProdu
 import site.hexaarch.ecommerce.logistics.application.command.product.CreateSkuCommand;
 import site.hexaarch.ecommerce.logistics.application.command.product.ProductAttributeCommand;
 import site.hexaarch.ecommerce.logistics.application.command.product.UpdateProductCommand;
+import site.hexaarch.ecommerce.logistics.application.service.support.TenantAccessGuard;
 import site.hexaarch.ecommerce.logistics.domain.common.PageResult;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.EntityNotFoundException;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.ValidationException;
@@ -131,6 +132,8 @@ public class ProductApplicationService {
      * 更新产品信息
      */
     public Product updateProduct(String productId, String name, String description) {
+        // 该方法非事务，领域服务加载即保存，先按登录租户校验归属再交给领域服务（ISS-050）
+        requireProduct(productId);
         return productManagementService.updateProduct(productId, name, description);
     }
 
@@ -176,6 +179,8 @@ public class ProductApplicationService {
      * 激活产品
      */
     public Product activateProduct(String productId) {
+        // 领域服务内部按ID加载并保存，先校验归属（ISS-050）
+        requireProduct(productId);
         return productManagementService.activateProduct(productId);
     }
 
@@ -183,6 +188,7 @@ public class ProductApplicationService {
      * 停用产品
      */
     public Product deactivateProduct(String productId) {
+        requireProduct(productId);
         return productManagementService.deactivateProduct(productId);
     }
 
@@ -247,6 +253,8 @@ public class ProductApplicationService {
                 .volumeInCubicCentimeters(volumeInCubicCentimeters)
                 .build();
 
+        // SKU 无独立租户字段，按父级商品归属校验（ISS-050）
+        requireProduct(productId);
         return skuManagementService.addSkuToProduct(productId, sku);
     }
 
@@ -289,23 +297,31 @@ public class ProductApplicationService {
      * 根据ID查找产品
      */
     public Product findProductById(String productId) {
-        return productRepository.findById(productId)
+        var product = productRepository.findById(productId)
                 .orElseThrow(() -> new EntityNotFoundException("商品不存在: " + productId));
+        TenantAccessGuard.requireOwned("Product", product.getTenantId(), productId);
+        return product;
     }
 
     /**
      * 根据SKU编码查找产品
      */
     public Product findProductBySkuCode(String skuCode) {
-        return productRepository.findBySkuCode(skuCode)
+        var product = productRepository.findBySkuCode(skuCode)
                 .orElseThrow(() -> new EntityNotFoundException("商品不存在，SKU: " + skuCode));
+        TenantAccessGuard.requireOwned("Product", product.getTenantId(), skuCode);
+        return product;
     }
 
     /**
      * 分页查询产品
      */
     public PageResult<Product> findProducts(ProductQuery query) {
-        return productRepository.findAll(query);
+        // 列表查询按登录租户收敛：未传租户即取登录租户，显式传别家租户直接拒绝（ISS-050）
+        ProductQuery scopedQuery = new ProductQuery(TenantAccessGuard.scopedTenantId(query.tenantId()),
+                query.keyword(), query.categoryName(), query.active(), query.sourcePlatform(), query.skuCode(),
+                query.page(), query.size(), query.sort());
+        return productRepository.findAll(scopedQuery);
     }
 
     /**
@@ -319,7 +335,10 @@ public class ProductApplicationService {
      * 根据SKU编码查找产品（不抛异常，返回Optional）
      */
     public java.util.Optional<Product> findOptionalProductBySkuCode(String skuCode) {
-        return productRepository.findBySkuCode(skuCode);
+        java.util.Optional<Product> product = productRepository.findBySkuCode(skuCode);
+        // 按SKU的业务键直读，命中他租户商品按不存在处理（ISS-050）
+        product.ifPresent(p -> TenantAccessGuard.requireOwned("Product", p.getTenantId(), skuCode));
+        return product;
     }
 
     /**
@@ -337,14 +356,20 @@ public class ProductApplicationService {
     }
 
     private Product requireProduct(String productId) {
-        return productRepository.findById(productId)
+        Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new EntityNotFoundException("商品不存在: " + productId));
+        // 按ID加载商品的入口统一校验归属（ISS-050）
+        TenantAccessGuard.requireOwned("Product", product.getTenantId(), productId);
+        return product;
     }
 
     private Product requireProduct(String productId, String tenantId) {
         Product product = requireProduct(productId);
-        String expectedTenant = StringUtils.hasText(tenantId) ? tenantId : DEFAULT_TENANT_ID;
-        if (product.getTenantId() != null && !expectedTenant.equals(product.getTenantId())) {
+        // 缺省时取登录租户而不是 default-tenant：后者会把登录租户自己的商品判成「不存在」
+        // （归属校验的假阴性，ISS-118）。currentTenantId() 对平台管理员返回 null ⇒ 不比对，
+        // 保持管理员跨租户批量操作的原有行为。
+        String expectedTenant = StringUtils.hasText(tenantId) ? tenantId.trim() : TenantAccessGuard.currentTenantId();
+        if (product.getTenantId() != null && expectedTenant != null && !expectedTenant.equals(product.getTenantId())) {
             throw new EntityNotFoundException("商品不存在: " + productId);
         }
         return product;
@@ -464,7 +489,7 @@ public class ProductApplicationService {
     }
 
     private String resolveTenant(String tenantId) {
-        return StringUtils.hasText(tenantId) ? tenantId.trim() : DEFAULT_TENANT_ID;
+        return TenantAccessGuard.resolveWriteTenant(tenantId, DEFAULT_TENANT_ID);
     }
 
     private String normalize(String value) {

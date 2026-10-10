@@ -49,7 +49,7 @@
 |---|---|
 | 服务地址 | `http://localhost:8082`，统一前缀 `/api` |
 | 本地可见文档 | Swagger UI：`http://localhost:8082/swagger-ui.html` |
-| 前端配置 | `services/api.js` 中 baseURL 硬编码；两个前端都**未配置 Vite proxy**，跨域依赖后端 CORS（当前仅放行 `:5173`） |
+| 前端配置 | `services/api.js` 中 baseURL 硬编码；两个前端都**未配置 Vite proxy**，跨域依赖后端 CORS（🔄 2026-10-10：`SecurityConfig:63` 放行 **5110 / 5120**，即两个 `vite.config.js:9` 里写死的 `server.port`；`:5173` 是旧默认端口，已不在白名单） |
 | 默认账号 | `admin` / `123456`（首次启动由 `DataInitializationConfig` 写入，仅可用于本地） |
 
 ### 3.2 响应与错误码

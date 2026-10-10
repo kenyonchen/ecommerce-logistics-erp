@@ -35,6 +35,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
@@ -57,12 +58,12 @@ class ProductImportApplicationServiceTest {
 
     private ProductImportApplicationService importService;
     private final Map<String, ProductImportJob> jobStore = new HashMap<>();
+    private final InMemoryJobRepository jobRepository = new InMemoryJobRepository();
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
         ProductFieldMappingService fieldMappingService = new ProductFieldMappingService(fieldMappingRepository);
-        ProductImportJobRepository jobRepository = new InMemoryJobRepository();
         PlatformProductFetcher noopFetcher = new NoopFetcher();
         importService = new ProductImportApplicationService(
                 productApplicationService,
@@ -164,6 +165,43 @@ class ProductImportApplicationServiceTest {
         assertEquals(ImportJobStatus.SUCCESS.name(), result.getStatus());
     }
 
+    @Test
+    void shouldPersistJobExactlyOnceAndNeverWhileRunning() {
+        when(productApplicationService.findProductBySourceId(anyString(), anyString(), anyString()))
+                .thenReturn(Optional.empty());
+        when(productApplicationService.findOptionalProductBySkuCode(anyString())).thenReturn(Optional.empty());
+        when(productApplicationService.createProduct(any(CreateProductCommand.class)))
+                .thenReturn(Product.builder()
+                        .id("p-new")
+                        .tenantId("default-tenant")
+                        .name("新商品")
+                        .skus(new ArrayList<>())
+                        .domainEvents(new ArrayList<>())
+                        .build());
+
+        ProductImportRequest request = new ProductImportRequest();
+        request.setTenantId("default-tenant");
+        request.setPlatform("FILE");
+        request.setRows(List.of(row("新商品", NEW_SKU)));
+
+        importService.importProducts(request);
+
+        // ISS-067：任务只允许在 complete() 之后单次落库，任何一次保存都不得处于 RUNNING/PENDING
+        assertEquals(1, jobRepository.saveCount);
+        assertTrue(jobRepository.statusesAtSave.stream()
+                .noneMatch(status -> status == ImportJobStatus.RUNNING || status == ImportJobStatus.PENDING));
+        assertEquals(ImportJobStatus.SUCCESS, jobRepository.lastSaved.getStatus());
+        assertNotNull(jobRepository.lastSaved.getFinishedAt());
+    }
+
+    @Test
+    void importEntryPointShouldBeTransactional() throws NoSuchMethodException {
+        assertNotNull(ProductImportApplicationService.class
+                .getMethod("importProducts", ProductImportRequest.class)
+                .getAnnotation(org.springframework.transaction.annotation.Transactional.class),
+                "importProducts 必须声明 @Transactional（ISS-071）");
+    }
+
     private ProductImportRowDto row(String name, String skuCode) {
         ProductImportRowDto row = new ProductImportRowDto();
         row.setName(name);
@@ -173,10 +211,17 @@ class ProductImportApplicationServiceTest {
         return row;
     }
 
-    /** 内存版任务仓储，避免依赖数据库 */
+    /** 内存版任务仓储，避免依赖数据库；记录保存次数以断言"完成后单次持久化"形状（ISS-067） */
     private class InMemoryJobRepository implements ProductImportJobRepository {
+        private int saveCount;
+        private ProductImportJob lastSaved;
+        private final List<ImportJobStatus> statusesAtSave = new ArrayList<>();
+
         @Override
         public ProductImportJob save(ProductImportJob job) {
+            saveCount++;
+            lastSaved = job;
+            statusesAtSave.add(job.getStatus());
             jobStore.put(job.getId(), job);
             return job;
         }

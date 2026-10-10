@@ -9,8 +9,8 @@
 
 | 前端 | 路径 | 端口 | 目标用户 | 定位 | 当前状态 |
 |---|---|---|---|---|---|
-| **user-web** | `frontend/user-web` | 5173 | 卖家团队全员 | 业务主工作台，承载全部 9 个业务上下文 + 租户/用户管理 | 骨架完整，33 个页面；**7 个页面真正联网** |
-| **admin-web** | `frontend/admin-web` | 5174 | 平台运营方 | SaaS 后台：租户开户、系统参数、平台监控 | 4 个页面，**全部 mock**，无登录页、无鉴权 |
+| **user-web** | `frontend/user-web` | ~~5173~~ → **5120**（🔄 2026-10-10：`vite.config.js:9` 已写死 `server.port`） | 卖家团队全员 | 业务主工作台，承载全部 9 个业务上下文 + 租户/用户管理 | ~~骨架完整，33 个页面；**7 个页面真正联网**~~ → 🔄 2026-10-10：`pages/` 下 **46 个页面文件全部接真实接口**（见 [known-issues §16](../qa/known-issues.md) 对 ISS-015 的收口） |
+| **admin-web** | `frontend/admin-web` | ~~5174~~ → **5110**（🔄 2026-10-10：`vite.config.js:9` 已写死） | 平台运营方 | SaaS 后台：租户开户、系统参数、平台监控 | ~~4 个页面，**全部 mock**，无登录页、无鉴权~~ → 🔄 2026-10-10：**6 个页面全部联网**（含登录页与 `AdminGuard` 的 `PLATFORM_ADMIN` 路由守卫），`platformApi` 硬编码桩已删（ISS-026 已修） |
 
 > ⚠️ 当前 admin-web 的 4 个页面与 user-web 的同名文件内容高度重复（属于复制产物），且数据来自 `admin-web/src/services/api.js` 里的硬编码模拟数据（含假 JWT `mock-jwt-token`）。**短期建议**：不要把 admin-web 当作独立产品对外演示；**中期建议**：明确两者边界后重构公共样式与 services（见 [`../adr/0005-dual-frontend-split.md`](../adr/0005-dual-frontend-split.md)）。
 

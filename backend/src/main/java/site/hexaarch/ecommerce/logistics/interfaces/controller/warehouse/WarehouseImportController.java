@@ -9,6 +9,7 @@ import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -20,6 +21,8 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import site.hexaarch.ecommerce.logistics.application.service.warehouse.WarehouseImportApplicationService;
+import site.hexaarch.ecommerce.logistics.domain.audit.Auditable;
+import site.hexaarch.ecommerce.logistics.domain.audit.AuditActions;
 import site.hexaarch.ecommerce.logistics.domain.common.PageResult;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.BusinessException;
 import site.hexaarch.ecommerce.logistics.infrastructure.importing.ExcelSourceParser;
@@ -56,23 +59,31 @@ import java.util.List;
 @RequiredArgsConstructor
 @Tag(name = "店铺仓库导入", description = "第三方电商平台店铺仓库数据获取、字段映射与批量导入")
 public class WarehouseImportController {
+    private static final String HAS_WAREHOUSE_READ =
+            "hasRole('PLATFORM_ADMIN') or hasAuthority('warehouse:read')";
+    private static final String HAS_WAREHOUSE_WRITE =
+            "hasRole('PLATFORM_ADMIN') or hasAuthority('warehouse:write')";
+
 
     private final WarehouseImportApplicationService warehouseImportApplicationService;
     private final ExcelSourceParser excelSourceParser;
 
     @Operation(summary = "标准目标字段列表", description = "获取可用于字段映射的系统标准店铺仓库字段")
+    @PreAuthorize(HAS_WAREHOUSE_READ)
     @GetMapping("/target-fields")
     public Result<List<TargetFieldDto>> targetFields() {
         return Result.success(warehouseImportApplicationService.targetFields());
     }
 
     @Operation(summary = "字段转换规则列表", description = "获取字段取值转换规则")
+    @PreAuthorize(HAS_WAREHOUSE_READ)
     @GetMapping("/transforms")
     public Result<List<TargetFieldDto>> transforms() {
         return Result.success(warehouseImportApplicationService.transforms());
     }
 
     @Operation(summary = "查询字段映射", description = "查询指定租户与平台已保存的店铺仓库字段映射")
+    @PreAuthorize(HAS_WAREHOUSE_READ)
     @GetMapping("/field-mappings")
     public Result<List<ShopWarehouseFieldMappingDto>> getFieldMappings(
             @Parameter(description = "租户ID") @RequestParam(required = false) String tenantId,
@@ -81,6 +92,8 @@ public class WarehouseImportController {
     }
 
     @Operation(summary = "保存字段映射", description = "按租户+平台整体保存店铺仓库字段映射关系")
+    @PreAuthorize(HAS_WAREHOUSE_WRITE)
+    @Auditable(action = AuditActions.IMPORT_FIELD_MAPPING_UPDATE, label = "保存店铺仓库导入字段映射", targetType = "ShopWarehouseImport")
     @PutMapping("/field-mappings")
     public Result<List<ShopWarehouseFieldMappingDto>> saveFieldMappings(
             @RequestBody ShopWarehouseFieldMappingSaveRequest request) {
@@ -88,6 +101,7 @@ public class WarehouseImportController {
     }
 
     @Operation(summary = "店铺仓库导入预览", description = "拉取平台店铺仓库或解析传入内容，并完成字段映射，返回待导入数据")
+    @PreAuthorize(HAS_WAREHOUSE_WRITE)
     @PostMapping("/preview")
     public Result<ShopWarehouseImportPreviewResponse> preview(@RequestBody ShopWarehouseImportPreviewRequest request) {
         try {
@@ -99,6 +113,8 @@ public class WarehouseImportController {
     }
 
     @Operation(summary = "上传文件导入", description = "上传JSON/CSV文件，mode=preview 仅预览，mode=import 直接执行导入")
+    @PreAuthorize(HAS_WAREHOUSE_WRITE)
+    @Auditable(action = AuditActions.IMPORT_UPLOAD, label = "上传店铺仓库导入文件", targetType = "ShopWarehouseImportJob")
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Result<Object> upload(
             @Parameter(description = "导入文件(JSON/CSV/Excel)") @RequestPart("file") MultipartFile file,
@@ -136,6 +152,8 @@ public class WarehouseImportController {
     }
 
     @Operation(summary = "批量导入店铺仓库", description = "执行批量导入，返回导入任务结果（含每行的成功/失败明细）")
+    @PreAuthorize(HAS_WAREHOUSE_WRITE)
+    @Auditable(action = AuditActions.SHOP_WAREHOUSE_IMPORT_EXECUTE, label = "执行店铺仓库导入", targetType = "ShopWarehouseImportJob")
     @PostMapping
     public Result<ShopWarehouseImportJobDto> importShopWarehouses(@RequestBody ShopWarehouseImportRequest request) {
         try {
@@ -147,6 +165,7 @@ public class WarehouseImportController {
     }
 
     @Operation(summary = "查询导入任务列表", description = "分页查询店铺仓库导入任务，用于结果回溯")
+    @PreAuthorize(HAS_WAREHOUSE_READ)
     @GetMapping("/jobs")
     public Result<PageResult<ShopWarehouseImportJobDto>> listJobs(
             @Parameter(description = "租户ID") @RequestParam(required = false) String tenantId,
@@ -156,6 +175,7 @@ public class WarehouseImportController {
     }
 
     @Operation(summary = "查询导入任务详情", description = "含所有失败行的错误明细")
+    @PreAuthorize(HAS_WAREHOUSE_READ)
     @GetMapping("/jobs/{jobId}")
     public Result<ShopWarehouseImportJobDto> getJob(
             @Parameter(description = "导入任务ID") @PathVariable String jobId) {
@@ -163,6 +183,7 @@ public class WarehouseImportController {
     }
 
     @Operation(summary = "下载CSV导入模板", description = "返回标准CSV模板文本内容")
+    @PreAuthorize(HAS_WAREHOUSE_READ)
     @GetMapping(value = "/template", produces = "text/csv; charset=utf-8")
     public ResponseEntity<ByteArrayResource> csvTemplate() {
         String template = warehouseImportApplicationService.csvTemplate();

@@ -63,7 +63,14 @@ public class OrderImportJobRepositoryImpl implements OrderImportJobRepository {
             errorEntity.setMessage(truncate(error.getMessage(), 1000));
             errors.add(errorEntity);
         }
-        entity.setErrors(errors);
+        // errors 关联是 cascade=ALL + orphanRemoval=true：更新已托管实体必须原地修改集合，
+        // 整体替换引用会让 Hibernate 在 flush 时抛"collection with orphan deletion no longer referenced"（ISS-067）
+        if (entity.getErrors() == null) {
+            entity.setErrors(errors);
+        } else {
+            entity.getErrors().clear();
+            entity.getErrors().addAll(errors);
+        }
 
         orderImportJobJpaRepository.save(entity);
         return job;

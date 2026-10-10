@@ -23,6 +23,7 @@ import {
   platformLabel
 } from '../../constants/order';
 
+import Can from '../../components/Auth/Can.jsx';
 const { Title } = Typography;
 const { Option } = Select;
 const { RangePicker } = DatePicker;
@@ -189,17 +190,19 @@ const OrderList = () => {
           <Button type="link" icon={<EyeOutlined />} onClick={() => navigate(`/orders/${record.orderId}`)}>
             查看
           </Button>
-          <Popconfirm
-            title="确认删除该订单？"
-            description="删除后无法恢复。"
-            okText="确定"
-            cancelText="取消"
-            onConfirm={() => handleDelete(record.orderId)}
-          >
-            <Button type="link" danger icon={<DeleteOutlined />}>
-              删除
-            </Button>
-          </Popconfirm>
+          <Can permission="order:write">
+            <Popconfirm
+              title="确认删除该订单？"
+              description="删除后无法恢复。"
+              okText="确定"
+              cancelText="取消"
+              onConfirm={() => handleDelete(record.orderId)}
+            >
+              <Button type="link" danger icon={<DeleteOutlined />}>
+                删除
+              </Button>
+            </Popconfirm>
+          </Can>
         </Space>
       )
     }
@@ -210,12 +213,16 @@ const OrderList = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
         <Title level={4}>订单列表</Title>
         <Space>
-          <Button icon={<ImportOutlined />}>
-            <Link to="/orders/import">订单导入</Link>
-          </Button>
-          <Button type="primary" icon={<PlusOutlined />}>
-            <Link to="/orders/create">创建订单</Link>
-          </Button>
+          <Can permission="order:import">
+            <Button icon={<ImportOutlined />}>
+              <Link to="/orders/import">订单导入</Link>
+            </Button>
+          </Can>
+          <Can permission="order:write">
+            <Button type="primary" icon={<PlusOutlined />}>
+              <Link to="/orders/create">创建订单</Link>
+            </Button>
+          </Can>
         </Space>
       </div>
 

@@ -139,7 +139,8 @@ const FinanceDetail = () => {
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: 48 }}>
-        <Spin tip="加载中..." />
+        <Spin />
+        <div style={{ marginTop: 8 }}>加载中...</div>
       </div>
     );
   }
@@ -150,7 +151,7 @@ const FinanceDetail = () => {
         <Button icon={<ArrowLeftOutlined />} onClick={handleBack} style={{ marginBottom: 12 }}>
           返回列表
         </Button>
-        <Alert type="error" showIcon message="获取财务详情失败" description={error} />
+        <Alert type="error" showIcon title="获取财务详情失败" description={error} />
       </div>
     );
   }
@@ -161,7 +162,7 @@ const FinanceDetail = () => {
         <Button icon={<ArrowLeftOutlined />} onClick={handleBack} style={{ marginBottom: 12 }}>
           返回列表
         </Button>
-        <Alert type="warning" showIcon message="财务记录不存在" />
+        <Alert type="warning" showIcon title="财务记录不存在" />
       </div>
     );
   }
@@ -222,8 +223,11 @@ const FinanceDetail = () => {
           <Descriptions.Item label="交易状态">
             {statusMeta ? <Tag color={statusMeta.color}>{statusMeta.text}</Tag> : finance.status || '-'}
           </Descriptions.Item>
-          <Descriptions.Item label="关联单据号">{finance.referenceId || '-'}</Descriptions.Item>
-          <Descriptions.Item label="关联单据类型">{finance.referenceType || '-'}</Descriptions.Item>
+          {/* 关联单据的号与类型合并成一项（与列表页"关联单据"列同款渲染）：
+              单列项共 8 项才能和后面 span=2 的描述行凑成整行，9 项会剩半行触发 antd 的 span 告警 */}
+          <Descriptions.Item label="关联单据">
+            {finance.referenceId ? `${finance.referenceId}（${finance.referenceType || '-'}）` : '-'}
+          </Descriptions.Item>
           <Descriptions.Item label="创建时间">
             {finance.createdAt ? new Date(finance.createdAt).toLocaleString() : '-'}
           </Descriptions.Item>

@@ -150,8 +150,8 @@ const LogisticsChannels = () => {
       render: (value) =>
         !value || value.length === 0 ? <Tag>全球可用</Tag> : value.map((c) => <Tag key={c}>{c}</Tag>)
     },
-    { title: '首重费', dataIndex: 'basePrice', width: 100, render: (v) => v ?? '-' },
-    { title: '续重(元/克)', dataIndex: 'pricePerGram', width: 120, render: (v) => v ?? '-' },
+    { title: '首重费', dataIndex: 'basePrice', width: 100, render: (v) => (v == null ? '-' : Number(v).toFixed(2)) },
+    { title: '续重(元/克)', dataIndex: 'pricePerGram', width: 120, render: (v) => (v == null ? '-' : Number(v).toFixed(4)) },
     { title: '币种', dataIndex: 'currency', width: 80 },
     {
       title: '状态',
@@ -288,7 +288,7 @@ const LogisticsChannels = () => {
             style={{ marginTop: 16 }}
             type="success"
             showIcon
-            message={`首重 ${feeResult.baseFee} + 续重 ${feeResult.weightFee} = 合计 ${feeResult.totalFee} ${feeResult.currency}`}
+            title={`首重 ${feeResult.baseFee} + 续重 ${feeResult.weightFee} = 合计 ${feeResult.totalFee} ${feeResult.currency}`}
           />
         )}
       </Modal>

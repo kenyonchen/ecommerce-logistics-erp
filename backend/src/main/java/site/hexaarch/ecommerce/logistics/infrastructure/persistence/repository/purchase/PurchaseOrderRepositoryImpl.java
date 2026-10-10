@@ -94,4 +94,18 @@ public class PurchaseOrderRepositoryImpl implements PurchaseOrderRepository {
         }
         return new PageResult<>(purchaseOrders, result.getTotalElements(), result.getNumber(), result.getSize());
     }
+
+    /**
+     * 统计指向某张仓库的采购单数量（删仓库的引用守卫，ISS-142）。
+     *
+     * @param warehouseId 仓库ID
+     * @return 指向该仓库的采购单数量
+     */
+    @Override
+    public long countByWarehouseId(String warehouseId) {
+        if (warehouseId == null || warehouseId.isBlank()) {
+            return 0L;
+        }
+        return purchaseOrderJpaRepository.countByWarehouseId(warehouseId.trim());
+    }
 }

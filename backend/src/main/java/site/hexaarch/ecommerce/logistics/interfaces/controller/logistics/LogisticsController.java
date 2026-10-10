@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -16,6 +17,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import site.hexaarch.ecommerce.logistics.application.service.logistics.LogisticsApplicationService;
+import site.hexaarch.ecommerce.logistics.domain.audit.AuditActions;
+import site.hexaarch.ecommerce.logistics.domain.audit.Auditable;
 import site.hexaarch.ecommerce.logistics.domain.common.PageResult;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.BusinessException;
 import site.hexaarch.ecommerce.logistics.domain.logistics.valueobject.LogisticsStatus;
@@ -51,6 +54,11 @@ import java.util.List;
 @RequiredArgsConstructor
 @Tag(name = "物流管理", description = "物流单查询、状态推进、发货与批量发货的API接口")
 public class LogisticsController {
+    private static final String HAS_LOGISTICS_READ =
+            "hasRole('PLATFORM_ADMIN') or hasAuthority('logistics:read')";
+    private static final String HAS_LOGISTICS_WRITE =
+            "hasRole('PLATFORM_ADMIN') or hasAuthority('logistics:write')";
+
 
     private final LogisticsApplicationService logisticsApplicationService;
 
@@ -64,12 +72,15 @@ public class LogisticsController {
     }
 
     @Operation(summary = "创建物流单", description = "为指定订单创建物流单，订单可按订单ID或订单号指定，渠道可按渠道ID或渠道编码指定")
+    @PreAuthorize(HAS_LOGISTICS_WRITE)
+    @Auditable(action = AuditActions.LOGISTICS_CREATE, label = "创建物流单", targetType = "LogisticsOrder")
     @PostMapping
     public Result<LogisticsOrderDto> createLogisticsOrder(@RequestBody CreateLogisticsRequest request) {
         return Result.success(logisticsApplicationService.createLogisticsOrder(request));
     }
 
     @Operation(summary = "条件分页查询物流单", description = "按运单号、订单、渠道、状态、关键字与时间区间分页查询物流单")
+    @PreAuthorize(HAS_LOGISTICS_READ)
     @GetMapping
     public Result<PageResult<LogisticsOrderDto>> searchLogisticsOrders(
             @Parameter(description = "租户ID") @RequestParam(required = false) String tenantId,
@@ -87,6 +98,7 @@ public class LogisticsController {
     }
 
     @Operation(summary = "物流状态字典", description = "返回全部物流状态及其中文名称，前端下拉框与状态标签使用")
+    @PreAuthorize(HAS_LOGISTICS_READ)
     @GetMapping("/statuses")
     public Result<List<TargetFieldDto>> statuses() {
         List<TargetFieldDto> statuses = new ArrayList<>();
@@ -97,6 +109,7 @@ public class LogisticsController {
     }
 
     @Operation(summary = "根据ID获取物流单", description = "根据物流单ID获取详细信息（含轨迹与面单）")
+    @PreAuthorize(HAS_LOGISTICS_READ)
     @GetMapping("/{id}")
     public Result<LogisticsOrderDto> getLogisticsOrderById(
             @Parameter(description = "物流单ID") @PathVariable String id) {
@@ -104,6 +117,7 @@ public class LogisticsController {
     }
 
     @Operation(summary = "获取订单的物流单", description = "根据订单ID获取相关的物流单")
+    @PreAuthorize(HAS_LOGISTICS_READ)
     @GetMapping("/order/{orderId}")
     public Result<List<LogisticsOrderDto>> getLogisticsOrderByOrderId(
             @Parameter(description = "订单ID") @PathVariable String orderId) {
@@ -111,6 +125,8 @@ public class LogisticsController {
     }
 
     @Operation(summary = "更新物流状态", description = "更新物流单状态，可附带一次轨迹描述")
+    @PreAuthorize(HAS_LOGISTICS_WRITE)
+    @Auditable(action = AuditActions.LOGISTICS_STATUS_UPDATE, label = "更新物流状态", targetType = "LogisticsOrder")
     @PutMapping("/{id}/status")
     public Result<LogisticsOrderDto> updateLogisticsStatus(
             @Parameter(description = "物流单ID") @PathVariable String id,
@@ -119,7 +135,9 @@ public class LogisticsController {
                 request.getDescription()));
     }
 
-    @Operation(summary = "标记发货", description = "为物流单指定运单号并标记为已揽收")
+    @Operation(summary = "标记发货", description = "为物流单指定运单号并标记为已揽收，同时把订单推进为已发货并扣减出库仓库存；库存不足或订单状态不允许时整单拒绝")
+    @PreAuthorize(HAS_LOGISTICS_WRITE)
+    @Auditable(action = AuditActions.LOGISTICS_SHIP, label = "标记发货并扣减库存", targetType = "LogisticsOrder")
     @PostMapping("/{id}/ship")
     public Result<LogisticsOrderDto> ship(
             @Parameter(description = "物流单ID") @PathVariable String id,
@@ -129,24 +147,32 @@ public class LogisticsController {
     }
 
     @Operation(summary = "取消物流单", description = "取消尚未揽收的物流单")
+    @PreAuthorize(HAS_LOGISTICS_WRITE)
+    @Auditable(action = AuditActions.LOGISTICS_CANCEL, label = "取消物流单", targetType = "LogisticsOrder")
     @PostMapping("/{id}/cancel")
     public Result<LogisticsOrderDto> cancel(@Parameter(description = "物流单ID") @PathVariable String id) {
         return Result.success(logisticsApplicationService.cancel(id));
     }
 
     @Operation(summary = "生成物流面单", description = "为物流单生成面单信息")
+    @PreAuthorize(HAS_LOGISTICS_WRITE)
+    @Auditable(action = AuditActions.LOGISTICS_LABEL_GENERATE, label = "生成物流面单", targetType = "LogisticsOrder")
     @PostMapping("/{id}/label")
     public Result<LogisticsOrderDto> generateLabel(@Parameter(description = "物流单ID") @PathVariable String id) {
         return Result.success(logisticsApplicationService.generateLabel(id));
     }
 
     @Operation(summary = "刷新物流跟踪", description = "登记一次跟踪查询轨迹并回传当前状态")
+    @PreAuthorize(HAS_LOGISTICS_WRITE)
+    @Auditable(action = AuditActions.LOGISTICS_TRACK_REFRESH, label = "刷新物流跟踪", targetType = "LogisticsOrder")
     @PostMapping("/{id}/track")
     public Result<LogisticsOrderDto> track(@Parameter(description = "物流单ID") @PathVariable String id) {
         return Result.success(logisticsApplicationService.track(id));
     }
 
     @Operation(summary = "登记物流轨迹", description = "为物流单追加一条轨迹节点")
+    @PreAuthorize(HAS_LOGISTICS_WRITE)
+    @Auditable(action = AuditActions.LOGISTICS_TRACE_ADD, label = "登记物流轨迹节点", targetType = "LogisticsOrder")
     @PostMapping("/{id}/traces")
     public Result<LogisticsOrderDto> addTrace(
             @Parameter(description = "物流单ID") @PathVariable String id,
@@ -155,6 +181,8 @@ public class LogisticsController {
     }
 
     @Operation(summary = "批量发货", description = "按订单批量生成物流单并推进订单状态，单条失败不影响其他订单")
+    @PreAuthorize(HAS_LOGISTICS_WRITE)
+    @Auditable(action = AuditActions.LOGISTICS_BATCH_SHIP, label = "批量发货", targetType = "LogisticsOrder")
     @PostMapping("/batch-ship")
     public Result<BatchShipResultDto> batchShip(@RequestBody BatchShipRequest request) {
         try {
@@ -166,6 +194,8 @@ public class LogisticsController {
     }
 
     @Operation(summary = "删除物流单", description = "删除指定物流单")
+    @PreAuthorize(HAS_LOGISTICS_WRITE)
+    @Auditable(action = AuditActions.LOGISTICS_DELETE, label = "删除物流单", targetType = "LogisticsOrder")
     @DeleteMapping("/{id}")
     public Result<Void> deleteLogisticsOrder(@Parameter(description = "物流单ID") @PathVariable String id) {
         logisticsApplicationService.delete(id);

@@ -88,7 +88,8 @@ export const tenantApi = {
 
 // 用户API
 export const userApi = {
-  getUsers: (tenantId) => api.get('/users', { params: { tenantId } }),
+  // 平台管理员不传 tenantId 时返回全平台用户，用于一次性统计，避免逐租户请求
+  getUsers: (tenantId) => api.get('/users', { params: tenantId ? { tenantId } : {} }),
   getUser: (id) => api.get(`/users/${id}`),
   createUser: (user) => api.post('/users', user),
   updateUser: (id, updates) => api.put(`/users/${id}`, updates),
@@ -112,32 +113,16 @@ export const roleApi = {
   removePermission: (id, permission) => api.delete(`/roles/${id}/permissions/${permission}`)
 };
 
-// 平台系统配置（暂为本地模拟，等待后端系统配置接口落地）
-export const platformApi = {
-  getSystemConfig: async () => ({
-    general: {
-      siteName: '物流ERP系统',
-      siteDescription: '综合电商物流ERP管理系统',
-      contactEmail: 'admin@example.com',
-      contactPhone: '400-123-4567'
-    },
-    email: {
-      smtpHost: 'smtp.example.com',
-      smtpPort: 587,
-      senderEmail: 'noreply@example.com',
-      enabled: true
-    },
-    security: {
-      sessionTimeout: 3600,
-      maxLoginAttempts: 5,
-      twoFactorAuthRequired: false,
-      passwordPolicyEnabled: true
-    }
-  }),
-  saveSystemConfig: async (config) => {
-    console.log('Saved config:', config);
-    return true;
-  }
+// 审计日志API：平台侧记录管理员操作，recent 用于看板最近活动，列表接口为服务端分页
+export const auditApi = {
+  getRecent: (limit = 10) => api.get('/audit-logs/recent', { params: { limit } }),
+  getAuditLogs: (params) => api.get('/audit-logs', { params })
+};
+
+// 平台系统配置API：GET 返回 { general, email, security } 嵌套结构，PUT 提交同结构并回显
+export const systemConfigApi = {
+  getConfig: () => api.get('/system-config'),
+  saveConfig: (config) => api.put('/system-config', config)
 };
 
 export default api;

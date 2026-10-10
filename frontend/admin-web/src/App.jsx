@@ -9,6 +9,7 @@ import {
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons';
 import { useAuth } from './context/AuthContext';
 import './App.css';
@@ -20,6 +21,7 @@ const { Text } = Typography;
 const MENU_ITEMS = [
   { key: '/', icon: <DashboardOutlined />, label: '平台仪表盘' },
   { key: '/platform/config', icon: <SettingOutlined />, label: '系统配置' },
+  { key: '/platform/audit-logs', icon: <FileTextOutlined />, label: '审计日志' },
   { key: '/tenants', icon: <TeamOutlined />, label: '租户管理' },
   { key: '/users', icon: <UserOutlined />, label: '用户管理' },
 ];

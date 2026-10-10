@@ -8,8 +8,8 @@
 ```mermaid
 graph LR
     subgraph 客户端
-        A[user-web<br/>:5173 React19+AntD6]
-        B[admin-web<br/>:5174 React19+AntD6<br/>已接真实接口：5 页 / 33 方法]
+        A[user-web<br/>:5120 React19+AntD6]
+        B[admin-web<br/>:5110 React19+AntD6<br/>已接真实接口：6 页 / 全真实数据]
     end
     subgraph 服务端
         C[interfaces<br/>20 Controller · 198 端点<br/>Result 信封 / GlobalExceptionHandler]
@@ -31,8 +31,8 @@ graph LR
     E -.->|真实外呼已实现：6 个 Http*Fetcher<br/>useSampleData=false 时走它| I
 ```
 
-- 前端 `baseURL` 硬编码 `http://localhost:8082/api`（**2026-01-25 两处都还在**：`user-web/src/services/api.js:6`、`admin-web/src/services/api.js:6`），**没有 Vite proxy**（两个 `vite.config.js` 都只有 `plugins:[react()]`）→ 跨域直连，CORS 是硬约束。~~后端 `SecurityConfig` 只放行 `http://localhost:5173`，admin-web 的 5174 不在白名单~~ → **M-09 已修**：`SecurityConfig.java:50` 现为 `List.of("http://localhost:5173", "http://localhost:5174")`，admin-web 已能跨域访问并带令牌（5 页 / 33 个 api 方法 + Login + 路由守卫）。
-- 端口 5173/5174 的分工来自 Vite 默认端口自动递增，并非配置声明。
+- 前端 `baseURL` 硬编码 `http://localhost:8082/api`（**2026-10-10 复测两处都还在**：`admin-web/src/services/api.js:6`、~~`user-web/src/services/api.js:6`~~ → 现 `user-web/src/services/api.js:48`，该文件在 2026-01-25 后重构过、行号已下移），**没有 Vite proxy**（~~两个 `vite.config.js` 都只有 `plugins:[react()]`~~ → 🔄 2026-10-10：两份 `vite.config.js:9` 现有 `server.port`（5120 / 5110），但**依然没有 proxy**）→ 跨域直连，CORS 是硬约束。~~后端 `SecurityConfig` 只放行 `http://localhost:5173`，admin-web 的 5174 不在白名单~~ → **M-09 已修**：`SecurityConfig.java:50` 现为 `List.of("http://localhost:5173", "http://localhost:5174")`，admin-web 已能跨域访问并带令牌（5 页 / 33 个 api 方法 + Login + 路由守卫）。
+- ~~端口 5173/5174 的分工来自 Vite 默认端口自动递增，并非配置声明。~~ → 🔄 **2026-10-10 订正**：端口现已写进配置——`user-web/vite.config.js:9` `port: 5120`、`admin-web/vite.config.js:9` `port: 5110`（卖家端与平台管理端各自固定，不再依赖占用递增），后端 CORS 白名单同步为这两个来源（`SecurityConfig:63`）。旧文所有 5173/5174 均按此替换。
 
 ## 2. 分层与依赖方向
 
@@ -184,8 +184,8 @@ ecommerce-logistics-erp/
 │       ├── main/resources/application.yml      # 仅此一个配置文件
 │       └── test/java/...                       # 54 个测试类 / 494 个 @Test（仍无 src/test/resources）
 ├── frontend/
-│   ├── user-web/                    # :5173，45 个页面（含 order-create/product/customer/finance/logistics/platform/purchase），api.js 真实 HTTP + Bearer
-│   └── admin-web/                   # :5174，5 个页面（Login + user/tenant/platform×2），api.js 已改真实 HTTP + localStorage token 注入 Authorization
+│   ├── user-web/                    # :5120，46 个页面全部真实接口（含 order-create/product/customer/finance/logistics/platform/purchase），api.js 真实 HTTP + Bearer
+│   └── admin-web/                   # :5110，6 个页面全部真实接口（Login + user/tenant/platform×3，含审计台账），api.js 真实 HTTP + localStorage token 注入 Authorization
 ├── scripts/docker/docker-compose.yml  # 仅 RocketMQ namesrv/broker/proxy（无 MySQL、无应用服务）
 └── docs/                            # 本目录
 ```

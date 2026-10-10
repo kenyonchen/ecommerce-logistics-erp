@@ -70,8 +70,8 @@ class OrderControllerTest {
         orderItemDto.setProductName("Test Product");
         orderItemDto.setSkuCode("TP-001");
         orderItemDto.setQuantity(2);
-        orderItemDto.setUnitPrice(10.0);
-        orderItemDto.setTotalPrice(20.0);
+        orderItemDto.setUnitPrice(new BigDecimal("10.00"));
+        orderItemDto.setTotalPrice(new BigDecimal("20.00"));
 
         ShippingAddress shippingAddress = ShippingAddress.builder()
                 .country("USA")

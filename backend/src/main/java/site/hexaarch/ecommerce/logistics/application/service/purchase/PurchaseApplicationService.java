@@ -3,6 +3,7 @@ package site.hexaarch.ecommerce.logistics.application.service.purchase;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import site.hexaarch.ecommerce.logistics.application.service.finance.FinanceApplicationService;
+import site.hexaarch.ecommerce.logistics.application.service.support.TenantAccessGuard;
 import site.hexaarch.ecommerce.logistics.application.service.warehouse.WarehouseApplicationService;
 import site.hexaarch.ecommerce.logistics.domain.common.PageResult;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.EntityNotFoundException;
@@ -70,21 +71,13 @@ public class PurchaseApplicationService {
     }
 
     /**
-     * 创建采购单（仅单头，缺货自动补货等无人值守入口使用）。
-     *
-     * @param tenantId     租户ID
-     * @param supplierId   供应商ID
-     * @param supplierName 供应商名称
-     * @param warehouseId  仓库ID
-     * @return 创建的采购单
-     */
-    @Transactional
-    public PurchaseOrder createPurchaseOrder(String tenantId, String supplierId, String supplierName, String warehouseId) {
-        return createPurchaseOrder(tenantId, supplierId, supplierName, warehouseId, List.of());
-    }
-
-    /**
      * 创建采购单并一次性写入明细行。
+     * <p>
+     * 明细行是必填参数而不是可选项：BR-09 的到货入库逐行 {@code inventoryIn}，只有单头的空单
+     * 审批通过后入不了任何库存（ISS-143 实测 366 张自动单全部 0 行明细）。
+     * 确实要建"先建单、后补明细"的单，走 {@link #addPurchaseOrderItem} —— 空的
+     * {@code items} 只在该显式意图下才成立，所以这里不再提供省略参数的重载。
+     * </p>
      *
      * @param tenantId     租户ID
      * @param supplierId   供应商ID
@@ -138,7 +131,9 @@ public class PurchaseApplicationService {
                                                           String supplierName, String warehouseId, PurchaseStatus status,
                                                           BigDecimal minTotalAmount, String startDate, String endDate,
                                                           int page, int size) {
-        PurchaseQuery query = new PurchaseQuery(tenantId, purchaseOrderId, supplierId, supplierName, warehouseId,
+        // 列表按登录租户收敛：仓储层 tenantId 为空即不加租户条件，会返回全平台数据（ISS-050）
+        PurchaseQuery query = new PurchaseQuery(TenantAccessGuard.scopedTenantId(tenantId), purchaseOrderId, supplierId,
+                supplierName, warehouseId,
                 status, minTotalAmount, parseStartDate(startDate), parseEndDate(endDate));
         return purchaseOrderService.searchPurchaseOrders(query, page, size);
     }

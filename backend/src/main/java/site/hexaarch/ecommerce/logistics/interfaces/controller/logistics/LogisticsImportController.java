@@ -21,6 +21,8 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import site.hexaarch.ecommerce.logistics.application.service.logistics.LogisticsImportApplicationService;
+import site.hexaarch.ecommerce.logistics.domain.audit.Auditable;
+import site.hexaarch.ecommerce.logistics.domain.audit.AuditActions;
 import site.hexaarch.ecommerce.logistics.domain.common.PageResult;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.BusinessException;
 import site.hexaarch.ecommerce.logistics.domain.common.exception.ValidationException;
@@ -91,6 +93,7 @@ public class LogisticsImportController {
     }
 
     @Operation(summary = "保存字段映射", description = "按租户+平台整体保存字段映射关系")
+    @Auditable(action = AuditActions.IMPORT_FIELD_MAPPING_UPDATE, label = "保存物流导入字段映射", targetType = "LogisticsImport")
     @PutMapping("/field-mappings")
     public Result<List<FieldMappingDto>> saveFieldMappings(@RequestBody FieldMappingSaveRequest request) {
         return Result.success(logisticsImportApplicationService.saveMappings(request));
@@ -108,6 +111,7 @@ public class LogisticsImportController {
     }
 
     @Operation(summary = "上传文件导入", description = "上传JSON/CSV/Excel(xlsx)文件，mode=preview 仅预览，mode=import 直接执行导入")
+    @Auditable(action = AuditActions.IMPORT_UPLOAD, label = "上传物流导入文件", targetType = "LogisticsImportJob")
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Result<Object> upload(
             @Parameter(description = "导入文件(JSON/CSV/Excel)") @RequestPart("file") MultipartFile file,
@@ -141,6 +145,7 @@ public class LogisticsImportController {
     }
 
     @Operation(summary = "批量导入物流数据", description = "执行批量导入，返回导入任务结果（含每行的成功/跳过/失败明细）")
+    @Auditable(action = AuditActions.LOGISTICS_IMPORT_EXECUTE, label = "执行物流导入", targetType = "LogisticsImportJob")
     @PostMapping
     public Result<LogisticsImportJobDto> importLogistics(@RequestBody LogisticsImportRequest request) {
         try {
@@ -152,6 +157,7 @@ public class LogisticsImportController {
     }
 
     @Operation(summary = "从平台同步物流数据", description = "按平台集成直接拉取物流数据并导入，用于定时任务或页面「一键同步」")
+    @Auditable(action = AuditActions.PLATFORM_INTEGRATION_SYNC, label = "从平台同步物流单", targetType = "LogisticsImportJob")
     @PostMapping("/sync")
     public Result<LogisticsImportJobDto> syncFromPlatform(
             @Parameter(description = "平台集成ID") @RequestParam(required = false) String integrationId,

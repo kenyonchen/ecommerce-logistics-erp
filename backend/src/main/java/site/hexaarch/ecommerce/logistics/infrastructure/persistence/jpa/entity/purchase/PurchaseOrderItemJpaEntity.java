@@ -40,10 +40,10 @@ public class PurchaseOrderItemJpaEntity {
     @Column(name = "quantity", nullable = false)
     private Integer quantity;
 
-    @Column(name = "unit_price", nullable = false)
+    @Column(name = "unit_price", nullable = false, precision = 19, scale = 2)
     private BigDecimal unitPrice;
 
-    @Column(name = "total_price", nullable = false)
+    @Column(name = "total_price", nullable = false, precision = 19, scale = 2)
     private BigDecimal totalPrice;
 
     @ManyToOne(fetch = FetchType.LAZY)

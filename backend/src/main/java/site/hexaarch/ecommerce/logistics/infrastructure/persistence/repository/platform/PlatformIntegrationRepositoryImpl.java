@@ -2,6 +2,7 @@ package site.hexaarch.ecommerce.logistics.infrastructure.persistence.repository.
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;
+import site.hexaarch.ecommerce.logistics.domain.common.BaseAggregateRoot;
 import site.hexaarch.ecommerce.logistics.domain.platform.aggregate.PlatformIntegration;
 import site.hexaarch.ecommerce.logistics.domain.platform.repository.PlatformIntegrationRepository;
 import site.hexaarch.ecommerce.logistics.infrastructure.persistence.jpa.entity.platform.PlatformIntegrationJpaEntity;
@@ -59,8 +60,14 @@ public class PlatformIntegrationRepositoryImpl implements PlatformIntegrationRep
     public PlatformIntegration save(PlatformIntegration platformIntegration) {
         PlatformIntegrationJpaEntity jpaEntity = mapper.toJpaEntity(platformIntegration);
         encryptSecrets(jpaEntity);
+        // 主键是聚合 create() 预分配的 UUID，库里没有该行即新记录——不声明的话 Spring Data 只看 id
+        // 会走 merge() 去更新一条不存在的行，新建集成恒 500（unsaved-value）
+        jpaEntity.setNewRecord(jpaEntity.getId() == null || !jpaRepository.existsById(jpaEntity.getId()));
         PlatformIntegrationJpaEntity savedEntity = jpaRepository.save(jpaEntity);
-        return toDomain(savedEntity);
+        PlatformIntegration savedIntegration = toDomain(savedEntity);
+        // save 重建的聚合副本不携带领域事件，补回后应用服务才能发布（ISS-062）
+        BaseAggregateRoot.carryOverEvents(platformIntegration, savedIntegration);
+        return savedIntegration;
     }
 
     @Override
@@ -83,8 +90,10 @@ public class PlatformIntegrationRepositoryImpl implements PlatformIntegrationRep
     }
 
     private PlatformIntegration toDomain(PlatformIntegrationJpaEntity jpaEntity) {
-        decryptSecrets(jpaEntity);
-        return mapper.toDomain(jpaEntity);
+        // 实体可能仍处于托管态，就地解密会被 dirty-check 当成变更，flush 时把明文凭据覆盖回密文列（ISS-011）
+        PlatformIntegrationJpaEntity snapshot = mapper.copy(jpaEntity);
+        decryptSecrets(snapshot);
+        return mapper.toDomain(snapshot);
     }
 
     private void encryptSecrets(PlatformIntegrationJpaEntity entity) {

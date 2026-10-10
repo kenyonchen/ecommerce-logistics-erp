@@ -331,7 +331,7 @@ const BatchShipModal = ({ open, onCancel, channels = [], onShipped }) => {
             style={{ margin: '12px 0' }}
             type={result.failureCount > 0 ? 'warning' : 'success'}
             showIcon
-            message={result.message || '批量发货完成'}
+            title={result.message || '批量发货完成'}
           />
           <Row gutter={12} style={{ marginBottom: 12 }}>
             <Col span={6}><Statistic title="总数" value={result.totalCount} /></Col>

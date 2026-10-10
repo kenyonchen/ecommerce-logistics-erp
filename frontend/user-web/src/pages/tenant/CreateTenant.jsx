@@ -11,7 +11,7 @@ const CreateTenant = () => {
     setLoading(true);
     try {
       // 后端 CreateTenantRequest 字段：name/description/contactEmail/contactPhone
-      const response = await tenantApi.createTenant({
+      await tenantApi.createTenant({
         name: values.name,
         description: values.description,
         contactEmail: values.contactEmail,

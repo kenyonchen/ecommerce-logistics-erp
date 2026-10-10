@@ -195,7 +195,7 @@ sync_job_items   (id, job_id, external_id, action, status, error_message, create
 | 映射项 | 处理 |
 |---|---|
 | SKU | 🟡 需 `sku_mappings` 表（平台 SKU ↔ 本地 `skus.sku_code`）；现状 `skus`/`products` 有 `source_platform`/`external_id` 类列与 `uk_products_external_ref`，但**没有独立映射表**，跨平台同 SKU 仍会撞 |
-| 金额与币种 | ✅ 适配器输出**字符串**金额（`"129.90"`）与 `currency`，由导入侧统一解析——避开了 `orders.total_amount` 是 `DOUBLE` 的历史坑（[data-dictionary R-09](../db/data-dictionary.md)）；`DECIMAL(19,2)` 的舍入口径仍待 `V7` 类迁移 |
+| 金额与币种 | ✅ 适配器输出**字符串**金额（`"129.90"`）与 `currency`，由导入侧统一解析——避开了 `orders.total_amount` 是 `DOUBLE` 的历史坑（[data-dictionary R-09](../db/data-dictionary.md)）；~~`DECIMAL(19,2)` 的舍入口径仍待 `V7` 类迁移~~ → ✅ **2026-10-10 已完成**：`V7`/`V7.1`/`V7.2`/`V7.2.1` 手工执行，金额列全部 `DECIMAL(19,2)`（每克费率 `19,4`，R-52），导入侧的字符串金额经 `new BigDecimal(String)` 落地、不再过 `double`；见 [../qa/known-issues.md](../qa/known-issues.md) §20；字符串金额分支的精确性另见该节「有意保留的观察项」第一条 |
 | 地址 | ✅ 在 adapter 内展开：Shopify 的 `shipping_address` 嵌套对象被拍平成 `recipientName/phoneNumber/country/province/city/addressLine1/zipCode`。**必须拍平**，因为原始键 `shipping_address` 不会被别名表认出（测试 `shouldEmitOnlyKeysTheAliasTableRecognises` 断言行内**不含**该键） |
 | 状态 | ✅ **显式桥接，不靠名字猜**：`ShopifyOrderFetcher.bridgeStatus` 用三个互相独立的标志合成一个状态——`cancelled_at` 非空 → `cancelled`；`fulfillment_status` 非空 → `shipped`；否则看 `financial_status`（`paid`→`processing`、`authorized`→`pending`、`refunded`→`cancelled`）。5 个分支各有断言（`shouldBridgeStatusFromThreeIndependentFlags`）<br>⚠️ 前提：`financial_status` **不能直接抛给导入侧**（它会被误配），必须先变成 `orderStatus` |
 | 租户 | ⚪ 设计是"从 `platform_integration` 归属取"；现状是**从请求参数 `tenantId` 取**（可选，为空走 `DEFAULT_TENANT_ID` 兜底）——这正是 ISS-002/ISS-051 的形态，接调度器时必须改成从集成记录读 |

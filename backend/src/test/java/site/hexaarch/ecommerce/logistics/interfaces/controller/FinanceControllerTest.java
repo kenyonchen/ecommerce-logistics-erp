@@ -10,16 +10,19 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import site.hexaarch.ecommerce.logistics.application.service.finance.FinanceApplicationService;
 import site.hexaarch.ecommerce.logistics.domain.common.PageResult;
+import site.hexaarch.ecommerce.logistics.domain.common.exception.BusinessException;
 import site.hexaarch.ecommerce.logistics.domain.finance.aggregate.FinancialTransaction;
 import site.hexaarch.ecommerce.logistics.domain.finance.valueobject.TransactionStatus;
 import site.hexaarch.ecommerce.logistics.domain.finance.valueobject.TransactionType;
 import site.hexaarch.ecommerce.logistics.infrastructure.persistence.jpa.mapper.finance.FinancialTransactionMapper;
 import site.hexaarch.ecommerce.logistics.infrastructure.persistence.jpa.mapper.finance.FinancialTransactionMapperImpl;
+import site.hexaarch.ecommerce.logistics.interfaces.handler.GlobalExceptionHandler;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -55,7 +58,9 @@ class FinanceControllerTest {
         MockitoAnnotations.openMocks(this);
         FinancialTransactionMapper financialTransactionMapper = new FinancialTransactionMapperImpl();
         FinanceController financeController = new FinanceController(financeApplicationService, financialTransactionMapper);
-        mockMvc = MockMvcBuilders.standaloneSetup(financeController).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(financeController)
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
     }
 
     @Test
@@ -92,6 +97,36 @@ class FinanceControllerTest {
                 // 枚举线上格式实测：Jackson 默认按枚举名序列化（无 @JsonValue）
                 .andExpect(jsonPath("$.data.type").value("INCOME"))
                 .andExpect(jsonPath("$.data.status").value("PENDING"));
+    }
+
+    /**
+     * ISS-136：业务拒绝不能被本地的 {@code catch (Exception)} 复述成 code 500 的字符串消息。
+     * 修复前的实测形状是 {@code HTTP 200 + {"code":"500","message":"创建财务交易失败: 租户不存在…"}}，
+     * 前端 {@code services/api.js} 按 {@code ERROR_MESSAGES[code]} 取文案 ⇒ 用户只看到「系统内部错误，
+     * 请稍后重试」，已经拿到手的原因被扔掉（与 ISS-134 同类）。判定交给 GlobalExceptionHandler：
+     * 400 + code 用业务码本身，message 保持原文。
+     */
+    @Test
+    void businessRejectionReachesTheGlobalHandlerAsBadRequestCarryingItsOwnCode() throws Exception {
+        when(financeApplicationService.createFinancialTransaction(any(), any(), any(), any(), any(), any(), any()))
+                .thenThrow(new BusinessException("租户不存在，无法把数据归属给它: ghost-tenant", "TENANT_NOT_FOUND"));
+
+        String body = """
+                {
+                  "type": "INCOME",
+                  "amount": 100.00,
+                  "currency": "USD",
+                  "description": "探针",
+                  "tenantId": "ghost-tenant"
+                }
+                """;
+
+        mockMvc.perform(post("/api/finance/transactions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("TENANT_NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value(containsString("租户不存在")));
     }
 
     @Test
