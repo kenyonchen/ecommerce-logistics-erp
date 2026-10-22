@@ -5,7 +5,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 状态 | 已采纳（**核心校验逻辑待修复**） |
+| 状态 | 已采纳（~~**核心校验逻辑待修复**~~ → 🔄 **2026-10-21：核心逻辑已落地**，差距只剩密钥外化与令牌轮换/撤销） |
 | 日期 | 2026-01-25 |
 | 决策者 | 项目维护者 |
 | 相关文档 | [`../spec/tenant-and-iam.md`](../spec/tenant-and-iam.md) 第 5 节、[`../api/README.md`](../api/README.md) 第 4 节、[`../qa/known-issues.md`](../qa/known-issues.md) ISS-007 / ISS-008 / ISS-021 |
@@ -37,7 +37,7 @@
 | Session 策略 | `STATELESS` |
 | CSRF | 关闭（无 Cookie 会话） |
 | CORS | ~~当前仅允许 `http://localhost:5173`~~ → 🔄 **2026-10-10 现状**：`SecurityConfig:63` 允许 `http://localhost:5120`（user-web）与 `http://localhost:5110`（admin-web）——旧文的 5173/5174 端口早已随 `vite.config.js:9` 的固定端口作废 |
-| 授权规则 | `/api/auth/**` 放行；`/api/platform/**`、`/api/tenants/**` 需 `ROLE_PLATFORM_ADMIN`；其余 `/api/**` 需认证 |
+| 授权规则 | ~~`/api/auth/**` 放行；`/api/platform/**`、`/api/tenants/**` 需 `ROLE_PLATFORM_ADMIN`；其余 `/api/**` 需认证~~ → 🔄 **2026-10-21 实测 `SecurityConfig:77-85`**：`/api/auth/{login,refresh,logout}` 放行（`:78`）+ swagger（`:80-81`）；`/api/auth/me` 认证（`:82`）；`/api/tenants/**` 需 `ROLE_PLATFORM_ADMIN`（`:83`）；`/api/**` 认证（`:84`）；`anyRequest().authenticated()`（`:85`，**仍非 `denyAll()`**）。`/api/platform/**` 规则不存在；平台集成由类级 `@PreAuthorize` 保护 |
 | 过滤器 | `JwtAuthenticationFilter` 挂在 `UsernamePasswordAuthenticationFilter` 之前 |
 
 ## 理由
@@ -56,9 +56,9 @@
 | ~~解析租户~~ | ~~❌ `getTenantIdFromToken()` 恒返回 `"default-tenant"`~~ → ✅ **`:141-144`** 从 claim 取；写入 `TenantContext`（`JwtAuthenticationFilter:51`）并在 `finally` 清理（`:82`） |
 | ~~生成 authorities~~ | ~~❌ 空列表 → 角色授权规则永不可能满足（ISS-008）~~ → ✅ **2026-01-25 已修（ISS-041 的修法）**：过滤器按令牌的 `roles`/`permissions` 重建 authorities（`:46-72`），与 `CustomUserDetailsService:57-73` 的 `ROLE_<name>` + 权限点口径一致；`admin` 实测 `GET /api/tenants` **200**（此前恒 403，根因见 ISS-061） |
 | ~~依赖注入~~ | ~~❌ `JwtAuthenticationFilter` 内部 `new JwtTokenProvider()` 绕过 Spring~~ → ✅ **已改构造注入**（`:31-35`），`@Value` 的密钥/有效期在校验路径上生效（M-01 已修） |
-| 密钥管理 | ❌ **仍未修**：明文写在受版本控制的 `application.yml:79`（🔄 **2026-03-22 行号订正：现 `application.yml:93`**，`jwt.secret` 自 10-03 平台轮加入 `platform.credential.master-key`（`:60`）等配置后整体下移）（ISS-021/S-04）。本轮明确边界**不做外部化**，作为已知接受风险记录 |
-| CORS | ~~⚠️ 未包含 admin-web 的 `:5174`（ISS-018）~~ → ✅ 已包含：`SecurityConfig:50` = `List.of("http://localhost:5173","http://localhost:5174")`（仍硬编码、未外部化） |
-| 刷新/登出 | ~~⚪ 桩实现~~ → 🟡 **2026-01-25 复测：刷新已真实、登出仍是无状态**。<br>✅ `POST /api/auth/refresh`（`AuthController:93-130`）现在会 `validateToken(refreshToken)`（`:99`）、取 `username`（`:103`）、重载用户并签新 access token，空串/无效各自报错。<br>❌ 三点残留：① **不校验旧 refresh token 是否被使用/撤销**（`:128` 原样把同一个 `refreshToken` 回给客户端）→ 无轮换、无撤销；② `jwt.refresh.expiration` 与 access 同为 `86400000`（24h），刷新等于续命 24h；③ `POST /api/auth/logout`（`:136-139`）只有 `SecurityContextHolder.clearContext()`，**JWT 无黑名单**，已签出的 access token 在其有效期内仍然可用。<br>④ 另外 `:34 @EnableMethodSecurity` 已开启，本 ADR 若引用「方法级注解失效」的结论现在不成立 |
+| 密钥管理 | ~~❌ **仍未修**：明文写在受版本控制的 `application.yml:79`~~ → 🔄 **2026-03-22 行号订正：现 `application.yml:93`**，`jwt.secret` 自 10-03 平台轮加入 `platform.credential.master-key`（`:60`）等配置后整体下移 → 🔄 **2026-10-21 复测：现 `application.yml:119`，值为 `${JWT_SECRET:mySecretKeyMust...12345!}`；`platform.credential.master-key` 现 `:66`，值为 `${PLATFORM_CREDENTIAL_MASTER_KEY:}`（无默认值）**。⇒ **可覆盖但仍未外部化**：默认字面量仍在 Git 里，ISS-021/S-04 未关闭（详见 [ADR-0009](./0009-config-externalization.md)） |
+| CORS | ~~⚠️ 未包含 admin-web 的 `:5174`（ISS-018）~~ → ✅ 已包含：~~`SecurityConfig:50` = `List.of("http://localhost:5173","http://localhost:5174")`（仍硬编码、未外部化）~~ → 🔄 **2026-10-21 复测：`SecurityConfig:63` = `List.of("http://localhost:5110", "http://localhost:5120")`**（与两个 `vite.config.js:9` 的固定端口一致；5173/5174 口径已作废）。仍硬编码、未外部化 |
+| 刷新/登出 | ~~⚪ 桩实现~~ → 🟡 **2026-01-25 复测：刷新已真实、登出仍是无状态**。<br>✅ `POST /api/auth/refresh`（~~`AuthController:93-130`~~ → 🔄 2026-10-21 现 `:121-165`）现在会 `validateToken(refreshToken)`（~~`:99`~~ → 现 `:129`）、取 `username`（~~`:103`~~ → 现 `:124`）、重载用户并签新 access token，空串/无效各自报错。<br>❌ 三点残留：① **不校验旧 refresh token 是否被使用/撤销**（~~`:128`~~ → 现 `:162` 原样把同一个 `refreshToken` 回给客户端）→ 无轮换、无撤销；② `jwt.refresh.expiration` 与 access 同为 `86400000`（24h），刷新等于续命 24h；③ `POST /api/auth/logout`（~~`:136-139`~~ → 现 `:174-178`）只有 `SecurityContextHolder.clearContext()`，**JWT 无黑名单**，已签出的 access token 在其有效期内仍然可用。<br>④ 另外 ~~`:34`~~ → 现 `SecurityConfig:48` `@EnableMethodSecurity` 已开启，本 ADR 若引用「方法级注解失效」的结论现在不成立。<br>🔄 **2026-10-21 补记**：续期链路另加两道门——`accountLoginGuard.isUsable`（`:140`）挡停用账号/租户续期，`loginSecurityService.recordRefreshAttempt`（`:161` 成功 / `:165` 失败）留痕。 |
 
 ## 后果
 
@@ -70,7 +70,7 @@
 ### 负面 / 需要承担的成本
 
 - 令牌一旦签发，在有效期内无法强制失效（需引入短有效期 + 刷新 + 黑名单组合）；
-- 安全完全依赖实现正确性：当前实现处于"演示级"，不可用于真实数据。
+- 安全完全依赖实现正确性：当前实现处于"演示级"，不可用于真实数据。🔄 2026-10-21：认证/鉴权链路已不再是「演示级」（真验签 + authorities + 401/403 统一信封），但登出不可撤销、refresh 不轮换、密钥默认值入库三项仍使其不适合直接上生产。
 
 ### 必须遵守的约束与待办
 

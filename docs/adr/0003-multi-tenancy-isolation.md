@@ -2,6 +2,7 @@
 
 > **产品线决策文档**：本文回答"为什么这样选"。
 > **实现差距见 [ADR-0007](./0007-jwt-auth-and-tenant-context.md) 末段与 [`../security-findings.md`](../security-findings.md) M-03/M-04**（~~隔离未生效、业务表缺 `tenant_id`~~ → **2026-01-25 二次实测：写路径隔离已生效**（`TenantIsolationAspect.java:55-86` 真抛 `TENANT_ACCESS_DENIED`，`PLATFORM_ADMIN` 放行），**读路径仍未隔离**（仓储层不过滤、没有一条查询从 `TenantContext` 取租户，ISS-050）；业务表 **23/42 有 `tenant_id`、19 张没有**（ISS-010 残余））。
+> 🔄 **2026-10-21 复测（本行口径更新）**：切面现行 `:77-130`（`:55-86` 已漂移），且新增两道门——入参先过 `TenantContext.normalizeRequested`（切面 `:101`），平台管理员跨租户**写**必须过 `TenantAccessGuard.requireExistingTenant`（`:113-121`，ISS-135 幻影桶补丁）。**「仓储层不过滤」要分两层说**：仓储切面仍只打 trace（`:157-162`），但**查询方法本身已带租户谓词**——27 个领域仓储接口有 50 个 `String tenantId` 形参，列表走 `TenantAccessGuard.scopedTenantId`（`:50`，7 个应用服务在用），按 id 直读走 `requireOwned`（28 处 / 8 个文件）。所以更准的定性是：**读路径靠逐聚合手工接线，不是没有隔离，但也没有结构性保证**（ISS-050 的残留形态）。表数：**45 张基表 / 25 张有 `tenant_id`（20 张有索引）**。详见 [`../spec/tenant-and-iam.md`](../spec/tenant-and-iam.md) §2/§4 与本文件末段。
 
 | 项 | 内容 |
 |---|---|
@@ -107,3 +108,18 @@
 - ❌ 另一处自相矛盾（**ISS-051**）：`PurchaseController.java:47` 仍留 `@RequestParam(defaultValue = "default-tenant")`，非种子租户不显式传 `tenantId` 就会被上面的切面拒绝；前端目前靠显式传登录租户来绕过，属绕过而非修复。
   - 🔄 **2026-01-25 自查订正（本条原文只数了 controller，低估了一个量级）**："`default-tenant` 只剩 1 处"**只对「`@RequestParam` 默认值」这一形态成立**。实测主源码里字面量 `"default-tenant"` 共 **17 处**：**10 处是 `DEFAULT_TENANT_ID` 常量声明**（9 个应用服务 + `domain/finance/service/FinancialTransactionServiceImpl:26`），**15 处引用**它做 `hasText(tenantId) ? tenantId : DEFAULT_TENANT_ID` 兜底（含 `OrderController:170`、`CustomerController:68`），异步/映射侧另有 `WarehouseMapper:59-60`、`EventHandler:100`、`OrderCreatedEventConsumer:38`、`InventoryShortageEventConsumer:37`、`BusinessProcessOrchestrationService:48,58`。
   - **对本 ADR 判断的影响**：待办第 4 条（"所有写操作由认证上下文注入租户，禁止接收客户端传入的 tenantId"）**远未完成**，且失败模式是**双向**的——非种子租户「不传就被拒」，种子租户「不传就静默落到 `default-tenant`」。后者比 403 更危险，因为它写出的数据是"看起来正常的错租户数据"。`LogisticsOrderMapper` 则已**完全不处理 `tenantId`**（0 命中），属第三种形态：读出来就是 null。
+
+## 更新（2026-10-21 复测）
+
+决策未变，但 2026-01-25 段的三个关键判断都需就地订正（本节只写"哪句过期、现值是什么"，完整实测在 [`../spec/tenant-and-iam.md`](../spec/tenant-and-iam.md) 的 57 处 🔄 标记里）：
+
+1. **「采购域是读路径不隔离的反例」已不成立**。上文说 `PurchaseOrderRepositoryImpl` 的 `findById/findAll/findByStatus/…` 全都不带租户（`:58,70,83,97,111`），这在本轮复测中已失效——采购域改成了**仓储内隔离**：
+   - 领域接口签名带租户：`domain/purchase/repository/PurchaseOrderRepository.java:36` `findById(String tenantId, String purchaseOrderId)`；
+   - 实现 fail-closed：`PurchaseOrderRepositoryImpl:68-75`，租户为空/空白直接返回 `Optional.empty()`（`:69-71` 注释「没有租户上下文时不放宽为全表读取」），查询走派生方法 `findByTenantIdAndPurchaseOrderId`（`:73`）；
+   - 列表路径：`PurchaseApplicationService:135` 用 `TenantAccessGuard.scopedTenantId(tenantId)` 构造 `PurchaseQuery`，仓储侧 `MAX_PAGE_SIZE=200`（`:27`，`:88` clamp）。
+   - ⇒ 全仓 `requireOwned` **28 处 / 8 个文件**，**采购域 0 处**——它不是漏了守卫，而是换了隔离位置。这两套写法并存（仓储内 vs `TenantAccessGuard` 逐聚合），新人无法从一处看出该照哪个写。
+2. **ISS-051 在控制器入口侧已收口**。~~`PurchaseController.java:47` 的 `@RequestParam(defaultValue = "default-tenant")`~~ 已不存在：现行 `PurchaseController:83` 是 `@RequestParam(required = false) String tenantId` + `resolveTenant()`（`:275-284`，参数 → `TenantContext` → 最后才 `DEFAULT_TENANT_ID`），10 个接收租户的端点全用这个形态；前端两个采购页已不下发 `tenantId`（`CreatePurchase.jsx:71-82`、`PurchaseList.jsx:61-72`）。
+   - 重新点名当前 `"default-tenant"` 字面量分布：全仓 **18 处**——**13 处是各服务的 `DEFAULT_TENANT_ID` 常量声明**，加 `TenantContext.LEGACY_TENANT_ID`（`:14`）、`WarehouseMapper:60`、`OrderCreatedEventConsumer:41`、`CreateFinancialTransactionRequest:36` 的 `@Schema` 示例、`FinanceController:125` 的兜底返回。`DEFAULT_TENANT_ID` 符号本身共 **36 次引用 / 21 个文件**（比 2026-01-25 记的"17 处字面量"更准的计量单位是符号引用）。
+   - `TenantContext.normalizeRequested`（`:30-36`）把「空/空白/历史默认桶字面量」统一归成「未指定」，切面 `:101` 与服务层都先过它 ⇒ 原文担心的**双向失败**里「非种子租户不传就被拒」已缓解；但 `resolveTenant` 的**最后一级兜底仍是 `DEFAULT_TENANT_ID`**——只在完全没有 `TenantContext`（单测直打控制器）时可达。活库实测 530 张采购单全部落在真实租户 `d0861d6f-…`、`default-tenant` 0 行，说明本环境这条兜底从未触发。
+3. **表的计数**：45 张基表 / 25 张有 `tenant_id` / 20 张有索引（`purchase_orders` 本轮新增 `idx_purchase_orders_tenant`）；仍无列的 20 张与 tenant-and-iam.md BR-06 的清单一致（10 张子表 + 6 张 `*_import_job_errors` + 2 张集合表 + `tenants` 自身 + `system_configs`）。
+4. **不要在演示里说「切换租户后看不到对方数据」这句仍然成立**——只是原因从"仓储完全不看租户"变成了"看租户靠手写谓词，没有框架保证"。若要把隔离升级成结构保证，选项仍是待办第 6 条（Hibernate `@Filter`/`@TenantId`），当前 0 处使用。

@@ -4,13 +4,17 @@
 -- 重要：本文件不是 schema 的唯一真实来源。
 --   当前运行时的表结构由 Hibernate 依据 JPA 实体注解自动生成
 --   （backend/src/main/resources/application.yml: spring.jpa.hibernate.ddl-auto=update）。
---   本快照按 40 个带 @Table 的 `*JpaEntity` + 2 张 `@ElementCollection` 隐式集合表转写，共 42 张表，
+--   本快照按 ~~40~~ **43** 个带 @Table 的 `*JpaEntity` + 2 张 `@ElementCollection` 隐式集合表转写，共 ~~42~~ **45** 张表，
 --   用于评审、ER 对照与将来切换 Flyway。
---   与实体逐列比对的基线时间：2026-03-22（42 张表的表名/列名/可空性与运行时库一致；列级差异见下方 2026-03-22 更正）
---   ⚠️ 类型口径：本快照按实体声明形式书写。运行时库（ddl-auto=update 建出）里有 **24 个列 / 17 张表**
---      实际是 MySQL 原生 `ENUM('...')`（2026-03-22 由 information_schema 实测全量列出）：
+--   与实体逐列比对的基线时间：~~2026-03-22~~ → **2026-10-21**（45 张表的表名/列名/可空性与运行时库一致；
+--   列级差异见下方 2026-03-22 更正与文末 2026-10-21 补登）。🔄 2026-10-21 补齐原先漏登的 3 张表：
+--   `shops`（ShopJpaEntity）、`audit_logs`（AuditLogJpaEntity）、`system_configs`（SystemSettingJpaEntity），
+--   逐列取自 `SHOW CREATE TABLE` 实测；此前快照只到 42 张，与运行时库（information_schema 实测 45 张）对不上。
+--   ⚠️ 类型口径：本快照按实体声明形式书写。运行时库（ddl-auto=update 建出）里有 ~~**24 个列 / 17 张表**~~
+--      → **2026-10-21 复测：26 个列 / 18 张表**实际是 MySQL 原生 `ENUM('...')`（information_schema 全量列出）：
 --        · customers.status、orders.status、logistics_orders.status、inventory_records.status
---        · platform_integrations.platform_name、platform_integrations.status
+--        · platform_integrations.platform_name、platform_integrations.status、**platform_integrations.auth_type**
+--        · **audit_logs.result**（2026-10-21 新增登记）
 --        · 6 张 *_import_jobs.status（customer/finance/logistics/order/product/shop_warehouse）
 --        · 8 列 *_field_mappings.target_field + transform（customer/finance/logistics/order/product/shop_warehouse
 --          各自两列；注意 warehouse 上下文用的是 shop_warehouse_field_mappings）
@@ -41,12 +45,17 @@ USE ecommerce_logistics_erp;
 
 -- ---------------------------------------------------------------------------
 -- 通用域：租户 / 用户 / 角色（多租户骨架）
--- 注意：租户列已从这 3 张表扩散到 23 张表（orders / customers / products / logistics_orders / warehouses /
---       platform_integrations / financial_transactions / purchase_orders 及全部 *_import_jobs、*_field_mappings、shop_warehouses）。
+-- 注意：租户列已从这 3 张表扩散到 ~~23 张表~~ → **25 张表**（orders / customers / products / logistics_orders / warehouses /
+--       platform_integrations / financial_transactions / purchase_orders 及全部 *_import_jobs、*_field_mappings、shop_warehouses，
+--       2026-10-21 新增 shops、audit_logs）。
 --       2026-03-22 实测：42 张表中 23 张有 tenant_id，19 张没有（含租户主体表 tenants 自身）。
---       仍无 tenant_id 的 18 张：order_items、skus、inventory_records、locations、logistics_channels、
+--       🔄 2026-10-21 实测：**45 张表中 25 张有 tenant_id，20 张没有**；有 tenant_id 的 25 张里 20 张建了以 tenant_id
+--       打头的索引，缺索引的是 users / roles / warehouses / platform_integrations / financial_transactions 这 5 张
+--       （见 data-dictionary.md R-06）。
+--       仍无 tenant_id 的 ~~18~~ **19** 张（另有 tenants 自身也无此列）：order_items、skus、inventory_records、locations、logistics_channels、
 --       logistics_fees、logistics_labels、payment_infos、shipping_addresses、purchase_order_items，
---       以及 6 张 *_import_job_errors（ISS-049 改名后已能建出来，但父表有列、子表无列的例外依旧，见 er-diagram.md §5.1），
+--       以及 6 张 *_import_job_errors（ISS-049 改名后已能建出来，但父表有列、子表无列的例外依旧，见 er-diagram.md §5.1）、
+--       **system_configs**（全新表，平台级配置无租户列），
 --       外加 user_roles、role_jpa_entity_permissions 两张 @ManyToMany 桥表（风险 R-07 未完全收敛，见 data-dictionary.md）
 -- ---------------------------------------------------------------------------
 
@@ -814,4 +823,76 @@ CREATE TABLE shop_warehouse_field_mappings (
 
 -- 导入作业与错误明细的关联由实体侧 @OneToMany(mappedBy="job", cascade=ALL, orphanRemoval=true) 声明，
 -- 上面的 job_id 外键即 Hibernate 运行时会建的约束（约束名与 Hibernate 默认生成名不同，勿据此比对）。
+
+-- ---------------------------------------------------------------------------
+-- 🔄 2026-10-21 补登：原先漏登的 3 张表。逐列取自运行时库 `SHOW CREATE TABLE`
+--    （schema ecommerce_logistics_erp，information_schema 实测共 45 张表）。
+--    这三张表在 Hibernate ddl-auto=update 下早已建出，只是快照未收录，
+--    因此 data-dictionary.md 的 42 行清单、er-diagram.md 的实体清单同样缺它们。
+-- ---------------------------------------------------------------------------
+
+-- 店铺（平台店铺 = 平台对接元信息 + 凭据 + 店铺标识），ADR-0013 的站点粒度切片
+CREATE TABLE shops (
+  id                      VARCHAR(36)  NOT NULL,      -- UUID.toString()（36 位带连字符），非 BINARY(16)
+  tenant_id               VARCHAR(64)  NOT NULL,      -- 注意宽度 64：与多数表的 VARCHAR(255) / audit_logs 的 VARCHAR(36) 不一致（R-14）
+  integration_id          VARCHAR(36),                -- 裸字符串引用 platform_integrations.id，无外键；
+                                                      -- 而后者实为 BINARY(16) → 无法按裸值 join（R-14）
+  platform                VARCHAR(32)  NOT NULL,      -- 手写字符串，非原生 ENUM（与 platform_integrations 口径不同）
+  shop_code               VARCHAR(128) NOT NULL,
+  shop_name               VARCHAR(128) NOT NULL,
+  external_shop_id        VARCHAR(128),
+  marketplace_id          VARCHAR(64),
+  region                  VARCHAR(32),
+  store_url               VARCHAR(255),
+  api_version             VARCHAR(32),
+  auth_status             VARCHAR(24)  NOT NULL,      -- 手写字符串状态
+  push_back_policy        VARCHAR(16)  NOT NULL,      -- 手写字符串（如 MANUAL/AUTO），无枚举约束
+  api_key                 VARCHAR(512),               -- CredentialCipher 密文（enc:v1:…），非明文
+  api_secret              VARCHAR(512),               -- 同上
+  access_token            VARCHAR(2048),              -- 同上
+  refresh_token           VARCHAR(2048),              -- 同上
+  token_expires_at        DATETIME(6),
+  last_orders_synced_at   DATETIME(6),
+  last_products_synced_at DATETIME(6),
+  active                  BIT          NOT NULL,
+  created_at              DATETIME(6)  NOT NULL,
+  updated_at              DATETIME(6)  NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_shops_tenant_code (tenant_id, shop_code),
+  UNIQUE KEY uk_shops_marketplace (tenant_id, platform, marketplace_id),
+  KEY idx_shops_tenant (tenant_id),
+  KEY idx_shops_integration (integration_id)
+) ENGINE = InnoDB;
+
+-- 审计日志（append-only，无 updated_at、无软删除；当前实库 8181 行）
+CREATE TABLE audit_logs (
+  id            VARCHAR(36) NOT NULL,
+  tenant_id     VARCHAR(36),                          -- 可空：平台级操作无租户
+  action        VARCHAR(64) NOT NULL,
+  action_label  VARCHAR(128),
+  actor_id      VARCHAR(36),
+  actor_name    VARCHAR(64),
+  target_type   VARCHAR(32),
+  target_id     VARCHAR(64),
+  result        ENUM('FAILURE','SUCCESS') NOT NULL,   -- 原生 ENUM（@Enumerated(STRING)）
+  detail        VARCHAR(512),
+  error_message VARCHAR(512),
+  ip            VARCHAR(64),
+  trace_id      VARCHAR(32),
+  created_at    DATETIME(6) NOT NULL,
+  PRIMARY KEY (id),
+  KEY idx_audit_logs_tenant_created (tenant_id, created_at),
+  KEY idx_audit_logs_actor_result_created (actor_name, result, created_at)
+) ENGINE = InnoDB;
+
+-- 系统配置（平台级键值表，无 tenant_id；PK 列名不是 id，而是 config_key）
+CREATE TABLE system_configs (
+  config_key   VARCHAR(64) NOT NULL,                  -- 业务键即主键（R-11 的非 id 主键之一）
+  config_group VARCHAR(32) NOT NULL,
+  config_value VARCHAR(512),
+  updated_at   DATETIME(6) NOT NULL,
+  updated_by   VARCHAR(64),
+  PRIMARY KEY (config_key)
+) ENGINE = InnoDB;
+
 

@@ -63,16 +63,16 @@
 
 1. ~~补 `UserJpaEntity` 的 `@ManyToMany`（或独立 `user_roles` 关联表）+ 迁移脚本~~ ✅（用了 `@ElementCollection` + `user_roles` 桥表这条路；**注意本仓不引入 Flyway，列与表仍由 `ddl-auto: update` 生成**，见 [ADR-0002](../adr/0002-hibernate-ddl-auto.md)）；
 2. `RoleJpaEntity` 已有 `tenant_id`（`:27-28`）与 `@ElementCollection` 桥表 `role_jpa_entity_permissions`，权限点应从此处读取并进入 authorities；✅ **已按此实现**
-3. 角色命名与 `SecurityConfig:40-41` 的 `hasRole("PLATFORM_ADMIN")` 对齐（`PLATFORM_ADMIN` / `TENANT_ADMIN` / 业务角色），前端守卫按同一集合；~~`AuthGuard.jsx:44-53` 目前把角色检查注释掉了~~ → **✅ 前端守卫已实现**：`user-web/src/components/Auth/AuthGuard.jsx:9` 收 `requiredRoles`，`:33-43` 角色不匹配渲染 403 `Result`（不再放行），同文件 `:51-53` `PlatformAdminGuard` 要求 `PLATFORM_ADMIN`、`:58-60` `TenantAdminGuard` 要求 `TENANT_ADMIN`/`PLATFORM_ADMIN`——**与后端同一套角色名，口径已对齐**。<br>⚠️ 但**仅 user-web 有这两个守卫组件**（admin-web 用 `routes.jsx` 自己的判断），且**前端守卫只是体验层**：真正的门槛是后端的 17 处 `@PreAuthorize` + `SecurityConfig` 路径规则（M-06）。
+3. 角色命名与 `SecurityConfig:40-41` 的 `hasRole("PLATFORM_ADMIN")` 对齐（`PLATFORM_ADMIN` / `TENANT_ADMIN` / 业务角色），前端守卫按同一集合；~~`AuthGuard.jsx:44-53` 目前把角色检查注释掉了~~ → **✅ 前端守卫已实现**：`user-web/src/components/Auth/AuthGuard.jsx:9` 收 `requiredRoles`，`:33-43` 角色不匹配渲染 403 `Result`（不再放行），同文件 `:51-53` `PlatformAdminGuard` 要求 `PLATFORM_ADMIN`、`:58-60` `TenantAdminGuard` 要求 `TENANT_ADMIN`/`PLATFORM_ADMIN`——**与后端同一套角色名，口径已对齐**。<br>⚠️ 但**仅 user-web 有这两个守卫组件**（admin-web 用 `routes.jsx` 自己的判断），且**前端守卫只是体验层**：真正的门槛是后端的 ~~17 处~~ → 🔄 **2026-10-21：130 处真实 `@PreAuthorize`（9 类级 + 121 方法级，覆盖 22/24 个控制器）** + `SecurityConfig` 路径规则（M-06）。
 
 ## 4. 多租户隔离落地（依赖 [migration-plan.md M3](../db/migration-plan.md)）
 
 顺序不能颠倒——**先有列，再过滤，最后去掉客户端传参**：
 
-1. **库层**：18 张业务表加 `tenant_id`（`V4/V5/V6`），唯一键从全局改租户内（`users.username/email`）。<br>🔎 **现状（2026-01-25 查库）：本步骤未完成。** 运行时 42 张表里 23 张有 `tenant_id`、19 张没有（M-04）；`SHOW INDEX FROM users` 的 `username`/`email` 两条唯一索引**仍是单列全局唯一**，未改成 `(tenant_id, username)`。本行是**待办**，不要当成已落地事实引用（另见 [spec/tenant-and-iam.md BR-09](../spec/tenant-and-iam.md)）。
+1. **库层**：18 张业务表加 `tenant_id`（`V4/V5/V6`），唯一键从全局改租户内（`users.username/email`）。<br>🔎 **现状（2026-01-25 查库）：本步骤未完成。** 运行时 42 张表里 23 张有 `tenant_id`、19 张没有（M-04）；`SHOW INDEX FROM users` 的 `username`/`email` 两条唯一索引**仍是单列全局唯一**，未改成 `(tenant_id, username)`。本行是**待办**，不要当成已落地事实引用（另见 [spec/tenant-and-iam.md BR-09](../spec/tenant-and-iam.md)）。<br>🔄 **2026-10-21 实库复测：45 张表 / 25 张有 `tenant_id` / 20 张没有**（`shops`、`audit_logs` 有列，`system_configs` 无列）；**`users.username`/`email` 仍是单列全局唯一**，本步骤仍未完成。
 2. **入口层**：`JwtAuthenticationFilter:51` 已有 `TenantContext.setTenantId(tenantId)`，~~但**全仓 `clearTenantId()` 调用点为 0** → 在 `finally` 中清理，否则线程池复用会串租户（M-03）~~ → **✅ 2026-01-25 已在 `finally` 补上 `clearTenantId()`（`:82`），M-03 的 ThreadLocal 串租户风险解除。**
    - 🔄 **本步骤的"读侧"仍未收口，这里是 `TenantContext` 全部 8 个调用点的实测清单**：`JwtAuthenticationFilter:51`（写）、`:82`（清）、`TenantIsolationAspect:57,62`（断言入参与上下文一致）、`:93,95`（仓储切面**只打 trace**）、`OrderController:167,168`（**唯一一个从上下文取值去用的地方**，且只是 `resolveTenantId` 的中间优先级，取不到仍回落 `DEFAULT_TENANT_ID`）。
-   - **也就是说：全仓没有任何一条查询从 `TenantContext` 取租户去过滤数据**（这正是 ISS-050 的精确定义）。
+   - ~~**也就是说：全仓没有任何一条查询从 `TenantContext` 取租户去过滤数据**（这正是 ISS-050 的精确定义）。~~ → 🔄 **2026-10-21 复测：这句话已不成立。** `TenantAccessGuard.scopedTenantId()`（`application/service/support/TenantAccessGuard.java:50-63`）与 `requireOwned()` 直接读 `TenantContext` 的登录租户，并被各应用服务调用；采购仓储还做了 fail-closed 的租户条件（`PurchaseOrderRepositoryImpl:68-75`）。**但收敛仍是逐聚合的，没有结构性保证**：`requireOwned` 只在 28 处 / 8 个文件出现，订单/客户等读路径仍靠控制器传参 + 常量兜底（M-05），本轮另登记 ISS-146/147 两处未接守卫的入口。
 3. **持久层**：两种方案择一——
    - A（推荐）：Spring Data `Specification`/`@Query` 显式带 `tenant_id` + Hibernate `@TenantId`/`@FilterDef` 全局过滤；
    - B：`TenantIsolationAspect` 只做**断言**（仓储方法入参未携带当前租户则抛 `C00003`），过滤仍由查询承担。现状 AOP 是空壳，走 B 的成本更低。

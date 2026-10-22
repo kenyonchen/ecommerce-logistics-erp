@@ -140,12 +140,12 @@
 | `PlatformDashboard/SystemConfig` | 无 | ⚪ `platformApi` 空对象 |
 
 > ~~**前端去 mock 的前置条件**：后端必须先补齐列表/分页/筛选接口——这是 v0.1 的 P0 任务，见 [`07-roadmap.md`](./07-roadmap.md)。~~
-> 🔄 **2026-01-25 复测：本表整体已过期，请勿据其判断现状。** 表中所有「`xxxApi` 是**空对象**」与「接口**不存在**」的判定都不成立：`services/api.js` 现有 **21 个 api 模块 / 194 个方法**，唯一空壳是 `platformApi`（`:464-466`）。逐条订正：
+> 🔄 **2026-01-25 复测：本表整体已过期，请勿据其判断现状。** 表中所有「`xxxApi` 是**空对象**」与「接口**不存在**」的判定都不成立：`services/api.js` ~~现有 **21 个 api 模块 / 194 个方法**，唯一空壳是 `platformApi`（`:464-466`）~~ → 🔄 **2026-10-21 复测：23 个模块 / 209 个方法，`platformApi` 已删除**。逐条订正：
 > - `GET /api/orders`（分页条件列表）**已存在**（`OrderController:64`），`orderApi` 从 4 个方法扩到 **10 个**（`getOrders` / `getOrderByNumber` / `cancelOrder` / `deleteOrder` / `getStatuses` 等），`OrderList.jsx`、`OrderDetail.jsx` 已改真实取数 → 行 125/126 的「⚪ 读 mock」作废；
 > - `logisticsApi`（4 方法）、`productApi`、`warehouseApi`、`customerApi`、`financeApi`、`purchaseApi`、`platformIntegrationApi` **全部已实现**（不是空对象），对应列表页已接真实接口 → 行 128-135 的「⚪ 空对象」全部作废。逐模块行数见 [tech/frontend-architecture.md §api.js 清单](../tech/frontend-architecture.md)；
 > - 行 127「成功后无法在列表看到结果」已随列表接口落地解决；
-> - 行 138 仍然成立且需精确化：`platformApi` 是空壳，`PlatformDashboard.jsx`/`SystemConfig.jsx` 因此无数据可取（后者 `:53-54` 的保存只 `console.log`）。
-> ⚠️ 于是原先那句「**前置条件是后端先补列表/分页/筛选接口**」的 P0 判断已完成，**当前的真实阻塞点换成了另两件事**：读路径无租户过滤（ISS-050，所以列表接口能返回别的租户的数据）与 `platformApi`/统计接口缺失（首页与平台页仍无数据源）。
+> - ~~行 138 仍然成立且需精确化：`platformApi` 是空壳，`PlatformDashboard.jsx`/`SystemConfig.jsx` 因此无数据可取（后者 `:53-54` 的保存只 `console.log`）。~~ → 🔄 **2026-10-21 复测：该条不再成立**——`platformApi` 已删除，`PlatformDashboard.jsx` 接 `overviewApi`、`SystemConfig.jsx` 接 `systemConfigApi.getConfig/saveConfig`，`src/pages/` 下 `mock` 字样 0 处。
+> ⚠️ 于是原先那句「**前置条件是后端先补列表/分页/筛选接口**」的 P0 判断已完成，**当前的真实阻塞点换成了另两件事**：读路径无租户过滤（ISS-050，所以列表接口能返回别的租户的数据）与 ~~`platformApi`/统计接口缺失（首页与平台页仍无数据源）~~ → 🔄 **2026-10-21：统计接口已接（`overviewApi`），该阻塞已解除**。
 
 ---
 

@@ -298,3 +298,15 @@ CREATE INDEX idx_orders_shop ON orders (shop_id);
 2. 出现「一个卖家账号需要按站点差异化配置」（不同站点不同仓库/不同物流模板）且 `shops` 行数失控时：引入账号级父实体，即形态 (B)。
 3. 单站点订单量或店铺数超过 `idx_orders_shop` 的合理基数（10 万单级）：重新评估查询与索引。
 4. 任一租户发生跨店数据可见事故：立即复审 §4.3 三道锁的覆盖率。
+
+---
+
+## 9. 复测（2026-10-21 按活库 + 工作树）
+
+本节只订正上面已被超越的事实，决策不变：
+
+1. **§1.3 的结构性阻塞已修**：`platform_integrations.platform_name` 的 MySQL ENUM 现在是**完整 12 个标签**（`SHOW CREATE TABLE` 实测与 `PlatformName.java:9-20` 一一对应，含 `WISH`/`OTHER`），`auth_type` 11 个、`status` 4 个（`ACTIVE/DISCONNECTED/ERROR/INACTIVE`）。原文「ENUM 只有 7 个值 ⇒ Shopee/Ozon/Mercado/TikTok/Temu 建不出集成记录」不再成立，插 `OZON` 不会再 1265。⚠️ 但机制警告仍有效：这是靠显式 DDL 补的，`ddl-auto: update` 不扩 ENUM 标签（见 [ADR-0002 末段](./0002-hibernate-ddl-auto.md)），下次给 `PlatformName`/`PlatformAuthType` 加值仍要手工 `ALTER`。
+2. **§1.2 的数据基线变了，但「无存量」结论更强**：活库 `orders` 从 **63 行降到 4 行**（`MANUAL` 3 + `SHOPIFY` 1，已有一条平台来源的单），`platform_integrations`、`shops`、`shop_warehouses` **仍都是 0 行**；`orders` 仍无 `shop_id`/`integration_id` 两列 ⇒ 决策 3 未落地，§1.2「不需要迁移/回填」的前提继续成立。
+3. **§1.3 的 id 类型普查过期**：全库现 **45 张基表**（原文 38），其中 40 张有 `id` 列——`varchar(255)` 35、**`varchar(36)` 2（`audit_logs`、新增 `shops`）**、`varchar(64)` 1（`customers`）、`binary(16)` 1（`platform_integrations`）、`bigint` 1（`purchase_order_items`）；另 5 张没有 `id`（`purchase_orders.purchase_order_id`、`financial_transactions.transaction_id`、`system_configs.config_key`、复合主键 `user_roles`、无主键 `role_jpa_entity_permissions`）。**原文预言的异构外键问题已经现实化**：`shops.integration_id varchar(36)` 指向 `platform_integrations.id binary(16)`，字符列存二进制主键（当前无外键、0 行所以未爆，§6 步骤 1 的「统一 `VARCHAR(36)`」仍是必要前置）。
+4. **`shops` 实际列型**（回应状态行「未按 migration-plan §4 固化」）：`auth_status varchar(24)`、`push_back_policy varchar(16)` 确为 varchar 而非 ENUM；凭据列为 `api_key/api_secret varchar(512)`、`access_token/refresh_token varchar(2048)`（比 `platform_integrations` 的 1024 更宽），`marketplace_id varchar(64)` 是**单数**（与集成表的 `marketplace_ids varchar(512)` 逗号串不同口径），`id varchar(36)`、`integration_id varchar(36)`、`tenant_id varchar(64) NOT NULL`。这些宽度/命名仍未进显式 DDL 基线，`schema.sql` 侧不在本 ADR 处理。
+5. **决策 2 未落地、且离目标更远**：`platform_integrations` 仍保留 `tenant_id` 与四列卖家级凭据（`api_key`/`api_secret`/`access_token`/`refresh_token`，均 `varchar(1024)`），与 §2 决策 2「去掉 `tenant_id`、去掉卖家级凭据」相反；状态行已记「未落地」，本轮确认无变化。

@@ -1,9 +1,10 @@
 # 数据模型演进与迁移方案
 
 > 定位：把 [ADR-0002](../adr/0002-hibernate-ddl-auto.md) 的 7 步迁移路径**展开成可执行的迁移计划**（脚本清单、顺序、数据回填、校验、回滚）。
-> 数据语义与风险编号（`R-01~R-12`）以 [data-dictionary.md](data-dictionary.md) 为唯一权威，本文不复述列定义，只讲**怎么从现状演进到目标态**。
-> 事实基线：2026-01-25 工作树；`spring.jpa.hibernate.ddl-auto: update`（`application.yml:33`）、`show-sql: true`（`:34`）；**全仓无 Flyway/Liquibase**，`resources/` 只有 `application.yml` 一个文件。
+> 数据语义与风险编号（`~~R-01~R-12~~ → R-01~R-14`）以 [data-dictionary.md](data-dictionary.md) 为唯一权威，本文不复述列定义，只讲**怎么从现状演进到目标态**。
+> 事实基线：2026-01-25 工作树；`spring.jpa.hibernate.ddl-auto: update`（`application.yml:35`）、`show-sql: true`（`:36`）；**全仓无 Flyway/Liquibase**，`resources/` 只有 `application.yml` 一个文件。
 > ⚠️ 2026-01-25 按工作树 + 运行时库（`ecommerce_logistics_erp`，只读查询）复测：**表数从 24 涨到 42**（40 张单列主键 + `user_roles` 复合主键，外加 `role_jpa_entity_permissions` **完全没有主键**）；**23/42 张表已有 `tenant_id`**；**已声明 27 个 `@Index` + 11 个 `@UniqueConstraint`**（分布在 18 / 10 个实体），运行时库有 **66 个非主键索引**，仅 9 张表还是「只有 PRIMARY」。下文原写法（24 张表、其余 21 张无索引）已按实测就地更正。
+> 🔄 **2026-10-21 复测（取代上行计数，保留原文作为历史口径）**：运行时库 **45 张表**；**43 个实体 / 43 个 `@Table` + 2 张 `@ElementCollection`**；**25/45 张表有 `tenant_id`**；实体侧 **21 个实体 / 34 处 `@Index` + 12 个实体 / 14 处 `@UniqueConstraint`**；运行时库 **75 个非主键索引**（按 `TABLE_NAME:INDEX_NAME` 去重）；**仍只有 PRIMARY 的 9 张**＝`financial_transactions`、`logistics_fees`、`logistics_labels`、`payment_infos`、`platform_integrations`、`roles`、`shipping_addresses`、**`system_configs`**、`user_roles`——`purchase_orders` 已因新增 3 条索引移出该名单。详见 [data-dictionary.md §1/§6](data-dictionary.md)。
 
 ## 1. 为什么必须迁移（三条硬约束）
 
@@ -36,7 +37,7 @@
 
 ```
 db/migration/   ⚠️ **2026-10-10 已清理**：Flyway 从未接入（pom.xml 无依赖、application.yml 无配置），V7* 系列迁移已通过手工 SQL 执行完毕。系统未上线，无需版本化迁移脚本，保留只会增加未来误执行风险。详见本节末「为什么删除迁移脚本」。
-├── V1__baseline.sql                 # 42 张表 + 已有索引/唯一键，由 M0 的快照生成
+├── V1__baseline.sql                 # ~~42~~ → 🔄 2026-10-21 实库 45 张表 + 已有索引/唯一键，由 M0 的快照生成
 ├── V2__add_missing_unique_keys.sql
 ├── V3__add_hot_path_indexes.sql
 ├── V4__add_tenant_id_to_business_tables.sql
@@ -79,7 +80,7 @@ spring:
 |---|---|---|
 | `V2` | `uk_inv_sku_wh(sku_code,warehouse_id)`、`uk_loc_wh_code(warehouse_id,location_code)`、`uk_po_item(purchase_order_id,sku_code)`、`financial_transactions(reference_id,reference_type)` 唯一键（`R-05`） | **加唯一前必须查重并清洗**：`SELECT sku_code,warehouse_id,COUNT(*) ... GROUP BY ... HAVING COUNT(*)>1`。有重复时脚本会失败在 prod——把清理写成 `V2.1__dedup_*.sql`（保留最小 id 或按业务规则保留）。~~**2026-01-25 复测：`R-05` 原样未修**，这 4 个唯一键在运行时库里都不存在（`inventory_records`/`locations`/`purchase_order_items` 只有 Hibernate 为 `@ManyToOne` 自动生成的 `FK…` 索引，`financial_transactions` 除 PRIMARY 外没有任何索引），重复库存行仍可写入~~ → 🔄 **2026-03-22 复测：4 条里第 3 条已落地**——`purchase_order_items` 实测已有 `uk_po_item(purchase_order_id, sku_code)`（`non_unique=0`，声明在 `PurchaseOrderItemJpaEntity:25-26`，由 `ddl-auto: update` 建出，**不是**版本化迁移脚本建的）；其余 3 条仍未修：`inventory_records`（只有 PK + 2 个 `FK…` 索引）、`locations`（只有 PK + 1 个 `FK…` 索引）、`financial_transactions`（**只有 PRIMARY，连外键索引都没有**）。所以本行的 `V2` 范围应改为「3 个唯一键 ＋ 为 `financial_transactions` 补外键/查询索引」，且上线前要先查重（同一 SKU 因 `/in｜/out` 与 `/move` 两条路径键不同而可能已存在重复行，见 [spec/warehouse.md](../spec/warehouse.md) §4 BR-06 的 2026-03-22 复测注） |
 | `V3` | `data-dictionary §7` 的 8 条 `CREATE INDEX`（`R-06`：所有 `*_id` 关联列无索引） | 大表建索引锁/耗时；MySQL 8 在线 DDL（`ALGORITHM=INPLACE, LOCK=NONE`）优先。当前是开发库，先建，无历史包袱 |
-| — | product 上下文已声明索引，基线必须包含：`products` 的 `idx_products_tenant`/`idx_products_category`/`idx_products_source` + `uk_products_external_ref`（`ProductJpaEntity:22-30`）、`product_import_jobs` 的 `idx_import_jobs_tenant`（`ProductImportJobJpaEntity:25`）、`product_field_mappings` 的 `idx_field_mappings_lookup` + `uk_field_mappings_ref`（`ProductFieldMappingJpaEntity:24-27`）。 | ~~其余 21 张表目前没有任何索引，全靠 `V3` 补~~ → **2026-01-25 实测**：除 product 上下文外，order / logistics / customer / finance / shop-warehouse 的实体也已声明索引，合计 **27 个 `@Index`（18 个实体）+ 11 个 `@UniqueConstraint`（10 个实体）**，运行时库已有 **66 个非主键索引**；仍只有 PRIMARY 的只剩 **9 张表**（`financial_transactions`、`logistics_fees`、`logistics_labels`、`payment_infos`、`platform_integrations`、`purchase_orders`、`roles`、`shipping_addresses`、`user_roles`）。`V3` 的范围因此从「补 21 张表」收窄为「补这 9 张表 + 校验既有索引命名与列宽」 |
+| — | product 上下文已声明索引，基线必须包含：`products` 的 `idx_products_tenant`/`idx_products_category`/`idx_products_source` + `uk_products_external_ref`（`ProductJpaEntity:22-30`）、`product_import_jobs` 的 `idx_import_jobs_tenant`（`ProductImportJobJpaEntity:25`）、`product_field_mappings` 的 `idx_field_mappings_lookup` + `uk_field_mappings_ref`（`ProductFieldMappingJpaEntity:24-27`）。 | ~~其余 21 张表目前没有任何索引，全靠 `V3` 补~~ → **2026-01-25 实测**：除 product 上下文外，order / logistics / customer / finance / shop-warehouse 的实体也已声明索引，合计 **27 个 `@Index`（18 个实体）+ 11 个 `@UniqueConstraint`（10 个实体）**，运行时库已有 **66 个非主键索引**；仍只有 PRIMARY 的只剩 **9 张表**（`financial_transactions`、`logistics_fees`、`logistics_labels`、`payment_infos`、`platform_integrations`、`purchase_orders`、`roles`、`shipping_addresses`、`user_roles`）。`V3` 的范围因此从「补 21 张表」收窄为「补这 9 张表 + 校验既有索引命名与列宽」。<br>🔄 **2026-10-21 复测**：实体侧 **34 个 `@Index`（21 个实体）+ 14 个 `@UniqueConstraint`（12 个实体）**，运行时库 **75 个非主键索引**；仍只有 PRIMARY 的 9 张名单**换成**（`financial_transactions`、`logistics_fees`、`logistics_labels`、`payment_infos`、`platform_integrations`、`roles`、`shipping_addresses`、`system_configs`、`user_roles`）——`purchase_orders` 已由 `PurchaseOrderJpaEntity` 补 3 条索引移出，`system_configs` 作为新表进入。`V3` 的待补范围按这份新名单执行。 |
 
 同时补实体侧注解，保持 `validate` 与生成一致（`@Table(indexes=..., uniqueConstraints=...)`）。
 
@@ -88,6 +89,7 @@ spring:
 现状：只有 3 张表有 `tenant_id`（`ProductJpaEntity:38`、`UserJpaEntity:31`、`RoleJpaEntity:27`），其余 21 个实体没有（`R-07`）；`users.username`/`email` 是**全局唯一**（`UserJpaEntity:34,40`），与租户模型直接冲突。
 
 > **2026-01-25 复测更正**：`tenant_id` 已从 3 张扩到 **23/42 张表**（订单、物流、仓库、店铺仓、客户、平台、财务、采购主单及各自的 import/field-mapping 表都已带列），仍缺 **19 张**——其中 `tenants` 是主体表不需要，真正待补的是 6 张 `*_import_job_errors` 子表、`logistics_channels`，以及 `order_items`/`purchase_order_items`/`shipping_addresses`/`payment_infos`/`logistics_fees`/`logistics_labels`/`inventory_records`/`locations`/`skus`/`user_roles`/`role_jpa_entity_permissions` 这类**靠父表归属的子表与关联表**。
+> 🔄 **2026-10-21 复测：25/45 张表已有 `tenant_id`，20 张没有**。新增的 `shops`、`audit_logs` 带列，`system_configs` 不带；待补名单在 2026-01-25 的 19 张基础上**加 `system_configs`**（它属于平台级配置，可显式记为不需要租户列）。M3 的迁移范围按 45 张表的现状重算，不要沿用 42 表口径。
 > 另一个落地细节：唯一性是 `@Column(unique = true)` 声明的——运行时库里实际索引名是 Hibernate 生成的哈希名（`UK6dotkott2kjsp8vw4d0m25fb7` on email、`UKr43af9ap4edm43mmtq01oddj6` on username），**不叫 `uk_users_username`/`uk_users_email`**。下文 V6 的 `DROP INDEX uk_users_username` 是按「有命名约束」的理想写法写的，落地时必须先从 `information_schema.statistics` 取真实名，否则脚本直接失败。
 
 ```sql
@@ -168,7 +170,7 @@ ALTER TABLE users  DROP INDEX uk_users_email,
 ## 7. 已落地的 product 改动与快照漂移（2026-01-25 更新）
 
 > 🔺 **2026-03-08 追加（平台集成域）**：`platform_integrations` 新增 5 列 `auth_type(32)` / `access_token(1024)` / `refresh_token(1024)` / `token_expires_at` / `api_version(32)`，并把 `api_key`/`api_secret` 的**内容**从明文换成 AES-256-GCM 密文（`enc:v1:` 前缀）。
-> - **表数量不变**（仍 42 张 `CREATE TABLE`），所以快照的逐表 diff 结论仍成立；但**这 5 列必须进 `V1__baseline.sql`**，且它们是「**只加不减**」的 `ddl-auto=update` 产物——`api_key` 的语义已从"明文"变成"密文"，**列名没变、内容口径变了**，这类变更在快照里看不出来，基线化时要以实体 + `CredentialCipher` 为准（详见 [schema.sql](schema.sql) 该表下方的 ⚠️ 注）。
+> - **表数量不变**（~~仍 42 张 `CREATE TABLE`~~ → 🔄 2026-10-21 为 **45 张**，新增 `shops`/`audit_logs`/`system_configs`），所以快照的逐表 diff 结论仍成立；但**这 5 列必须进 `V1__baseline.sql`**，且它们是「**只加不减**」的 `ddl-auto=update` 产物——`api_key` 的语义已从"明文"变成"密文"，**列名没变、内容口径变了**，这类变更在快照里看不出来，基线化时要以实体 + `CredentialCipher` 为准（详见 [schema.sql](schema.sql) 该表下方的 ⚠️ 注）。
 > - ⚠️ **密文比原文长**：`api_key`/`api_secret` 仍是默认 `VARCHAR(255)`，Base64 后大约只容纳 **180 字符左右**的原文。若某平台凭据更长（eBay 的 user access token 可达 1000+），需要显式 `@Column(length=…)` 扩列，否则 `ddl-auto=update` **不会**自动放宽已存在列的宽度（它只加列/加表，不 MODIFY）。这条属于"必须靠迁移脚本才能修"的形态，正是 M0 立 Flyway 基线的理由之一。
 > - ⚠️ **无唯一约束**：`platform_integrations` 至今没有 `(tenant_id, platform_name, store_url)` 唯一键（BR-03），而它的**存在前提是历史行没有重复**——所以补约束前必须先跑一次重复度预检（同 §6 的 `V2` 预检 SELECT 做法）。
 > - ✅ `product_import_job_errors` 那条"子表无 `tenant_id`"的例外**没有扩大**：本轮未新增任何表。
@@ -179,7 +181,7 @@ ALTER TABLE users  DROP INDEX uk_users_email,
 - 新增 3 张表 + 3 套仓储：`product_import_jobs`（`ProductImportJobJpaEntity`，有 `tenant_id`、`idx_import_jobs_tenant`）、`product_field_mappings`（有 `tenant_id`、`idx_field_mappings_lookup`、`uk_field_mappings_ref`）、`product_import_job_errors`（**无 `tenant_id`**，靠 `job_id` 间接归属）。这三张必须进入 `V1__baseline.sql`。
 - 修改实体：`ProductJpaEntity`（新增 `idx_products_category`/`idx_products_source` 与 `uk_products_external_ref`、来源平台列）、`SkuJpaEntity`、`Product`/`SKU` 聚合。
 - 新增跨层分页容器 `domain/common/PageResult` + `domain/product/repository/ProductQuery` —— 这是分页规范的目标形态（[tech/performance-capacity.md §4](../tech/performance-capacity.md)），后续 11 个模块应复用它而不是各自造响应结构。
-- ⚠️ ~~**`docs/db/schema.sql` 已漂移**：只有 22 条 `CREATE TABLE`，缺上述 3 张表（登记为 ISS-038）~~ → **ISS-038 已修（2026-01-25）**：快照现为 **42 条 `CREATE TABLE`**，与运行时库逐表做过列名/可空性 diff，**42/42 一致**（仅 `financial_transactions.tenant_id`、`purchase_orders.tenant_id` 为后加列，历史行是 NULL）。但 **`V1__baseline.sql` 仍不要直接从快照生成**：Hibernate 6 + `MySQL8Dialect` 对部分 `@Enumerated(STRING)` 列建出的是**原生 `ENUM(...)`**（`customers.status`、`*_import_jobs.status`、`*_field_mappings.target_field/transform`、`logistics_orders.status`），`platform_integrations.id` 建出的是 **`binary(16)`**，而快照里写的是 `VARCHAR`/`CHAR(36)` 声明形态——快照是「可读真值」不是「字节级镜像」，基线仍应以 §3 M0 从实际库 `mysqldump --no-data` 重导为准（差异口径已在 [schema.sql](schema.sql) 头部 ⚠️ 注记录）。
+- ⚠️ ~~**`docs/db/schema.sql` 已漂移**：只有 22 条 `CREATE TABLE`，缺上述 3 张表（登记为 ISS-038）~~ → **ISS-038 已修（2026-01-25）**：快照现为 **42 条 `CREATE TABLE`**，与运行时库逐表做过列名/可空性 diff，**42/42 一致**（仅 `financial_transactions.tenant_id`、`purchase_orders.tenant_id` 为后加列，历史行是 NULL）。🔄 **2026-10-21 复测：已补登 `shops`/`audit_logs`/`system_configs` 后为 45 条 `CREATE TABLE`，与实库 45/45 对齐**。但 **`V1__baseline.sql` 仍不要直接从快照生成**：Hibernate 6 + `MySQL8Dialect` 对部分 `@Enumerated(STRING)` 列建出的是**原生 `ENUM(...)`**（实测 26 列 / 18 表，含 `customers.status`、`*_import_jobs.status`、`*_field_mappings.target_field/transform`、`logistics_orders.status`、`platform_integrations.auth_type`、`audit_logs.result`），`platform_integrations.id` 建出的是 **`binary(16)`**，而快照里写的是 `VARCHAR`/`CHAR(36)` 声明形态——快照是「可读真值」不是「字节级镜像」，基线仍应以 §3 M0 从实际库 `mysqldump --no-data` 重导为准（差异口径已在 [schema.sql](schema.sql) 头部 ⚠️ 注记录）。
 - ⚠️ `product_import_job_errors` 是唯一一张「子表无 `tenant_id` 但父表有」的表。M3 租户列迁移时要么给它补列，要么在文档里明确「按父任务归属」的例外，否则会变成一个难以解释的不一致点。
 - 索引与分页是配对收益：`ProductRepositoryImpl`/`ProductImportJobRepositoryImpl` 已用 `PageRequest` + `PageResult`（全仓唯一），其余 11 个模块的分页与索引选择见 [tech/performance-capacity.md](../tech/performance-capacity.md)。
   <!-- 2026-01-25 复测：「全仓唯一」已过期。现在使用 PageRequest 的 RepositoryImpl 有 **11 个**：ProductRepositoryImpl、ProductImportJobRepositoryImpl、OrderRepositoryImpl、OrderImportJobRepositoryImpl、CustomerRepositoryImpl、CustomerImportJobRepositoryImpl、LogisticsOrderRepositoryImpl、LogisticsImportJobRepositoryImpl、FinancialTransactionRepositoryImpl、FinanceImportJobRepositoryImpl、ShopWarehouseImportJobRepositoryImpl；`PageResult` 被 48 个文件引用（domain/common 定义 → 仓储 → 应用服务 → 控制器 → 前端）。仍未分页的是 warehouse / purchase / platform / tenant / user / role / auth 这一类仓储，M2 的索引选择应以「已分页的热路径」优先。 -->
@@ -212,6 +214,8 @@ ALTER TABLE users  DROP INDEX uk_users_email,
 
 ⇒ 历史数据风险为零，本节的成本全部在 DDL 与代码切流，不在数据。
 
+> 🔄 **2026-10-21 复测**：`platform_integrations` 0、`shop_warehouses` 0、`orders` 4（`MANUAL` 3 + `SHOPIFY` 1）、`order_items` 4；`shops` 已由 Hibernate 建表但 **0 行**。订单从 63 降到 4 是后续清场/重建的结果；「无历史数据需要搬迁」的结论不变。同时确认**重建并未发生**：`orders.shop_id` 与 `idx_orders_shop` 都不存在，`platform_integrations.id` 仍是 `binary(16)`，`shops` 实际 23 列（不是 §9.5 写的 24 列）。
+
 ### 9.2 为什么仍然要写显式 DDL（不能图省事让 Hibernate 建）
 
 `platform_integrations.platform_name` 在运行库是 MySQL **ENUM，只有 ~~7 个值~~（🔄 **2026-10-10 复测：本库已放宽为 12 值**，与 `PlatformName` 相等；复现语句见 [schema.sql 的 enum 截断段](./schema.sql)。本节结论不变——**新建库仍必须走显式 DDL**，因为放宽是靠手工 `ALTER` 落在本机库上的，没有任何迁移脚本承载它）**，而 `PlatformName` 枚举有 12 个。回滚式插探针实测（当时的原始报错，保留作为"为什么会窄化"的证据）：
@@ -241,13 +245,13 @@ INSERT ... platform_name='OZON'  →  ERROR 1265 (01000): Data truncated for col
 
 **需新增的种子**：`shop:read`/`shop:write`/`shop:credential_write`/`shop:sync` 四个权限点进 catalog（`ensureTenantAdminPermissions()` 的幂等补齐会让存量与新建租户的 TENANT_ADMIN 自动获得，无需人工授权）。
 
-**不重建的部分（需确认）**：现库 63 条订单、2 商品、2 仓库、5 财务流水都是历轮验证的手工/导入残留。若需要可复现的演示数据集，应显式写成脚本（当前 `scripts/` 下只有 `docker/`，无灌数脚本），不要依赖旧库数据。
+**不重建的部分（需确认）**：~~现库 63 条订单、2 商品、2 仓库、5 财务流水都是历轮验证的手工/导入残留。~~ → 🔄 **2026-10-21 实测：4 条订单、57 个商品、0 个仓库、5 条财务流水**，仍是历轮验证的手工/导入残留（仓库清空后，`purchase_orders.warehouse_id` 的孤儿引用问题另见 [data-dictionary.md](./data-dictionary.md) R-01）。若需要可复现的演示数据集，应显式写成脚本（当前 `scripts/` 下只有 `docker/`，无灌数脚本），不要依赖旧库数据。
 
 ### 9.5 校验点（重建后逐条跑，全绿才算完成）
 
 ```sql
 -- 1. 店铺表存在且唯一键形状正确
-SHOW COLUMNS FROM shops;  -- 期望 24 列
+SHOW COLUMNS FROM shops;  -- ~~期望 24 列~~ → 🔄 2026-10-21 实测 23 列（旧数字多算了一个）
 SHOW INDEX FROM shops;    -- 期望 uk_shops_tenant_code(unique)、uk_shops_marketplace(unique)、idx_shops_tenant、idx_shops_integration
 
 -- 2. 列型窄化已消除：这四列必须是 varchar，不得再是 ENUM 或 binary(16)
@@ -268,9 +272,13 @@ SELECT (SELECT COUNT(*) FROM tenants)            AS tenants_ge_1,
 
 权限侧的校验不在 SQL 里，而是 ADR-0013 §4.3 的 `TenantParameterGuardTest`：它同时断言「服务方法都有 `tenantId` 形参」与「参数名可反射取到（即 `-parameters` 未被关掉）」——后者是隔离切面的单点故障，2026-10-06 实测编译产物含 `MethodParameters` 属性，当前生效，但无守卫。
 
+> ⚠️ **2026-10-21 当前状态**：上面 4 条**只有第 1 条能过**（`shops` 表与 4 个索引都在，但为 0 行）。第 2 条失败——`platform_integrations.id` 仍是 `binary(16)`、`platform_name` 仍是已在实库放宽到 12 值的原生 ENUM；第 3 条失败——`orders.shop_id` 与 `idx_orders_shop` 都不存在。这不是文档过期，而是 M5/ADR-0013 的待办仍未落地；校验点保留为 To-Be 验收清单。
+
 ### 9.6 快照连带
 
 实现落地后 `docs/db/schema.sql` 需同步：新增 `shops` 块（表数 42→43）、`orders` 加 `shop_id` 与索引、`platform_integrations` 改写为对接定义形状、`shop_warehouses` 的 `shop_code`→`shop_id`。**在代码落地前不要改快照**——本文件是 As-Is 记录，To-Be 在此节与 ADR-0013。
+
+> 🔄 **2026-10-21 实际进展与上面这段的偏差**：`shops` 表**已由 Hibernate 建出**（As-Is 的一部分，0 行），因此 `schema.sql` 在 2026-10-21 已按实库补登 `shops` / `audit_logs` / `system_configs` 三张表（42→45），这属于**快照追平实库**，不是 To-Be 落地。其余四件事**都没做**：`orders.shop_id` 不存在、`idx_orders_shop` 不存在、`platform_integrations` 仍是 `binary(16)` + 原生 ENUM、`shop_warehouses.shop_code` 仍是裸字符串列。ADR-0013 的「两层拆分」目前只完成到「加了一张 shops 表」。
 
 ## 10. 为什么删除迁移脚本（2026-10-10）
 
@@ -285,6 +293,8 @@ SELECT (SELECT COUNT(*) FROM tenants)            AS tenants_ge_1,
 3. **V7* 系列已通过手工 SQL 执行完毕**：ISS-023 的金额列收敛是通过 `docker exec -i mysql mysql -uroot -p… < V7*.sql` 手工执行的，不是通过 Flyway。执行后脚本已完成使命，保留只会增加未来误执行的风险（某天有人不小心引入 Flyway 依赖，这些旧脚本会自动执行，可能破坏现有 schema）。
 
 4. **未来真正需要迁移时应基于那时的实际 schema 重新设计**：现在的脚本是为早期开发阶段设计的（例如从 DOUBLE 转 DECIMAL），如果未来引入 Flyway，应该基于生产环境的实际状态重新编写迁移脚本，而不是复用这些开发阶段的中间产物。
+
+> 🔄 **2026-10-21 实测补充**：源码目录 `backend/src/main/resources/db/migration/` 确实已不存在，但 **`backend/target/classes/db/migration/` 仍残留 6 个脚本**（`V7__money_to_decimal.sql`、`V7.1__money_to_decimal_finalize.sql`、`V7.2__money_decimal_width_convergence.sql`、`V7.2.1__money_decimal_width_finalize.sql` 以及两个 `U7*undo.sql`）。`git ls-files 'backend/**/db/migration/*'` = **0**，即这些脚本既未被 Git 跟踪、也不会进代码评审。`target/` 是构建产物，`mvn clean` 后消失；风险在于有人直接拿 target 打包而误以为迁移脚本仍受版本控制。
 
 ### 10.2 历史执行记录
 

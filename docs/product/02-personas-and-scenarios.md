@@ -1,7 +1,7 @@
 # 02 · 用户画像与使用场景
 
 > 本文件定义"谁在用这套系统"，是功能优先级、信息架构与交互设计的输入。
-> 角色命名与系统中的权限点口径保持一致（权限点目前为自由字符串，见 [`../spec/tenant-and-iam.md`](../spec/tenant-and-iam.md)）。
+> 角色命名与系统中的权限点口径保持一致（~~权限点目前为自由字符串~~ → 🔄 **2026-10-21：已收口为 `domain/tenant/PermissionPoints` 的 26 项 catalog（25 租户级 + 1 平台级）**，见 [`../spec/tenant-and-iam.md`](../spec/tenant-and-iam.md)）。
 
 ---
 
@@ -147,7 +147,7 @@
 
 **当前系统支撑度**：🟡
 - ✅ 采购审批状态机完整（`pending → approved/rejected → in_transit → delivered → cancelled`），API 齐全
-- ~~⚪ 缺失：到货后**自动入库**（采购与仓储无联动）、缺货自动生成采购建议、供应商主数据、审批人/意见字段~~ → 🔄 **2026-03-22 复测：四项里前两项一项已交付、一项半交付，只剩「供应商主数据」为纯缺位**。①**到货自动入库 = 已交付**（`PUT /api/purchases/{id}/delivered` 同事务逐行加库存 + 记采购应付，`PurchaseApplicationService.java:256-262`）；②**审批人/意见/时间 = 已交付**（`approved_by`/`approved_at`/`approval_comment` 三层齐备，拒绝强制填原因）；③**缺货自动生成采购建议 = 半交付**——消费端已建齐（`EventHandler:92-105` + `InventoryShortageEventConsumer`），但 `InventoryShortageEvent` 在出库路径上从未进入发布器（`WarehouseApplicationService.inventoryOut` 不调 `publishDomainEvents`）⇒ 事实上不会触发，且触发的是**无明细的空采购单**、租户硬编码 `default-tenant`；④**供应商主数据 = 仍缺**（运行时库 42 张表无 `suppliers`，只有 `supplier_id`/`supplier_name` 快照）
+- ~~⚪ 缺失：到货后**自动入库**（采购与仓储无联动）、缺货自动生成采购建议、供应商主数据、审批人/意见字段~~ → 🔄 **2026-03-22 复测：四项里前两项一项已交付、一项半交付，只剩「供应商主数据」为纯缺位**。①**到货自动入库 = 已交付**（`PUT /api/purchases/{id}/delivered` 同事务逐行加库存 + 记采购应付，`PurchaseApplicationService.java:256-262`）；②**审批人/意见/时间 = 已交付**（`approved_by`/`approved_at`/`approval_comment` 三层齐备，拒绝强制填原因）；③**缺货自动生成采购建议 = 半交付**——消费端已建齐（`EventHandler:92-105` + `InventoryShortageEventConsumer`），但 `InventoryShortageEvent` 在出库路径上从未进入发布器（`WarehouseApplicationService.inventoryOut` 不调 `publishDomainEvents`）⇒ 事实上不会触发，且触发的是**无明细的空采购单**、租户硬编码 `default-tenant`；④**供应商主数据 = 仍缺**（运行时库 ~~42~~ → 🔄 **2026-10-21：45** 张表仍无 `suppliers`，只有 `supplier_id`/`supplier_name` 快照）
 - ~~⚪ 前端 `PurchaseList` 仍是 mock~~ → ✅ **2026-01-25 已去 mock**（ISS-015/016 收尾）：`PurchaseList.jsx:5,78` 走 `purchaseApi.getPurchaseOrders(status)`，`PurchaseDetail.jsx` 7 个调用点（含 approve/reject/in-transit/delivered/cancel 与加采购项），`CreatePurchase.jsx:68` 真建单。~~⚠️ 本场景里"到货后自动入库"仍**不成立**：`purchase-events` 无任何消费者，且 `PurchaseApplicationService` 根本没有入库动作（见 [05 附录](./05-core-business-flows.md)）~~ → 🔄 **2026-03-22 复测：本场景的这一步已成立**。到货入库不靠事件订阅、所以「`purchase-events` 无消费者」不再阻断它——`PurchaseApplicationService.markPurchaseOrderAsDelivered()`（`:256-262`）在同一事务里同步完成入库与应付（`:281-293`、`:299-310`），前端「确认送达」还带二次确认（`user-web/src/constants/purchase.js:48-53`）。本场景**现在仍断的**只剩「缺货→自动生成采购建议」那一环（消费者已建齐、上游 `InventoryShortageEvent` 发不出来，见 [../spec/purchase.md BR-12](../spec/purchase.md)）
 
 ### S4｜陈财务的月度对账
@@ -207,7 +207,7 @@
 | 系统配置 | — | — | — | — | — | — | 🟡 |
 
 > 注：~~系统中 `AuthGuard` 三种守卫目前行为等同、角色校验被注释，**上表是目标权限模型，不是当前生效的权限**。当前任何登录用户都能访问所有路由。~~
-> 🔄 **2026-01-25 复测：该结论已过期，角色校验确实存在**（ISS-035 已修）。现状是「**部分生效**」：`AuthGuard.jsx:34` 按 `requiredRoles` 判角色、失败渲染 403；侧边栏按角色过滤（`Layout.jsx:181` 用 `hasRole('PLATFORM_ADMIN')`）；`/platform/*` 两条路由已在 `PlatformAdminGuard` 下。<br>❌ 但上表仍**不是**当前生效权限，三个原因：① `/tenants`、`/users`、`/roles` 三页仍挂在裸 `AuthGuard` 下（`routes.jsx:112-122`），直接输 URL 能进页面，只有点进接口才被后端 `@PreAuthorize` 挡住（返回 403，且是**空 body**，见 ISS-058）；② `TenantAdminGuard` 组内**零条路由**（`routes.jsx:135-139`），是空壳；③ 22 个种子权限点里只有 10 个被代码检查，`order/product/customer/warehouse/purchase/logistics` 的 `:read`/`:write` 共 12 个**无人校验** → 表内按功能模块的读写权限矩阵在页面上无从生效。详见 [tech/security-design.md §5](../tech/security-design.md)。
+> 🔄 **2026-01-25 复测：该结论已过期，角色校验确实存在**（ISS-035 已修）。现状是「**部分生效**」：`AuthGuard.jsx:34` 按 `requiredRoles` 判角色、失败渲染 403；侧边栏按角色过滤（`Layout.jsx:181` 用 `hasRole('PLATFORM_ADMIN')`）；`/platform/*` 两条路由已在 `PlatformAdminGuard` 下。<br>❌ 但上表仍**不是**当前生效权限，三个原因：① `/tenants`、`/users`、`/roles` 三页仍挂在裸 `AuthGuard` 下（`routes.jsx:112-122`），直接输 URL 能进页面，只有点进接口才被后端 `@PreAuthorize` 挡住（返回 403，且是**空 body**，见 ISS-058）；② `TenantAdminGuard` 组内**零条路由**（`routes.jsx:135-139`），是空壳；③ 22 个种子权限点里只有 10 个被代码检查，`order/product/customer/warehouse/purchase/logistics` 的 `:read`/`:write` 共 12 个**无人校验** → 表内按功能模块的读写权限矩阵在页面上无从生效。详见 [tech/security-design.md §5](../tech/security-design.md)。<br>🔄 **2026-10-21 复测：③ 已作废**——权限点为 **26 项 catalog**（`PermissionPoints`），26 项**全部**被 `hasAuthority(...)` 引用、**0 孤儿**，`RoleList.jsx` 预设已对齐 26 项；① 的「403 空 body」也不再成立（`SecurityConfig` 已配 `accessDeniedHandler` → 403 + `ACCESS_DENIED` 信封，ISS-058 关闭）；②（`TenantAdminGuard` 空壳/裸 `AuthGuard`）仍按 [frontend-architecture.md §9](../tech/frontend-architecture.md) 复核。
 
 ---
 

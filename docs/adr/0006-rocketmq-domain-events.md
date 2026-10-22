@@ -1,6 +1,6 @@
 # ADR-0006：以 RocketMQ 承载领域事件，聚合事件双通道发布
 
-- 状态：**Proposed**（代码已写，链路未真正生效）
+- 状态：**Proposed**（代码已写，链路未真正生效）→ 🔄 **2026-10-21 复测：进程内通道已生效，MQ 通道仍是"发得出、消费不了"且默认不装配**。改判只覆盖"链路有没有通"这一半；**"要不要保留 MQ"这个决策本身仍未敲定**，所以状态继续留 Proposed，不改成 Accepted。逐条对账见文末「2026-10-21 复测」段。
 - 日期记录：2026-01-25
 - 相关：[architecture.md §3/§4](../architecture.md)、[security-findings.md S-06/L-04](../security-findings.md)
 
@@ -63,3 +63,27 @@
 
 **因此本 ADR 的「建议」段仍然有效且更具体了**：要么退回纯进程内事件（此时请同时删掉 `EventHandler` 与消费者的重复，并置 `rocketmq.enabled: false`），要么补齐 `@JsonCreator`（或 record/Jackson 模块）+ outbox + 消费端幂等键，再保留 MQ。二选一，不要停在当前~~"两条通道都通、动作做两遍、MQ 那半条其实消费不了"~~的中间态。
 > 🔧 **2026-01-25 二次实测把这句现状描述订正为**：既不是"两条通道都通"，也不是"动作做两遍"，而是 **ISS-062 ⇒ 8 个会注册事件的聚合里 5 个（订单/客户/物流/仓储/平台）一条消息也没发过；真发得出去的采购、财务、商品，其 topic（`purchase-events`/`finance-events`/`product-events`）反而没有任何消费者**。所以「二选一」这个决定现在做还不迟，而且比之前更倾向第一条（退回纯进程内事件）——因为 MQ 通道要同时补 ISS-062（发布对象）、ISS-052（`@JsonCreator`）、ISS-053（outbox）、ISS-054（去重）四件事才谈得上端到端可用。
+
+---
+
+## 复测（2026-10-21 按工作树 + 本机运行环境）
+
+> 口径来源：`mvn -o test`、`grep` 实测与 live 冒烟结论均回指 [qa/known-issues.md](../qa/known-issues.md) §8/§9；本段只补"上面 2026-01-25 那节的数字已被超越"的部分，不重排上文。
+
+1. **ISS-062（P0，发布对象错）已闭环，但闭环方式不是本 ADR 提的那个。**
+   - 上文「最小修法」建议照抄 `ProductApplicationService` 的"发布调用方自己那个聚合实例"；**实际没这么做**（56 处 `return xxxRepository.save(x)` 一处未改），而是在仓储层加了搬运桥：`domain/common/BaseAggregateRoot.carryOverEvents(source, target)`（`:48-63`，反射取双方 `domainEvents` 再 `addAll`），调用点 **5 个仓储实现**——`OrderRepositoryImpl:44`、`PlatformIntegrationRepositoryImpl:69`、`WarehouseRepositoryImpl:36`、`LogisticsOrderRepositoryImpl:47`、`CustomerRepositoryImpl:50`。
+   - 覆盖面核对：会注册事件的聚合 **8 个**（order / customer / logistics / warehouse / purchase / finance / product / platform + 新增 shop）。**purchase 与 finance 靠 `void save()`**（`PurchaseOrderRepositoryImpl:51`、`FinancialTransactionRepositoryImpl:48`，全会话只有这 2 个）；**shop 靠第三种写法**——`ShopRepositoryImpl:55-60` `jpaRepository.save(entity); return shop;` 直接返回入参实例；**product 靠应用层补投**（`ProductApplicationService:104` 往聚合列表 `add`）。⇒ **保存契约三种并存**，这是 ISS-062 关闭后留下的新隐式约定（详见 [ADR-0010 后果 7 的复测段](./0010-mapstruct-domain-jpa-bridge.md)）。
+   - 运行时证据：进程内「下单 → 生成物流单」「缺货 → 生成采购单」实测**各执行一次**（不是两次），见 ISS-097。
+2. **调用点分布已重取**：`publishEventsFrom` 实测 **48 处 / 12 个应用服务**（上文写的 39 处 / 11 个已过期）——`PurchaseApplicationService` 9、`LogisticsApplicationService` 9、`CustomerApplicationService` 7、`ProductApplicationService` 6、`ShopApplicationService` 4（新）、`FinanceApplicationService` 4、`OrderApplicationService` 3、`FinanceImportApplicationService` 2，`OrderImport`/`LogisticsImport`/`Warehouse`/`PlatformIntegration` 各 1。发布器仍**只在应用层**，领域服务一个都不注入——这条结论没变，仍是"事件能否发出全靠应用层"。
+3. **事件与 topic 数量**：`*Event` 类 **24 个**（上文 22），`getTopicForEvent`（`DomainEventPublisher.java:110-130`）现映射 **9 个 topic**（新增 `shop-events`，`:129-130`）。⚠️ 新的静默丢事件风险面：`domain/audit`、`domain/config`、`domain/overview` 三个上下文**没有 `event` 包**，一旦将来在这三处注册事件，会落进 topic 推断的兜底分支（与 ISS-039 同形）。
+4. **ISS-052（`@JsonCreator`）只修了 1/6**：全仓事件类里 `@JsonCreator` 命中 **4 个**——`OrderCreatedEvent`、`OrderStatusChangedEvent`、`InventoryShortageEvent`、`LogisticsCompletedEvent`（正好是 4 个消费者各自要吃的那批）。**其余 20 个事件类仍不可反序列化**。所以"MQ 通道端到端可用"这句还是不能写。
+5. **ISS-054（双通道重复副作用）已由装配层关闭**：4 个消费者的条件从 `rocketmq.enabled` 换成 `rocketmq.internal-consumers.enabled`（`InventoryShortageEventConsumer:21`、`LogisticsCompletedEventConsumer:20`、`OrderCreatedEventConsumer:22`、`OrderStatusChangedEventConsumer:20`），而 `application.yml:41-46` 实测把它写成 **`false`**（`rocketmq.enabled` 仍是 `true`）⇒ 默认只有进程内 `EventHandler` 执行副作用。**残留是"靠配置不靠断言"**：没有任何启动校验禁止 `enabled=true` 与 `internal-consumers.enabled=true` 同时成立，配错就立刻回到"建两张物流单"。
+6. **本 ADR 后果 6（无事务边界）已修**：`@Transactional` 实测 **145 处 / 30 个文件**（application 124 / infrastructure 21 / domain 0 / interfaces 0），`AFTER_ROLLBACK` 会触发。但 `readOnly = true` **20 处**、**`rollbackFor` 仍 0 处**（checked 异常不回滚），所以"边界已补齐"仍要打七折读，与上文那句警告一致。
+7. **ISS-053（无 outbox）仍然成立**：`DomainEventPublisher` 对发送异常只记 error 日志，「落库成功、事件丢失」无人知晓。**上文「建议」段的两条出路依然有效**，且第 5 条的装配门 + 第 1 条的搬运桥已经把"退回纯进程内事件"这条路铺通了一半——剩下的门槛是第 4 条那 20 个事件类，以及"要不要为 outbox 引入新表"（与 [ADR-0002 无 Flyway](./0002-hibernate-ddl-auto.md) 的边界冲突）。
+8. ⚠️ **本段唯一没有实测的旧结论**：上文写的运维前提「`rocketmq.enabled: true` ⇒ 本机没有 broker 时启动会失败」本轮**未复测**（2026-10 的 live 冒烟与真机探针期间未刻意制造"无 broker"场景）。引用这一句前请先起一次不带 RocketMQ 的后端。
+9. **事务时序：事件在提交前发出，回滚撤不回（2026-10-21 新增）**。第 6 条只证了「`@Transactional` 有 145 处、`AFTER_ROLLBACK` 会触发」，没有回答「事件相对提交点在哪」。实测顺序：
+   - `publishEventsFrom` 在 `@Transactional` 方法体内部被调用（采购到货：`PurchaseApplicationService:250` 是 `@Transactional`，`:253` 发布，`:254/:255` 才做入库与应付），双通道在 `DomainEventPublisher:44`（Spring）与 `:46`→`:94`（`RocketMQTemplate.convertAndSend`）**当场同步发出**，不等提交。
+   - ⇒ 编排后半段一旦抛异常回滚，**进程内监听器与 MQ 消息都已经执行/发出**，无法撤回；「落库成功才发事件」在采购到货链路上**不成立**。这与 ISS-053（无 outbox）是同一根因的两面：发送失败会丢、发送成功但事务回滚会多。
+   - ⚠️ 进程内 `@EventListener` 默认同步，若监听器抛异常会反过来打断调用方事务——因而不应把「监听器里再写库」当作独立事务看待。
+10. **`AFTER_ROLLBACK` 处理器是空操作（2026-10-21 新增）**：全仓 `@TransactionalEventListener` **仅 1 处**（`DomainEventPublisher:137`，phase=AFTER_ROLLBACK），方法体 `:139` 只打一行 `log.info("事务回滚，清理事件: …")`，**不清理任何状态**——事件列表早在 `publishEventsFrom:49` 已 `clear()`。所以第 6 条「`AFTER_ROLLBACK` 会触发」字面成立、作用为零；不要把它写成「回滚后有补偿」。
+11. **消费方覆盖（2026-10-21 用注解清单重测）**：4 个 `@RocketMQMessageListener` 只订 **3 个 topic**——`order-events`（两个 group：`logistics-group` `OrderCreatedEventConsumer:23`、`warehouse-group` `OrderStatusChangedEventConsumer:21`）、`inventory-events`（`purchase-group` `InventoryShortageEventConsumer:22`）、`logistics-events`（`finance-group` `LogisticsCompletedEventConsumer:21`）。`purchase-events`/`finance-events`/`product-events`/`platform-events`/`shop-events` 仓内 **0 消费者**，与上文 2026-01-25 的结论一致。另复核第 2 条的「48 处 / 12 个应用服务」仍然成立（唯一一处看着像调用点的 `ShopRepositoryImpl:51` 其实是注释，实际 48 处全在 application 层）。

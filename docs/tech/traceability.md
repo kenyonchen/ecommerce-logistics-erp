@@ -2,9 +2,11 @@
 
 > 定位：把产品文档的编号（`US-xxx` 用户故事、`BR-xx` 业务规则、`R-xxx` 需求条目、`F1~F8` 流程）与工程实现（控制器/端点/表/事件/类）以及缺陷编号（`ISS-xxx`、`S/M/L-xx`、`R-0x` 数据风险）**逐项对齐**，回答两个问题：① 这条需求由哪些代码承载；② 改这段代码要回改哪些文档。
 > 单一权威不变：端点清单看 [api/api.md](../api/api.md)，表语义看 [db/data-dictionary.md](../db/data-dictionary.md)，缺陷立项看 [qa/known-issues.md](../qa/known-issues.md)。本文只做**映射**，不重述内容。
-> 事实基线：2026-01-25 工作树（含未提交的 product-import / platform-fetcher 改动），实测口径见 §6。
+> ~~事实基线：2026-01-25 工作树（含未提交的 product-import / platform-fetcher 改动）~~ → 🔄 **2026-10-21 复测：13 个限界上下文 + `common`、24 控制器 / 214 端点、43 张 `@Table`（运行时库 45 张）、24 个领域事件、102 测试类 / 801 个测试**，实测口径见 §6。
 
-## 1. 模块级追溯矩阵（9 个限界上下文）
+## 1. 模块级追溯矩阵（~~9~~ → 🔄 2026-10-21：13 个限界上下文 + `common`）
+
+> 🔄 2026-10-21：§1.1~§1.9 仍是九个**业务上下文**；新增的 `shop`/`audit`/`config`/`overview` 四个基础上下文补在 §1.10（`architecture.md §1` 的目录口径：`order, logistics, warehouse, product, customer, purchase, finance, tenant, platform, shop, audit, config, overview` + `common`）。
 
 ### 1.1 订单（核心域）
 
@@ -106,11 +108,22 @@
 | 规格 | [spec/tenant-and-iam.md](../spec/tenant-and-iam.md) `BR-01~BR-12` + §5 鉴权目标时序（权威） |
 | 接口 | ~~**33 个端点（4 控制器）**：`AuthController /api/auth`(3)~~ → **2026-01-25 实测 34 个（4 控制器）**：`AuthController /api/auth`(**4**：login/refresh/logout/**me**)、`UserController /api/users`(11)、`RoleController /api/roles`(10)、`TenantController /api/tenants`(9) |
 | 应用/领域 | `CustomUserDetailsService`（~~⚠️ 权限恒空 `:40`~~ **✅ 2026-01-25 已修**：`:57-73` 由角色名生成 `ROLE_*` 并把 `role.getPermissions()` 逐条加进 authorities，ISS-041）、`UserServiceImpl/RoleServiceImpl/TenantServiceImpl`（⚠️ 实现落在 `application`，ISS-027）；`Tenant`/`User`/`Role`，无 `event` 目录（0 事件） |
-| 基础设施 | `JwtTokenProvider`（~~⚠️ `validateToken` 恒 true `:126-128`~~ **✅ 已改为 `parseClaims(token) != null`**，`:189-191`；租户 claim 亦真实解析，`:141-144`）、`JwtAuthenticationFilter`（✅ `Bearer` 前缀已剥离 `:88`；~~⚠️ 自建实例 `:28-30`、authorities 恒空 `:46-48`~~ **✅ 已改为构造注入 `JwtTokenProvider`（`:31-35`），并从 token 的 roles/permissions 组装 authorities（`:46-72`）**）、`TenantContext`（~~⚠️ `clearTenantId` 无调用点~~ **✅ 已在 filter `finally` 调用（`:82`）**）、`TenantIsolationAspect`（~~⚠️ 逻辑注释 `:39-41`~~ **✅ 已生效 `:55-86`**，但仅校验入参中出现的 `tenantId`，读路径无隔离 → ISS-050）、`SecurityConfig`（~~`:31` CORS 单值、`:40` 路径错、无 `anyRequest()`~~ **✅ 现 CORS 放行 5173+5174（`:50`）、`/api/tenants/**` = `hasRole("PLATFORM_ADMIN")`、兜底 `.requestMatchers("/api/**").authenticated()`（`:63-67`**）；⚠️ 仍无 `httpBasic/formLogin/exceptionHandling` → 未认证与坏令牌都是 **HTTP 403 空响应体**，永远不返 401（ISS-017） |
-| 表 | `tenants`、`users`、`roles` + `@ElementCollection` 桥表 `user_roles`（`UserJpaEntity.java:64-67`，实测 2 行）与 `role_jpa_entity_permissions`（不计入物理表口径）；~~⚠️ 仅 `users`/`roles` 有 `tenant_id`（+ 在途 `products`）~~ → **2026-01-25 实测 42 张表里 23 张有 `tenant_id` / 19 张没有**（ISS-010）；~~⚠️ `UserJpaEntity` **无角色关联**（角色不持久化，er-diagram §8）~~ **✅ 已持久化**（`user_roles`），但只存 role id 字符串、无 FK 指向 `roles` |
+| 基础设施 | `JwtTokenProvider`（~~⚠️ `validateToken` 恒 true `:126-128`~~ **✅ 已改为 `parseClaims(token) != null`**，`:189-191`；租户 claim 亦真实解析，`:141-144`）、`JwtAuthenticationFilter`（✅ `Bearer` 前缀已剥离 `:88`；~~⚠️ 自建实例 `:28-30`、authorities 恒空 `:46-48`~~ **✅ 已改为构造注入 `JwtTokenProvider`（`:31-35`），并从 token 的 roles/permissions 组装 authorities（`:46-72`）**）、`TenantContext`（~~⚠️ `clearTenantId` 无调用点~~ **✅ 已在 filter `finally` 调用（`:82`）**）、`TenantIsolationAspect`（~~⚠️ 逻辑注释 `:39-41`~~ **✅ 已生效 `:55-86`**，但仅校验入参中出现的 `tenantId`，读路径无隔离 → ISS-050）、`SecurityConfig`（~~`:31` CORS 单值、`:40` 路径错、无 `anyRequest()`~~ **✅ 现 CORS 放行 5173+5174（`:50`）、`/api/tenants/**` = `hasRole("PLATFORM_ADMIN")`、兜底 `.requestMatchers("/api/**").authenticated()`（`:63-67`**）→ 🔄 **2026-10-21 实测订正：CORS 白名单是 5110+5120（`SecurityConfig.java:63`，与两个 `vite.config.js:9` 的 `server.port` 一致，5173/5174 已不在白名单）；授权链在 `:77-86`——`:78` 登录三端点 permitAll、`:79-81` swagger permitAll、`:82` `/api/auth/me`、`:83` `/api/tenants/**` 需 `PLATFORM_ADMIN`、`:84` `/api/**` authenticated、`:85` `.anyRequest().authenticated()` 兜底**；~~⚠️ 仍无 `httpBasic/formLogin/exceptionHandling` → HTTP 403 空响应体、永远不返 401（ISS-017）~~ → ✅ **`:89-96` 已配 `exceptionHandling`：未认证 → 401 + `UNAUTHORIZED` 信封，无权限 → 403 + `ACCESS_DENIED` 信封（ISS-098）** |
+| 表 | `tenants`、`users`、`roles` + `@ElementCollection` 桥表 `user_roles`（`UserJpaEntity.java:64-67`，实测 2 行）与 `role_jpa_entity_permissions`（不计入物理表口径）；~~⚠️ 仅 `users`/`roles` 有 `tenant_id`（+ 在途 `products`）~~ → **2026-01-25 实测 42 张表里 23 张有 `tenant_id` / 19 张没有**（ISS-010）→ 🔄 **2026-10-21 复测：45 张表里 25 张有 `tenant_id` / 20 张没有**（ISS-010 仍未修；有列的 25 张里 20 张建了以 `tenant_id` 打头的索引，缺索引的是 `users`/`roles`/`warehouses`/`platform_integrations`/`financial_transactions`）；~~⚠️ `UserJpaEntity` **无角色关联**（角色不持久化，er-diagram §8）~~ **✅ 已持久化**（`user_roles`），但只存 role id 字符串、无 FK 指向 `roles` |
 | 前端 | `auth/Login` + `tenant/*3` + `user/*3`（真实联网 9 页主要集中在此域）；~~`AuthGuard` 角色检查被注释~~ **✅ 已实现**：`user-web/src/components/Auth/AuthGuard.jsx:33-43` `requiredRoles` 不匹配渲染 403 `Result`，同文件另有平台管理员守卫 |
-| 缺陷/风险 | ~~ISS-007/008/009~~（**均已修**：JWT 边界带 roles/permissions、`TenantContext` 清理、切面生效）、~~ISS-035~~；ISS-010（19 张表无 `tenant_id`）、**ISS-050（读路径无隔离，本域当前最高风险）**、**ISS-051（`PurchaseController:47` 仍收客户端 `tenantId`）**、ISS-021（凭据明文，按边界未修）、ISS-024（`username`/`email` 全局唯一）；~~S-01、S-02、S-03、S-04、M-01~M-06~~（S-01/S-02/S-03/M-01/M-02/M-06 已修，S-04 按边界保留）；**本轮新增并已修：ISS-058（`AccessDeniedException` 落 500 → 403 `ACCESS_DENIED`）**、**ISS-061（初始化在非 Web 线程读懒加载集合被吞 → `admin` 拿不到 `PLATFORM_ADMIN`，整个管理端恒定 403）**；M-07、L-01 |
+| 缺陷/风险 | ~~ISS-007/008/009~~（**均已修**：JWT 边界带 roles/permissions、`TenantContext` 清理、切面生效）、~~ISS-035~~；ISS-010（~~19~~ → 🔄 2026-10-21：20 张表无 `tenant_id`）、**ISS-050（读路径无隔离，本域当前最高风险）**、**ISS-051（`PurchaseController:47` 仍收客户端 `tenantId`）**、ISS-021（凭据明文，按边界未修）、ISS-024（`username`/`email` 全局唯一）；~~S-01、S-02、S-03、S-04、M-01~M-06~~（S-01/S-02/S-03/M-01/M-02/M-06 已修，S-04 按边界保留）；**本轮新增并已修：ISS-058（`AccessDeniedException` 落 500 → 403 `ACCESS_DENIED`）**、**ISS-061（初始化在非 Web 线程读懒加载集合被吞 → `admin` 拿不到 `PLATFORM_ADMIN`，整个管理端恒定 403）**；M-07、L-01 |
 | 技术文档 | [security-design.md](security-design.md)（本文域的技术方案权威）、[migration-plan M3](../db/migration-plan.md)、[observability §3.1](observability.md)（tenantId 进 MDC） |
+
+### 1.10 新增基础上下文：店铺 / 审计 / 系统配置 / 概览（🔄 2026-10-21 补登）
+
+| 上下文 | 需求/规格 | 接口 | 应用/领域 | 表 | 前端 | 缺陷/风险 |
+|---|---|---|---|---|---|---|
+| **shop** | ⚪ **无 `spec/shop.md`**；设计决策见 [ADR-0013](../adr/0013-shop-entity-and-platform-connection-split.md) | `ShopController` `/api/shops` **7 个端点**，7 个均带 `@PreAuthorize`（读 `shop:read`、写 `shop:write`、凭据 `shop:credential:write`），5 个写端点带 `@Auditable` | `ShopApplicationService`；聚合 `Shop` + `ShopAuthStatus`/`PushBackPolicy`；事件 2（`ShopCreatedEvent`/`ShopAuthStatusChangedEvent`） | `shops`（23 列，实测 **0 行**） | `user-web/src/pages/shop/ShopList.jsx` 已接 `shopApi`（增删改 + 凭据绑定 + 回写策略） | 无规格即无 `BR-xx`；凭据以密文落库（`CredentialCipher`，master-key 未配则拒绝写入） |
+| **audit** | ⚪ **无规格文档** | `AuditLogController` `/api/audit-logs` **2 个端点**（分页查询 + `/recent`），类级 `@PreAuthorize("hasRole('PLATFORM_ADMIN')")` | `AuditApplicationService`；`AuditLog` 实体 + `AuditResult`；写入靠 `@Auditable` + AOP（全仓 118 个方法） | `audit_logs`（实测 **8181 行**） | `admin-web/src/pages/platform/AuditLogList.jsx` 已接 `auditApi` | 审计只记录成功/失败结果，无租户列，跨租户查询靠平台管理员角色 |
+| **config** | ⚪ **无规格文档** | `SystemConfigController` `/api/system-config` **2 个端点**（GET / PUT），类级 `@PreAuthorize("hasRole('PLATFORM_ADMIN')")` | `SystemConfigApplicationService`；`SystemSetting` 实体 | `system_configs`（`config_key` 为 PK，实测 **12 行**） | `user-web` 与 `admin-web` 的 `pages/platform/SystemConfig.jsx` 均已接 `systemConfigApi`（不再是 mock） | 配置按 `config_group` 分组；无租户列，属平台级配置 |
+| **overview** | ⚪ **无规格文档** | `OverviewController` `/api/overview` **1 个端点**，`@PreAuthorize` 要求 `order:read` | `OverviewApplicationService`；读模型 `statistics/SystemOverviewStatistics` | 无自有表，聚合订单/库存/财务等只读统计 | `user-web/pages/home/Home.jsx` 与两端的 `pages/platform/PlatformDashboard.jsx` 均走 `overviewApi` | 读模型口径未进任何 `spec/*.md`，指标定义只在代码里 |
+
+> ⚠️ 上述 4 个控制器 + `LogisticsChannelController`（归 §1.2 物流）**没有对应的 `spec/*.md`**，因此 §5 的「每个端点被某个 spec 引用」对它们必然不通过；补规格前不要把这 5 个控制器计入追溯完整率。
 
 ## 2. 横切能力 → 文档映射
 
@@ -159,29 +172,36 @@
 
 | 检查 | 方法 | 当前结果 |
 |---|---|---|
-| 每个端点被某个 `spec` 引用 | 扫 `api.md §4` 路径 vs `spec/*.md` 接口对照表 | 待做（[ci-cd §6](ci-cd.md) 的端点漂移检查可顺带实现） |
+| 每个端点被某个 `spec` 引用 | 扫 `api.md §4` 路径 vs `spec/*.md` 接口对照表 | 待做（[ci-cd §6](ci-cd.md) 的端点漂移检查可顺带实现）。🔄 2026-10-21 已确认 **5 个控制器没有对应 spec**：`ShopController`、`AuditLogController`、`SystemConfigController`、`OverviewController`、`LogisticsChannelController`（共 19 个端点），这 19 个必须先补规格才谈得上「被引用」 |
 | 每个 `US-xxx` 有端点或页面承载 | `product/08` 的 47 条 × 本文 §1 | 已知缺口：`US-7xx` 客服沟通（`R-302` ⚪）、`US-6xx` 对账报表（`R-207/310` ⚪） |
-| 每张表被某个模块主张 | **40 张 `@Table`**（+ 2 张集合表 = 运行时库 42 张）vs 本文 §1 | ✅ 全覆盖（2026-01-25 复核：新增的 logistics/finance/shop-warehouse 三套导入上下文归各自模块，`shop_warehouses` 归 platform） |
-| 每个事件有 topic | 22 个 `*Event` vs `DomainEventPublisher.getTopicForEvent`（`:110-128`）覆盖的 **8 个包** | ✅ **2026-01-25 已修（ISS-039）**：`product-events`/`customer-events`/`platform-events` 已补映射，`getTopicForEvent` 不再有返回 `null` 的分支。<br>⚠️ 但「有 topic」不等于「能消费」：22 个事件类无 `@JsonCreator`/空参构造，MQ 侧反序列化仍失败（**ISS-052**），且进程内 handler 与 MQ 消费者双通道仍会重复副作用（**ISS-054**） |
-| 每个 `BR-xx` 有实现或缺口编号 | 105 条 BR × `ISS` | 规格文档已逐条标注 ✅/🟡/⚪/❌，本文不重复 |
+| 每张表被某个模块主张 | ~~**40 张 `@Table`**（+ 2 张集合表 = 运行时库 42 张）~~ → 🔄 2026-10-21：**43 张 `@Table`**（+ 2 张集合表 = 运行时库 45 张）vs 本文 §1 | ✅ 全覆盖（2026-01-25 复核：新增的 logistics/finance/shop-warehouse 三套导入上下文归各自模块，`shop_warehouses` 归 platform；🔄 2026-10-21 复核：新增的 `shops`/`audit_logs`/`system_configs` 归 §1.10，其余 42 张与旧映射一致） |
+| 每个事件有 topic | ~~22 个 `*Event`~~ → 🔄 2026-10-21：**24 个 `*Event`** vs `DomainEventPublisher.getTopicForEvent`（`:110-129`）覆盖的 ~~**8 个包**~~ → **9 个包**（新增 `shop-events`） | ✅ **2026-01-25 已修（ISS-039）**：`product-events`/`customer-events`/`platform-events` 已补映射，`getTopicForEvent` 不再有返回 `null` 的分支。<br>⚠️ 但「有 topic」不等于「能消费」：~~22 个事件类无 `@JsonCreator`/空参构造~~ → 🔄 2026-10-21：**24 个事件类里只有 4 个带 `@JsonCreator`**（恰好是有订阅者的 4 个），其余 20 个 MQ 侧反序列化仍失败（**ISS-052** 半修），且进程内 handler 与 MQ 消费者双通道仍会重复副作用（**ISS-054**） |
+| 每个 `BR-xx` 有实现或缺口编号 | ~~105 条~~ → 🔄 2026-10-21：**116 条**（9 个含 `BR-` 的 spec 各文件去重后求和：customer 12 / finance 11 / logistics 11 / order 18 / platform-integration 13 / product 10 / purchase 14 / tenant-and-iam 15 / warehouse 12）× `ISS` | 规格文档已逐条标注 ✅/🟡/⚪/❌，本文不重复 |
 
 ## 6. 实测口径（本文数字怎么来的）
 
 ```bash
-# 控制器 / 端点（基线 2026-03-08：20 个 @RestController / 198 个映射方法；2026-01-25 = 196，旧 13/100 已过期）
+# 控制器 / 端点（🔄 2026-10-21 基线：24 个 @RestController / 214 个映射方法；上一档 2026-03-08：20 / 198；2026-01-25 = 196）
 # ⚠️ 原文的 `--include=*.java` 与 `src/main/java/*/interfaces/controller/*.java` 两种写法在 zsh 下会直接
-#    报 "no matches found"（前者要引号、后者层数不对），2026-03-08 换成下面这两条可原样重跑的命令：
+#    报 "no matches found"（前者要引号、后者层数不对；2026-10-21 起控制器已按上下文分到 13 个子目录），
+#    2026-03-08 换成下面这两条可原样重跑的命令：
 grep -rl "@RestController" backend/src/main/java | wc -l
 grep -rE "@(Get|Post|Put|Delete|Patch)Mapping" backend/src/main/java | grep -c 'interfaces/controller/'
 
-# 表 / 事件 / 仓储 / Mapper（基线 2026-01-25：40 张 @Entity/@Table（运行时库 42 张）、22 个事件、26 领域仓储↔26 Impl、26 JpaRepository、12 Mapper）
-grep -rl "@Entity" backend/src/main/java/**/jpa/entity | wc -l
+# 表 / 事件 / 仓储 / Mapper（🔄 2026-10-21 基线：43 张 @Entity/@Table（运行时库 45 张）、24 个事件、30 领域仓储↔30 Impl、29 JpaRepository、12 Mapper；上一档 2026-01-25：40 / 42、22、26↔26、26、12）
+grep -rl "@Entity" backend/src/main/java --include='*.java' | wc -l
 find backend/src/main/java -path '*/domain/*/event/*.java' | wc -l
+find backend/src/main/java -path '*/domain/*/repository/*Repository.java' | wc -l
+find backend/src/main/java -name '*RepositoryImpl.java' | wc -l
+find backend/src/main/java -name '*JpaRepository.java' | wc -l
+find backend/src/main/java -path '*/jpa/mapper/*.java' | wc -l
 
-# 主源码规模（基线 2026-03-08：463 个 .java；测试 31 类 / 211 个 @Test；上一档 2026-01-25 = 444 / 26 类 / 164 个）
+# 主源码规模（🔄 2026-10-21 基线：568 个 .java；测试 102 类 / 801 个 @Test；上一档 2026-03-08 = 463 / 31 类 / 211 个；再上一档 2026-01-25 = 444 / 26 类 / 164 个）
 find backend/src/main -name '*.java' | wc -l
+find backend/src/test -name '*.java' | wc -l
+grep -rh '@Test' backend/src/test --include='*.java' | wc -l
 ```
 
-⚠️ **漂移警告**：本套文档的数字口径统一为 **20 控制器 / 198 端点 / 40 张 `@Table`（运行时库 42 张）/ 22 领域事件 / 463 主源码文件 / 31 测试类 211 `@Test`**（**2026-03-08 工作树实测**；端点与测试两档的增量全部来自平台对接这一轮）。历史三档：`bfbce09` =「12 / 83 / 21 / 23 / 220」，2026-01-25 =「13 / 100 / 24 / 22 / 266 / 10 类 53 测试」，2026-01-25 =「20 / 196 / 40 / 22 / 444 / 26 类 164 测试」——`bfbce09` 的**事件数 23 属计量错误**（多计 1 个），不是代码减少。任何引用这些数字的段落都必须同时标明**所依据的提交时点**——没有时点的数字就是不可核查的数字。上方 §5 的命令就是用来重算它们的。
+⚠️ **漂移警告**：本套文档的数字口径统一为 **24 控制器 / 214 端点 / 43 张 `@Table`（运行时库 45 张）/ 24 领域事件 / 568 主源码文件 / 102 测试类 801 `@Test`**（**2026-10-21 工作树实测**；`target/surefire-reports` 102 个 XML 合计 801 tests / 0 failures / 0 errors / 0 skipped）。历史四档：`bfbce09` =「12 / 83 / 21 / 23 / 220」，2026-01-25 =「13 / 100 / 24 / 22 / 266 / 10 类 53 测试」，2026-01-25 =「20 / 196 / 40 / 22 / 444 / 26 类 164 测试」，2026-03-08 =「20 / 198 / 40 / 22 / 463 / 31 类 211 测试」——`bfbce09` 的**事件数 23 属计量错误**（多计 1 个），不是代码减少。任何引用这些数字的段落都必须同时标明**所依据的提交时点**——没有时点的数字就是不可核查的数字。上方 §5 的命令就是用来重算它们的。
 
 ⚠️ **本轮踩到的坑（务必照做）**：2026-01-25 复查时发现 `backend/target/classes` 里的 `.class` 比源码更新、且注解值与源码不一致（`line_number` vs `row_number`），说明**工作树源码与被验证过的编译产物存在漂移**——上一轮的结论可能对应的是另一份源码状态。因此本文件的每个数字都必须是**当场重跑**得到的，不能沿用上一次的同名结论；`mvn -o surefire:test` 不重新编译，尤其容易读到旧 `.class`。

@@ -1,6 +1,6 @@
 # 接口文档导读（产品视角）
 
-> 本文件**不是端点清单**。端点逐项契约（~~196 个端点 / 20 个控制器，2026-01-25~~ → **214 个端点 / 24 个控制器，2026-10-10**；`@Operation` 214 处、`@ApiResponse` 0 处。请求/响应、鉴权标注）在 **[`api.md`](./api.md)**，它是唯一权威来源（逐项清单见其 §4B）。
+> 本文件**不是端点清单**。端点逐项契约（~~196 个端点 / 20 个控制器，2026-01-25~~ → **214 个端点 / 24 个控制器，2026-10-10**；`@Operation` 214 处、`@ApiResponse` 0 处。请求/响应、鉴权标注）在 **[`api.md`](./api.md)**，它是唯一权威来源（逐项清单见其 **§4C**；§4B 是已过期的历史快照）。
 > 本文件回答三件事：**① 怎么读这套接口 ② 按业务场景去哪查 ③ 横切约定（响应、错误码、鉴权、分页）的产品视角摘要**。
 > 这样分工是为了避免端点表出现两份而互相漂移。
 
@@ -15,7 +15,7 @@
 | 响应信封 `Result<T>` 的三种写法 | [`api.md` §2](./api.md#2-响应信封-resultt) |
 | 请求参数承载方式不一致的问题 | [`api.md` §3](./api.md#3-请求参数承载方式不统一) |
 | 枚举的全部取值 | [`api.md` §5](./api.md#5-枚举取值) |
-| 鉴权为何失效与技术细节 | [`api.md` §6](./api.md#6-认证与鉴权现状保护被架空)、[`../security-findings.md`](../security-findings.md) |
+| 鉴权为何失效与技术细节 | [`api.md` §6](./api.md#6-认证与鉴权现状链路已通隔离只做了一半)、[`../security-findings.md`](../security-findings.md) |
 | 错误处理的完整映射 | [`api.md` §7](./api.md#7-错误处理) |
 | Swagger / springdoc 使用状态 | [`api.md` §8](./api.md#8-springdoc-使用状态) |
 | 前后端契约对齐情况 | [`api.md` §9](./api.md#9-前后端契约对齐) |
@@ -60,7 +60,7 @@
 |---|---|
 | 业务是否成功 | 看 `code`（`"200"` 为成功） |
 | HTTP 状态码 | 因三种封装写法并存而不完全可靠，**不要只依赖 HTTP 状态码** |
-| 常见错误码 | `ENTITY_NOT_FOUND`、`INVALID_OPERATION`、`VALIDATION_ERROR`、`SYSTEM_ERROR`、`ERROR` |
+| 常见错误码 | `ENTITY_NOT_FOUND`、`INVALID_OPERATION`、`VALIDATION_ERROR`、`SYSTEM_ERROR`、`UNAUTHORIZED`（401）、`ACCESS_DENIED`（403）、`BUSINESS_ERROR`；~~`ERROR`~~（🔄 2026-10-21：`ERROR` 不是真实码，已从清单移除） |
 
 产品层要求：**不得把后端 `message` 原文直接展示给用户**，应由前端按 code 映射为友好文案（如 `ENTITY_NOT_FOUND` → "没有找到这条记录"）。
 
@@ -70,7 +70,7 @@
 |---|---|
 | ~~`validateToken()` 恒返回 `true`~~ → 现走 `Jwts.parser()` 验签 + 过期校验（`JwtTokenProvider.java:189-205`） | ~~任意非空 Bearer 串可通过认证~~ → 伪造串会被 401 |
 | ~~authorities 恒为空~~ → 令牌携带 `username`/`tenantId`/`roles`/`permissions` 四个 claim，过滤器重建 `GrantedAuthority`（ISS-041 的修法） | ~~角色授权规则永不满足；`/api/tenants/**` 反而可能恒 403~~ → `hasRole`/`hasAuthority` 生效，`/api/tenants/**` 需 `PLATFORM_ADMIN` |
-| ~~`/api/**` 的保护实际可被绕过~~ → 需要**有效令牌**才算已认证 | ⚠️ 但**授权粒度仍粗**：20 个控制器只有 9 个有 `@PreAuthorize`，其余 11 个（含 `Order`/`Purchase`/`Warehouse`/`Product`）任何已认证用户都能写；`SecurityConfig` 依旧**没有 `.anyRequest()`** 兜底（L-01） |
+| ~~`/api/**` 的保护实际可被绕过~~ → 需要**有效令牌**才算已认证 | ⚠️ 但**授权粒度仍粗**：~~20 个控制器只有 9 个有 `@PreAuthorize`，其余 11 个（含 `Order`/`Purchase`/`Warehouse`/`Product`）任何已认证用户都能写；`SecurityConfig` 依旧**没有 `.anyRequest()` 兜底**（L-01）~~ → 🔄 **2026-10-21 复测：24 个控制器里 22 个有 `@PreAuthorize`**（130 条真实注解；无注解的只有 `AuthController` 与靠路径规则的 `TenantController`），`Order`/`Purchase`/`Warehouse`/`Product` 都已有方法级权限点；`SecurityConfig.java:85` 有 **`.anyRequest().authenticated()`**，L-01 的「无兜底」已不成立。**仍粗的是语义**：`hasRole('PLATFORM_ADMIN') or hasAuthority(...)` 的 OR 分支让平台管理员绕过权限点，且读路径租户隔离仍靠逐方法 `requireOwned` |
 
 登记见 [`../qa/known-issues.md`](../qa/known-issues.md) ISS-007 / ISS-008（已修）；修复方案见 [ADR-0004](../adr/0004-jwt-authentication.md)（决策）与 [ADR-0007](../adr/0007-jwt-auth-and-tenant-context.md)（实现差距 + 2026-01-25 更新）。
 
@@ -78,7 +78,7 @@
 
 | 缺失能力 | 产品影响 | 关联需求 |
 |---|---|---|
-| 分页 / 排序 | ~~数据量增长后列表不可用；订单/产品/财务/客户四个模块**连列表接口都没有**~~ ✅ 已大幅收敛（2026-01-25）：**20 个控制器里 11 个**返回 `domain/common/PageResult`（`Product`/`ProductImport`/`Order`/`OrderImport`/`Customer`/`CustomerImport`/`Logistics`/`LogisticsImport`/`Finance`/`FinanceImport`/`WarehouseImport`），入参统一 `page`（默认 0）/`size`（默认 10）；仓储侧 11 个 `*RepositoryImpl` 用 `PageRequest`。**仍无分页的列表**：`ShopWarehouseController`、`WarehouseController`、`PurchaseController`、`PlatformIntegrationController`、`LogisticsChannelController`、`TenantController`、`UserController`、`RoleController` | US-101、US-401、US-601、US-701（见 [`../product/08-user-stories.md`](../product/08-user-stories.md)） |
+| 分页 / 排序 | ~~数据量增长后列表不可用；订单/产品/财务/客户四个模块**连列表接口都没有**~~ ✅ 已大幅收敛（2026-01-25）：**20 个控制器里 11 个**返回 `domain/common/PageResult`（`Product`/`ProductImport`/`Order`/`OrderImport`/`Customer`/`CustomerImport`/`Logistics`/`LogisticsImport`/`Finance`/`FinanceImport`/`WarehouseImport`），入参统一 `page`（默认 0）/`size`（默认 10）；仓储侧 11 个 `*RepositoryImpl` 用 `PageRequest`。**仍无分页的列表**：`ShopWarehouseController`、`WarehouseController`、`PurchaseController`、`PlatformIntegrationController`、`LogisticsChannelController`、`TenantController`、`UserController`、`RoleController`。<br>🔄 **2026-10-21 复测：14 个控制器用 `PageResult`**（新增 `Warehouse`、`Purchase`、`AuditLog`；`domain/` 下共 **19 个 `PageResult` 返回方法声明**、分布在 21 个文件含实现），入参仍是 `int page, int size` 而**不是 `Pageable`**，也没有统一排序参数。**仍无分页的 10 个控制器**：`SystemConfig`、`LogisticsChannel`、`Overview`、`PlatformIntegration`、`Shop`、`Auth`、`Role`、`Tenant`、`User`、`ShopWarehouse`（前四个是单条/配置/只读，后六个是治理类列表）。 | US-101、US-401、US-601、US-701（见 [`../product/08-user-stories.md`](../product/08-user-stories.md)） |
 | 幂等键 | 重复提交/重复同步会产生脏数据 | US-107、US-802 |
 | 版本管理（`/v1`） | 未来升级难以兼容 | ISS-（工程侧登记） |
 | 批量操作与导出 | 仓库与财务的离案作业无法完成 | US-106、R-207 |
@@ -91,8 +91,8 @@
 
 | 优先级 | 诉求 | 依据 |
 |---|---|---|
-| P0 | 订单、产品、财务、客户四类列表接口（分页 + 至少 1 个筛选条件） | ✅ **已完成（2026-01-25）**：四类列表接口均已上线并带 `page`/`size`；对应地「前端 25 个页面仍在用 mock」已过期——45 个页面里 **42 个取真实接口**，只剩 `home/Home.jsx`（`:34-59` 的 `fetchStats` 把 1250 单 / ¥128500 写死）、`platform/PlatformDashboard.jsx`（`:20,64` 硬编码数组）、`platform/SystemConfig.jsx`（`:20-41` `mockConfig`）3 个仍是模拟数据，`CreateProduct.jsx`/`EditProduct.jsx` 是 `ProductForm.jsx`（走 `productApi`）的薄包装不算未接。`services/api.js` 现为 **21 个 api 模块 / 194 个方法**，唯一空壳是 `platformApi`（0 方法） |
-| P0 | ~~鉴权与租户隔离生效~~ 🟡 鉴权已生效（`validateToken` 真验签、authorities 来自令牌、17 处 `@PreAuthorize` 覆盖 9/20 控制器）；**读路径租户隔离仍未做**（ISS-050） | [ISS-007/008/009/010](../qa/known-issues.md)（前三条已修）、[security-findings.md](../security-findings.md) M-03/M-06 |
+| P0 | 订单、产品、财务、客户四类列表接口（分页 + 至少 1 个筛选条件） | ✅ **已完成（2026-01-25）**：四类列表接口均已上线并带 `page`/`size`；对应地「前端 25 个页面仍在用 mock」已过期——~~45 个页面里 **42 个取真实接口**，只剩 `home/Home.jsx`（`:34-59` 的 `fetchStats` 把 1250 单 / ¥128500 写死）、`platform/PlatformDashboard.jsx`（`:20,64` 硬编码数组）、`platform/SystemConfig.jsx`（`:20-41` `mockConfig`）3 个仍是模拟数据，`CreateProduct.jsx`/`EditProduct.jsx` 是 `ProductForm.jsx`（走 `productApi`）的薄包装不算未接。`services/api.js` 现为 **21 个 api 模块 / 194 个方法**，唯一空壳是 `platformApi`（0 方法）~~ → 🔄 **2026-10-21 复测：46 个页面里 44 个 import `services/api`，`pages/` 下 grep `mock` = 0 命中**（三个旧「写死页」都已重写并接入真实接口）；`services/api.js` 为 **23 个 api 模块 / 209 个方法**，`platformApi` 空壳已删除。 |
+| P0 | ~~鉴权与租户隔离生效~~ 🟡 鉴权已生效（`validateToken` 真验签、authorities 来自令牌、~~17 处 `@PreAuthorize` 覆盖 9/20 控制器~~ → 🔄 **2026-10-21：130 条 `@PreAuthorize` 覆盖 22/24 控制器**）；**读路径租户隔离仍未做**（ISS-050，靠逐聚合 `requireOwned`，无结构性保证） | [ISS-007/008/009/010](../qa/known-issues.md)（前三条已修）、[security-findings.md](../security-findings.md) M-03/M-06 |
 | P1 | 响应/错误码统一并建立映射字典 | [`../product/04-information-architecture.md`](../product/04-information-architecture.md) 交互一致性要求 |
 | P1 | 补读接口：物流渠道、库位、SKU、分类 | ["孤儿聚合"清单](../product/03-feature-map.md) |
 | P1 | 提供库存/订单/流水的导出接口 | R-207 |

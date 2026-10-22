@@ -5,6 +5,7 @@
 > **不允许**用行业惯例或历史记忆填补端点名、参数名、签名串——参数名错了适配器就是废的。
 > 计量口径：本文覆盖 11 种对接协议（`PlatformAuthType` 的 11 个枚举值，含本仓库自用的 `CUSTOM_SHOP`）的**规范核实**。
 > 适配器实现另算，实况见 §1 的表——核实到规范 ≠ 写好了适配器。
+> 🔄 **2026-10-21 复核**：`PlatformAuthType` 仍是 11 个值（`domain/platform/valueobject/PlatformAuthType.java:17-58`：`CUSTOM_SHOP/SHOPIFY/MAGENTO/AMAZON_SP_API/EBAY_SELL/TEMU/TIKTOK_SHOP/ALIEXPRESS/SHOPEE/MERCADO_LIBRE/OZON`），口径未漂；兄弟枚举 `PlatformName`（业务侧平台标识，不参与选适配器）现为 **12 个值**——`PlatformName.java:9-20` 的 11 家 + `OTHER`，其中 `WISH` 只在 `PlatformName` 里存在、`PlatformAuthType` 没有对应协议。两枚枚举不是同一套清单，写校验时别拿一边的成员去收另一边的值。
 
 ## 0. 为什么要这份文档
 
@@ -41,6 +42,8 @@
 `SHOPIFY/OZON/MAGENTO/ALIEXPRESS/CUSTOM_SHOP` 走静态令牌，过期只能操作员重填。
 七家新平台共 33 个主源文件 + 20 个契约测试类、238 个 `@Test`。
 
+> 🔄 **2026-10-21 复测：本节数字逐条命中，无需订正**。`infrastructure/platform` 下共 **61 个主源文件**、`implements Platform*` 的类 **41 个**——其中 **4 个是 `PlatformTokenExchange`**（`amazon/AmazonLwaTokenExchange`、`ebay/EbayOAuthTokenExchange`、`shopee/ShopeeTokenExchange`、`mercado/MercadoTokenExchange`），减掉正好 37 个适配器类；按协议数与原文一致：`CUSTOM_SHOP` 7（`HttpPlatform*` 七件套）、`SAMPLE` 6、`SHOPIFY` 4、`OZON` 4、`MAGENTO` 4、`EBAY_SELL` 3、`SHOPEE` 3、`AMAZON_SP_API` 2、`MERCADO_LIBRE` 2、`ALIEXPRESS` 2、`TIKTOK_SHOP`/`TEMU` 0（`infrastructure/platform/` 下根本没有 `temu/`、`tiktok/` 包）。七家新平台的 33 个主源文件 = aliexpress 3 + amazon 4 + ebay 5 + magento 6 + mercado 4 + ozon 5 + shopee 6；测试 20 个类 / **238 个 `@Test`**（aliexpress 17、amazon 30、ebay 26、magento 52、mercado 29、ozon 44、shopee 40）也逐项对得上。**唯一变动在总量**：platform 测试包现在是 **26 类 / 291 例**（`shopify/` 29、`oauth/PlatformOAuthClientTest` 7、根级共用件 17、七家新平台 238）；其中能与原文逐项对上的只有 Shopify 一项——原文 27 例，现为 **29 例**（`ShopifyAdapterMappingTest` 17 + `ShopifyAdminApiContractTest` 12）。§12 标准 5 的「456 个 `@Test`」即由此过期，已就地订正。
+
 | # | 平台 | `PlatformAuthType` | 认证形状 | 规范 | 订单 | 商品 | 发货回写 | 连通性测试 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | 通用自建店铺 | `CUSTOM_SHOP` | `X-API-Key`/`X-API-Secret` 头 | 🟢（本仓库自有约定） | 🟢 | 🟢 | — | 🟢 |
@@ -76,7 +79,9 @@ Mercado/AliExpress/Shopee 无发货回写端口，`PlatformCustomerFetcher`/`Pla
 
 `api_key`/`api_secret`/`access_token`/`refresh_token` 四列在仓储边界加解密（`CredentialCipher`，AES-256-GCM，
 前缀 `enc:v1:`，主密钥只从 `PLATFORM_CREDENTIAL_MASTER_KEY` 读，ADR-0009）。非敏感标识明文存，
-否则会占掉 255 字节的 `api_key` 列预算（密文比明文长 ~128 字节）。
+~~否则会占掉 255 字节的 `api_key` 列预算（密文比明文长 ~128 字节）~~ → 🔄 **2026-10-21 复测：这个理由已随列加宽失效**——四列现在都是 **`varchar(1024)`**（`PlatformIntegrationJpaEntity:69`、`:72`、`:78`、`:84`，实体注释写明是为「冒烟 7.5」的长令牌 `Data too long` 才放宽），活库 `SHOW CREATE TABLE` 一致；三条非敏感列也实测在位：`region varchar(32)`、`external_shop_id varchar(128)`、`marketplace_ids varchar(512)`。**但「非敏感标识明文存」的策略本身没变**，变的是它不再受 255 列宽约束，别再引用「128 字节预算」做论证。
+
+> 🔄 **2026-10-21 新发现（结构事实，影响 docs/db 与 ADR-0002）**：活库里 `platform_integrations` 的 `platform_name`、`auth_type`、`status` 三列都是 **MySQL 原生 `ENUM`**（标签与 Java 枚举常量一一对应，`platform_name` 12 个标签含 `OTHER`/`WISH`，`auth_type` 11 个），主键 `id` 是 **`binary(16)`**；本表由 Hibernate 6.6（Spring Boot 3.5.9）在 `ddl-auto: update` 下生成，这代 Hibernate 对 `@Enumerated(STRING)` 直接落原生 ENUM。后果有两条：①新增枚举常量时 `ddl-auto: update` **不会**扩展既有列的 ENUM 标签（它只做建表/加列），严格模式下写入新值会报 `1265 Data truncated`，必须手工 `ALTER TABLE … MODIFY`——这与 R-53「库结构可复现」的假设相冲突；②这是**模块级差异**：同样叫 `status`，本表有 DB 级约束，而 `purchase_orders.status` 是裸 `varchar(255)`（见 `purchase.md` 命名陷阱与 §6），`orders.status` 又是 ENUM——数据字典不能一律写成 varchar。全库现有 **26 个原生 ENUM 列**分布在 **18 张表**（6 张 `*_field_mappings` 各 2 个 = 12、6 张 `*_import_jobs` 各 1 个 = 6、`audit_logs`/`customers`/`inventory_records`/`logistics_orders`/`orders` 各 1 个 = 5、本表 3 个），仅 `platform_integrations` 用 `binary(16)` 主键。
 
 ### 2.2 令牌刷新（本轮补上的真实缺口）
 `refresh_token` 列一直存在，但**此前从未被用于任何令牌端点调用**——Shopify 是长期令牌所以没暴露问题，
@@ -88,6 +93,8 @@ Amazon SP-API 只有刷新令牌、没有长期令牌，不刷新就完全无法
 
 刷新结果**必须**落库：不落库则每次外呼都重新换令牌（Amazon 令牌端点限流 1 次/秒会立刻被打爆），
 且 Shopee/Mercado/TikTok 的刷新令牌是一次性的，不回写新值等于下次刷新必然失败。
+
+> 🔄 **2026-10-21 复测：上面这条「必须」只是设计意图，代码里没有强制执行**。`PlatformCredentials.java:77-84` 对 `repository.save(integration)` 的异常是 **catch 后 `log.error` 继续返回本次新令牌**，注释理由（`:80-81`）是「落库失败不该作废这次调用」。后果正是上一段所担心的：数据库瞬时故障时，Shopee/Mercado/TikTok 这类**一次性刷新令牌**已经作废、新值又没落库，下一次外呼只能拿旧 refresh token 去换，必然失败且只能重填凭据；Amazon 则会退化成每次外呼都刷新（限流风险）。要堵住得改成「落库失败即让本次调用失败并在错误信息里要求重填」，或在 outbox 里重试——目前两者都没有，记为 §12 标准 4 的残留缺口。
 
 各协议是否轮换刷新令牌（这决定 `rotatesRefreshToken()` 取值）：
 
@@ -334,6 +341,7 @@ scope 字面值（取自官方 spec `security`）：`.../sell.fulfillment`、`..
 
 1. 配好主密钥：`export PLATFORM_CREDENTIAL_MASTER_KEY=<32字节随机密钥的Base64>`。
    **不设的话 `CredentialCipher` 只打 WARN 然后静默关闭加密**（ISS-011 未关）。
+   🔄 **2026-10-21 补测**：`application.yml:66` 的默认值是空串（`${PLATFORM_CREDENTIAL_MASTER_KEY:}`），`scripts/docker/docker-compose.yml` 与 `scripts/docker/mysql/init/01-init.sql` 都没有注入这个变量，全仓也搜不到其它注入点——**本机这套栈当前处于「加密关闭」状态**。另有一条原文没写的分支：密钥填了但**不是 32 字节 Base64** 时，`CredentialCipher.java:120` 会按 SHA-256 口令派生并再打一条 WARN，口径是「能跑但不合生产要求」。好消息是活库 `platform_integrations` **0 行**，即目前不存在已落库的明文凭据；风险窗口从「第一次按第 3 步建集成」开始。
 2. 起后端 → 打开配置页（或直接 `GET /api/platform-integrations/auth-specs`）看每家要填什么。
 3. 建集成：`POST /api/platform-integrations`，`authType` 选协议，按 `requiredFields` 填。
 4. `POST /api/platform-integrations/{id}/test-connection` —— 这一步是 ISS-064 一直缺的「真实一次」；
@@ -348,9 +356,9 @@ scope 字面值（取自官方 spec `security`）：`.../sell.fulfillment`、`..
 | 1 | 九家平台的端点/认证/签名/分页都有公开官方出处 | 🟢 8 家成立；Temu 明确不成立并记为 ⚪ |
 | 2 | 每家都有按 `PlatformAuthType` 注册的适配器，缺端口报明确错误码 | 🟡 7 家（Amazon/eBay/速卖通/Shopee/Mercado/Ozon/Magento）已注册并有契约测试；TikTok Shop 与 Temu 仍为 0，两家都卡在「当前代接口规范只在登录后的卖家/Partner Center 里」（§10、§10.1）；缺端口一律 `PLATFORM_ADAPTER_NOT_FOUND` |
 | 3 | 凭据不落明文、不出现在出参与日志 | 🟢（`PlatformToken.toString` 亦掩码） |
-| 4 | `refresh_token` 真正被使用且轮换值回写 | 🟢 `PlatformCredentials.resolve` 已接进 8 个应用服务的 10 处取凭据点（拉单/商品/仓库/客户/财务/物流/连通性测试/发货回写），OAuth 协议在令牌缺失或临期时先换再回填落库。真实一次成功调用仍归标准 6 |
-| 5 | 有 fixture 契约测试断言签名可复算、请求形状、翻页推进、429 退避 | 🟢 全仓 456 个 `@Test` 全绿；七家新平台 238 例 + Shopify 27 例 + 共用令牌解析 7 例（`PlatformOAuthClientTest`）。429 退避在 `PlatformHttpExchange` 一处覆盖，各家契约测试复用 |
-| 6 | 真实平台一次成功调用 | 🔴 仍未做（ISS-064），要等用户填钥匙 |
+| 4 | `refresh_token` 真正被使用且轮换值回写 | 🟢 `PlatformCredentials.resolve` 已接进 8 个应用服务的 10 处取凭据点（拉单/商品/仓库/客户/财务/物流/连通性测试/发货回写），OAuth 协议在令牌缺失或临期时先换再回填落库。真实一次成功调用仍归标准 6。🔄 **2026-10-21 逐处复核仍成立**：`OrderImportApplicationService:439`、`PlatformIntegrationApplicationService:213,256`、`ProductImportApplicationService:418`、`FinanceImportApplicationService:421`、`ShopWarehouseApplicationService:127`、`WarehouseImportApplicationService:345`、`LogisticsImportApplicationService:492`、`CustomerImportApplicationService:384,400` = 8 个类 / 10 处；`resolve()` 内的回填在 `PlatformCredentials:75-78`（`applyToken` 后 `repository.save`，仅轮换协议带新 refresh token） |
+| 5 | 有 fixture 契约测试断言签名可复算、请求形状、翻页推进、429 退避 | 🟢 ~~全仓 456 个 `@Test` 全绿~~ → 🔄 **2026-10-21 实测：全仓 801 个 `@Test`，最近一次 `mvn -o test` 为 102 个测试类 / 801 例 / 0 失败**（与 `@Test` 计数 801 完全吻合，无 `@ParameterizedTest`）；七家新平台 238 例 + Shopify ~~27~~ → 🔄 **29 例**（`ShopifyAdapterMappingTest` 17 + `ShopifyAdminApiContractTest` 12）+ 共用令牌解析 7 例（`PlatformOAuthClientTest`）。429 退避在 `PlatformHttpExchange` 一处覆盖，各家契约测试复用 |
+| 6 | 真实平台一次成功调用 | 🔴 仍未做（ISS-064），要等用户填钥匙。🔄 **2026-10-21 补证：`platform_integrations` 活库 0 行**——不只是「没做过真实调用」，本环境连一条集成记录都还没有，§11 的第 3 步起从未执行过 |
 | 7 | 配置界面能自助回答「这家要填哪几把钥匙」 | 🟢 `GET /api/platform-integrations/auth-specs` |
 
 标准 6 没做就不要再说「已对接完成」——这正是 ISS-064 立 issue 的理由，本轮不改变那个结论。

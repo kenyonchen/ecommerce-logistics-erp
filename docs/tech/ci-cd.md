@@ -150,8 +150,8 @@ jobs:
 | 检查 | 实现 | 失败条件 |
 |---|---|---|
 | 端点 ↔ `api.md` | 从 `/v3/api-docs`（或 javaparser 扫 `@*Mapping`）提取端点集合，与 `docs/api/api.md` §4 表格比对 | 数量或路径不一致（当前基线：~~**100 个端点**、13 控制器~~ → ~~2026-01-25 重测 196 个端点、20 控制器~~ → **2026-10-10 重测 214 个端点、24 控制器**，口径见 [api.md §4](../api/api.md)；旧文档写 83、再改 100，正是这种漂移。⚠️ 复算方式：`grep -cE "@(Get\|Post\|Put\|Delete\|Patch)Mapping"` 逐控制器求和，**不含 `@RequestMapping` 类前缀**） |
-| 实体 ↔ `schema.sql` | `git diff --name-only` 命中 `**/jpa/entity/*JpaEntity.java` 时，要求同一 PR 修改 `docs/db/schema.sql` | 命中实体但未改快照（快照基线已于 **ISS-038** 补齐：42 张表） |
-| OpenAPI 注解 | 统计 `@Tag`（类）与 `@Operation`（方法）覆盖率 | < 100%（~~当前实测 13/13、100/100，守住即可~~ → **2026-01-25 实测 20 个控制器 / 20 个 `@Tag`，方法级 `@Operation` 亦全覆盖**；新增控制器时记得补 `@Tag`，否则该门禁会拦） |
+| 实体 ↔ `schema.sql` | `git diff --name-only` 命中 `**/jpa/entity/*JpaEntity.java` 时，要求同一 PR 修改 `docs/db/schema.sql` | 命中实体但未改快照（快照基线已于 **ISS-038** 补齐：~~42 张表~~ → 🔄 **2026-10-21：45 张基表**，`docs/db/schema.sql` 的 45 条 `CREATE TABLE` 已与 `information_schema` 逐表对齐） |
+| OpenAPI 注解 | 统计 `@Tag`（类）与 `@Operation`（方法）覆盖率 | < 100%（~~当前实测 13/13、100/100，守住即可~~ → **2026-01-25 实测 20 个控制器 / 20 个 `@Tag`，方法级 `@Operation` 亦全覆盖**；新增控制器时记得补 `@Tag`，否则该门禁会拦 → 🔄 **2026-10-21 实测 24 个控制器 / 24 个 `@Tag`、214 个方法 / 214 个 `@Operation`**） |
 
 ## 7. 接入顺序（务实版）
 

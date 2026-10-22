@@ -94,3 +94,11 @@
 - **`update` 静默漏建表的实测证据（ISS-049）**：6 张 `*_import_job_errors` 的行号列名为 `row_number`，而 `ROW_NUMBER` 是 MySQL 8 保留字，Hibernate 生成的 DDL 未加引号 → `create table` 报 `ERROR 1064`，随后 `alter table add constraint FK…` 又报「表不存在」。Hibernate **只打 WARN，启动照样成功**，于是这 6 张表在库里根本不存在、导入错误明细写入功能整体不可用。实体侧已把物理列改名为 `line_number`（Java 字段名不变）。
   这正是本 ADR「后果」段预言的失效模式第一次真实发生：**结构问题不会以失败告终，而是以"表不存在但系统在跑"告终**。若走 Flyway，1064 会在迁移阶段直接中断。
 - 因此「复审触发条件」第 2 条（无法用 `update` 表达的结构变更）已部分触达——本次是靠**改列名绕开**，代价是零迁移风险（表本就从未建成），但下次遇到"已存在的表要改类型"（如 ISS-023 的 `DOUBLE`→`DECIMAL`）就没有这条退路。
+
+## 更新（2026-10-21 复测）
+
+决策**未变**（仍为 `ddl-auto: update`），正文与 2026-01-25 段的规模数字、以及「`update` 到底会做什么」补三条实测：
+
+1. **规模再对齐**：43 个 `@Table` 实体 + 2 张 `@ElementCollection` 集合表 = **45 张基表**（活库 `information_schema` 实测 45 张，逐一对上）；`@Mapper` 仍为 **12**；仓储侧实测 **30 个 `*RepositoryImpl` + 28 个 `JpaRepository` 接口**。上文 2026-01-25 的「40 + 2 = 42 张」与「26 / 26 / 26」均过期。
+2. **新证据：Hibernate 6.6 会把 `@Enumerated(STRING)` 落成 MySQL 原生 `ENUM`，而 `update` 不会扩展已有列的标签集合**。活库现有 **26 个原生 ENUM 列 / 18 张表**（标签与 Java 枚举常量逐一对应，如 `platform_integrations.auth_type` 的 11 个、`platform_name` 的 12 个）；`platform_integrations.id` 是 **`binary(16)`**，是全库唯一的 binary 列（也只有该实体用 `UUID` 主键）。后果段的「只增不删/不改类型」由此再扩一层：**新增一个枚举常量时，`update` 只做建表/加列，不会 `MODIFY` 既有列去补标签**，严格模式下写入新值直接报 `1265 Data truncated`，必须手工 `ALTER TABLE … MODIFY`。这与「复审触发条件」第 2 条、以及 R-53「结构可复现」同时冲突；也意味着数据字典里不能把 `status` 一律写成 varchar（`orders.status` 是 ENUM，`purchase_orders.status` 是裸 varchar(255)，两种都真实存在）。
+3. **附带义务 #3 的实际履行状态（重要）**：ISS-023 那轮的手工迁移脚本 `V7` / `V7.1` / `V7.2` / `V7.2.1`（另加 2 个 `.undo.sql`）**只存在于 `backend/target/classes/db/migration/`**——`backend/src/main/resources/db/` 目录不存在，`git log --all` 与 `git ls-files` 均查不到任何迁移脚本 ⇒ **这套迁移从未进版本库、无法重放**，`schema.sql` 快照也无从据此复核。V7 得出的机制结论（`update` 从不 `MODIFY` 既有列）仍然成立且已在上表第 3 条记录，但**脚本本身不能当作可复用资产引用**；要在新环境重建金额列宽度，只能按 known-issues §20 的记录重写。这也让「迁移路径」第 4/6 步（由快照生成 `V1__baseline.sql`、后续走 `V2__xxx.sql`）在当前仓库状态下**无历史脚本可继承**。

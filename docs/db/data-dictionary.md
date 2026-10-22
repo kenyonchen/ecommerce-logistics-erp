@@ -1,18 +1,18 @@
 # 数据字典
 
-> 对象：**40 张 `@Table` 表** + 2 张 `@ElementCollection` 隐式集合表（`user_roles`、`role_jpa_entity_permissions`）= 运行时库 **42 张表**（计量时点 2026-01-25 工作树，逐列与 `Hibernate ddl-auto=update` 生成的实库比对一致；旧记录 21→24→30 均已过期）；**26 个领域仓储接口 + 26 个 Spring Data JPA 接口 + 26 个 `*RepositoryImpl` + 12 个 MapStruct 转换器**（`InventoryRecord`、各 `*ImportJob`/`*FieldMapping` 的转换写在 RepositoryImpl 内，无独立 Mapper）。
-> 生成时间：2026-01-25，逐文件核对自 `infrastructure/persistence/jpa/entity/`。
+> 对象：**43 张 `@Table` 表** + 2 张 `@ElementCollection` 隐式集合表（`user_roles`、`role_jpa_entity_permissions`）= 运行时库 **45 张表**（🔄 2026-10-21 直连本机 MySQL `information_schema` 实测；旧记录 21→24→30→40→42 均已过期）；**30 个领域仓储接口 + 29 个 Spring Data JPA 接口 + 30 个 `*RepositoryImpl` + 12 个 MapStruct 转换器**（`InventoryRecord`、各 `*ImportJob`/`*FieldMapping` 的转换写在 RepositoryImpl 内，无独立 Mapper；`OverviewStatisticsRepositoryImpl` 没有自有 JPA 接口，注入 7 个他域 JPA 接口做统计读模型）。
+> 生成时间：2026-01-25；🔄 2026-10-21 对本机实库复核，补登 `shops`、`audit_logs`、`system_configs` 三张表。
 
 ## 1. Schema 的真实来源（务必先读）
 
 | 事实 | 值 |
 |---|---|
 | 建表方式 | `spring.jpa.hibernate.ddl-auto: update` —— **由 Hibernate 依据实体注解自动建表/加列** |
-| 迁移工具 | **无**。未引入 Flyway / Liquibase，无 `db/migration`、无 `schema.sql`、无 `data.sql` |
+| 迁移工具 | **未引入 Flyway / Liquibase**（ISS-020 仍开放）。~~无 `db/migration`、无 `schema.sql`、无 `data.sql`~~ → 🔄 **2026-10-21 订正：`docs/db/schema.sql` 是本文件配套的快照（不是执行入口）；`backend/target/classes/db/migration/` 下另有 V7 / V7.1 / V7.2 / V7.2.1 四个手工迁移脚本，但它们只在构建产物里、`git ls-files` = 0，**未进版本库**（[ADR-0002](../adr/0002-hibernate-ddl-auto.md)）** |
 | 唯一权威 | JPA 实体代码。`docs/db/schema.sql` 是**快照**，不是执行入口 |
 | `update` 的语义 | 只建表、只加列；**从不删列、不改类型、不删表** → 实体里的历史冗余列会长期残留 |
 | 物理外键 | 仅由 @ManyToOne/@OneToOne 关联产生；裸 String 引用的列**没有外键** |
-| 索引 | ~~已有 9 个实体声明 `@Table(indexes=...)`（`customers`、`orders`、`products` 与三类导入任务表等）；其余多数表仍无显式索引；唯一约束来自 `@Column(unique=true)`（如 `customers.email`）~~ **2026-01-25 复测**：~~**18 个实体**声明了 `@Table(indexes=...)`、共 **27 处 `@Index`**（按 `@Index` 数分布：`OrderJpaEntity` 4、`LogisticsOrderJpaEntity`/`ProductJpaEntity` 各 3、`CustomerJpaEntity`/`ShopWarehouseJpaEntity` 各 2、其余 **13 个实体各 1**（6 张 `*_import_jobs` + 6 张 `*_field_mappings` + `logistics_channels`）；4+3+3+2+2+13 = 27）~~；另有 ~~**10 个实体 11 处 `@UniqueConstraint`**~~ → 🔄 **2026-03-22 复测：11 个实体 12 处**；~~**18 个实体**声明了 `@Table(indexes=...)`、共 **27 处 `@Index`**~~ → **19 个实体 / 30 处 `@Index`**（新增的是 `PurchaseOrderJpaEntity` 3 处：`idx_purchase_orders_tenant`/`_status`/`_created_at`；分布 `OrderJpaEntity` 4 + `LogisticsOrderJpaEntity`/`ProductJpaEntity`/`PurchaseOrderJpaEntity` 各 3 + `CustomerJpaEntity`/`ShopWarehouseJpaEntity` 各 2 + 其余 13 个实体各 1 ＝ 4+3+3+3+2+2+13 = 30）；运行时库 `information_schema.statistics` 实测已确认这三条索引存在。因此"仍无显式索引"的名单要**去掉 `purchase_orders`**：仍为 `users`/`roles`/`tenants`/`warehouses`/`inventory_records`/`locations`/`financial_transactions`/`platform_integrations` 等（实测 `warehouses` 只有 PK＋2 个 UNIQUE、`inventory_records` 只有 PK＋2 个外键索引、`locations` 只有 PK＋1 个外键索引、`financial_transactions` **只有 PK**）（详见 R-06）；唯一约束也来自 `@Column(unique=true)`（如 `customers.email`、`users.username`） |
+| 索引 | ~~已有 9 个实体声明 `@Table(indexes=...)`（`customers`、`orders`、`products` 与三类导入任务表等）；其余多数表仍无显式索引；唯一约束来自 `@Column(unique=true)`（如 `customers.email`）~~ **2026-01-25 复测**：~~**18 个实体**声明了 `@Table(indexes=...)`、共 **27 处 `@Index`**（按 `@Index` 数分布：`OrderJpaEntity` 4、`LogisticsOrderJpaEntity`/`ProductJpaEntity` 各 3、`CustomerJpaEntity`/`ShopWarehouseJpaEntity` 各 2、其余 **13 个实体各 1**（6 张 `*_import_jobs` + 6 张 `*_field_mappings` + `logistics_channels`）；4+3+3+2+2+13 = 27）~~；另有 ~~**10 个实体 11 处 `@UniqueConstraint`**~~ → 🔄 **2026-03-22 复测：11 个实体 12 处**；~~**18 个实体**声明了 `@Table(indexes=...)`、共 **27 处 `@Index`**~~ → **19 个实体 / 30 处 `@Index`**（新增的是 `PurchaseOrderJpaEntity` 3 处：`idx_purchase_orders_tenant`/`_status`/`_created_at`；分布 `OrderJpaEntity` 4 + `LogisticsOrderJpaEntity`/`ProductJpaEntity`/`PurchaseOrderJpaEntity` 各 3 + `CustomerJpaEntity`/`ShopWarehouseJpaEntity` 各 2 + 其余 13 个实体各 1 ＝ 4+3+3+3+2+2+13 = 30）；运行时库 `information_schema.statistics` 实测已确认这三条索引存在。因此"仍无显式索引"的名单要**去掉 `purchase_orders`**：仍为 `users`/`roles`/`tenants`/`warehouses`/`inventory_records`/`locations`/`financial_transactions`/`platform_integrations` 等（实测 `warehouses` 只有 PK＋2 个 UNIQUE、`inventory_records` 只有 PK＋2 个外键索引、`locations` 只有 PK＋1 个外键索引、`financial_transactions` **只有 PK**）（详见 R-06）；唯一约束也来自 `@Column(unique=true)`（如 `customers.email`、`users.username`）<br>🔄 **2026-10-21 实测：21 个实体 / 34 处 `@Index`，12 个实体 / 14 处 `@UniqueConstraint`**——新增的 `ShopJpaEntity` 贡献 2 个索引（`idx_shops_tenant`、`idx_shops_integration`）+ 2 个唯一约束（`uk_shops_tenant_code`、`uk_shops_marketplace`），`AuditLogJpaEntity` 贡献 2 个索引（`idx_audit_logs_tenant_created`、`idx_audit_logs_actor_result_created`）；运行时库 `information_schema.statistics` 均已确认存在。 |
 
 **要变更表结构的正确顺序**：改实体 → 本地重启验证 Hibernate 生成的 DDL（`show-sql: true` 已开启）→ 手工把变更同步进 `docs/db/schema.sql`。若要把 schema 变为可评审的制品，需按 [ADR-0002](../adr/0002-hibernate-ddl-auto.md) 记录的迁移路径切换到 Flyway。
 
@@ -62,8 +62,12 @@
 | 40 | `shop_warehouse_import_job_errors` | ShopWarehouseImportJobErrorJpaEntity | platform | String | — | 随 ShopWarehouseImportJobRepository |
 | 41 | `shop_warehouse_field_mappings` | ShopWarehouseFieldMappingJpaEntity | platform | String | ShopWarehouseFieldMappingRepository | ShopWarehouseFieldMappingJpaRepository |
 | 42 | `user_roles` | （`UserJpaEntity:65` 的 `@CollectionTable` 集合表） | tenant | 复合（user_id + role） | — | 随 UserRepository |
+| 43 | `shops` | ShopJpaEntity | shop | String（应用层 UUID，`VARCHAR(36)`） | ShopRepository | ShopJpaRepository |
+| 44 | `audit_logs` | AuditLogJpaEntity | audit | String（应用层 UUID，`VARCHAR(36)`） | AuditLogRepository | AuditLogJpaRepository |
+| 45 | `system_configs` | SystemSettingJpaEntity | config | **String 业务键**（`config_key`，`VARCHAR(64)`） | SystemSettingRepository | SystemSettingJpaRepository |
 
 > 🆕 第 32–42 行为 2026-01-25 补齐：上方 §2 的清单原先只到 31 行，物流/财务/店仓三套导入上下文（`*_import_jobs`、`*_import_job_errors`、`*_field_mappings`）、`shop_warehouses` 与 `user_roles` 集合表未登记，导致清单与运行时库的 42 张表对不上。逐列定义见 [schema.sql](./schema.sql)（已同步）。
+> 🆕 第 43–45 行为 2026-10-21 补登：`shops`（[ADR-0013](../adr/0013-shop-entity-and-platform-connection-split.md) 引入）、`audit_logs`、`system_configs` 在本机库中**真实存在**（分别 0 / 8181 / 12 行），但此前的清单与 `schema.sql` 都没有它们，导致「42 张表」的口径比实库少 3 张。
 > ⚠️ 其中 6 张 `*_import_job_errors` 在 2026-01-25 之前**在真实库里根本不存在**——行号列 `row_number` 撞 MySQL 8 保留字使建表 DDL 失败，已改名 `line_number` 修复（R-13 / ISS-049）。
 
 列的完整定义见 [schema.sql](./schema.sql)，本文件不重复；下面只记录**列级语义**中不自明或有坑的部分。
@@ -107,17 +111,25 @@
 
 
 ### 平台集成
-- `platform_integrations.api_key` / `api_secret`：**明文列**，无加密注解、无脱敏。写入即落库，且 `GET /api/platform-integrations/{id}` 会把 `apiSecret` 原样返回给前端。
+- `platform_integrations.api_key` / `api_secret`：~~**明文列**，无加密注解、无脱敏。写入即落库，且 `GET /api/platform-integrations/{id}` 会把 `apiSecret` 原样返回给前端。~~ → 🔄 2026-03-22 起已在仓储边界加密（`CredentialCipher`，AES-256-GCM），API 出参只给掩码/布尔；主密钥未注入时会降级明文，详见 R-12。
+
+### 店铺 / 审计 / 系统配置（2026-10-21 补登）
+- `shops.tenant_id`：**`VARCHAR(64) NOT NULL`**（其余业务表多为 255 且可空），并有 `idx_shops_tenant`；两个唯一键都是租户内唯一：`uk_shops_tenant_code(tenant_id, shop_code)`、`uk_shops_marketplace(tenant_id, platform, marketplace_id)`——`marketplace_id` 是**单值列**，一店多站点靠多行表达。
+- `shops.platform`（`VARCHAR(32)`）、`auth_status`（`VARCHAR(24)`）、`push_back_policy`（`VARCHAR(16)`）都是**普通字符串**，不是 MySQL ENUM；`platform` 也不与 `platform_integrations.platform_name` 的 ENUM 共享约束。
+- `shops` 的四个凭据列走 `CredentialCipher` 加密（`ShopRepositoryImpl:184` 起）：`api_key`/`api_secret` 各 `VARCHAR(512)`，`access_token`/`refresh_token` 各 `VARCHAR(2048)`——比 `platform_integrations` 的 255/1024 更宽，密文膨胀余量更大。
+- 🔴 `shops.integration_id` 是 `VARCHAR(36)`，而 `platform_integrations.id` 是 **`BINARY(16)`**：类型不一致且**没有外键**，同值无法直接 join（ADR-0013 §9 的预测已在实库兑现）。
+- `audit_logs`：只追加不改删；`id VARCHAR(36)`，`tenant_id VARCHAR(36) NULL`（平台级操作没有租户），`result` 是原生 `ENUM('FAILURE','SUCCESS')`，两个复合索引 `(tenant_id,created_at)` 与 `(actor_name,result,created_at)`。实测 8181 行。
+- `system_configs`：**主键是 `config_key VARCHAR(64)`**（全库唯一不是 `id` 形状的单列 PK 之一），没有 `tenant_id`、没有 `id` 列；`updated_at` 由应用层写入。实测 12 行。
 
 ## 4. 枚举存储口径（三套并存 —— 最需要统一的部分）
 
 | 口径 | 出现位置 | 存储值示例 |
 |---|---|---|
-| A. `@Enumerated(EnumType.STRING)` | `orders.status`、`logistics_orders.status`、`inventory_records.status`、`customers.status`、`platform_integrations.platform_name/status` | `PENDING`、`CONFIRMED` |
+| A. `@Enumerated(EnumType.STRING)` | `orders.status`、`logistics_orders.status`、`inventory_records.status`、`customers.status`、`platform_integrations.platform_name/status/auth_type`、`audit_logs.result` | `PENDING`、`CONFIRMED` |
 | B. 手写 String + 领域 code | `purchase_orders.status`、`financial_transactions.type/status`（经 `*Mapper` 转换） | 小写 `pending`、`income` |
 | C. 自由 String（构造函数默认值） | `tenants.status`、`users.status` | `ACTIVE`（无校验） |
 
-**没有任何列使用 `EnumType.ORDINAL`**——这一点是安全的（枚举新增常量不会导致历史数据错位）。
+**没有任何列使用 `EnumType.ORDINAL`**——这一点是安全的（枚举新增常量不会导致历史数据错位）。<br>🔄 **2026-10-21 实库口径：MySQL 原生 `ENUM` 列共 26 个 / 18 张表**（旧记录 24 / 17 已过期）。构成：6 张 `*_field_mappings` × 2（`target_field`+`transform`）、6 张 `*_import_jobs` × 1（`status`）、5 张单状态表各 1（`customers.status`、`orders.status`、`logistics_orders.status`、`inventory_records.status`、`audit_logs.result`）、`platform_integrations` × 3（`platform_name`/`status`/`auth_type`），合计 12+6+5+3 = 26。⚠️ Hibernate 6.6 对 `@Enumerated(STRING)` 生成原生 ENUM，而 `ddl-auto: update` **从不 MODIFY 既有列**——新增枚举常量不会自动追加到 ENUM 标签，严格模式下写入即 `ERROR 1265`（[ADR-0002](../adr/0002-hibernate-ddl-auto.md)）。
 
 口径 A 内部还有 **领域枚举名 ≠ JPA 枚举名** 的桥接，靠 MapStruct/手写 switch 硬映射，新增常量极易漏改：
 
@@ -145,11 +157,14 @@ API 查询参数按**领域枚举常量名**绑定（见 [api.md §5](../api/api
 | LogisticsOrderJpaRepository | `findByLogisticsOrderNumber` / `findByOrderId` | |
 | LogisticsChannelJpaRepository | `findByChannelCode` / `findByChannelName` / `findByActiveTrue` | |
 | PlatformIntegrationJpaRepository | `findByStatus` | |
+| ShopJpaRepository | `findByIdAndTenantId` / `findByTenantIdOrderByShopCodeAsc` / `findByTenantIdAndPlatform` / `findByTenantIdAndShopCode` / `existsByTenantIdAndShopCode` / `existsByTenantIdAndPlatformAndMarketplaceId` / `countByTenantId` | **每个查询都带 `tenantId`**，刻意不暴露 `findById`/`findAll`（ADR-0013 §4.3） |
+| AuditLogJpaRepository | `countByActionInAndActorNameAndResultAndCreatedAtAfter` + `JpaSpecificationExecutor` | 分页检索走 Specification（`AuditLogRepository:29`） |
+| SystemSettingJpaRepository | （无自定义方法） | 按 `config_key` 主键读写 |
 | PurchaseOrderJpaRepository | `findByStatus(String)` / `findBySupplierId` / `findByWarehouseId` | |
 | FinancialTransactionJpaRepository | `findByStatus(String)` / `findByType(String)` / `findByReferenceIdAndReferenceType` | |
 | CustomerJpaRepository | （无自定义方法） | |
 
-**没有任何列表查询支持分页、排序、时间范围或关键字检索**（仓储层就没有 `Pageable` 方法签名）。
+~~**没有任何列表查询支持分页、排序、时间范围或关键字检索**（仓储层就没有 `Pageable` 方法签名）。~~ → 🔄 **2026-10-21 更正：这句话早已不成立**——领域仓储里有 **14 个 `PageResult<T>` 方法 / 14 个接口**（`audit`、`customer`、`finance`、`logistics`、`order`、`product`、`purchase`、`warehouse` 八个上下文；含 6 个 `*ImportJobRepository.findByTenantId(..., page, size)`），分页参数是 `int page, int size` 而非 `Pageable`，所以按 `Pageable` 搜索会误判为 0。仍无分页的只剩 `ShopRepository`（返回 `List`）与 `SystemSettingRepository`（`findAll`，配置项少）。
 
 ## 6. 风险清单
 
@@ -163,13 +178,14 @@ API 查询参数按**领域枚举常量名**绑定（见 [api.md §5](../api/api
 | R-04 | 时间戳填充三套并存 | 中 | 构造器 now（Role/Tenant/User，且 `updated_at` **不会自动刷新**）、纯应用层赋值（Customer/PlatformIntegration，忘赋值直接违反 NOT NULL）、手工 set epoch（Order/Logistics/Inventory）。全仓无 `@EnableJpaAuditing`/`@PrePersist`/`@CreationTimestamp`。<br>✅ 2026-01-25：`PurchaseOrder.Builder` 原先丢弃 `createdAt`（字段曾为 `final`，读改写时一律重取 `now()`），导致每次 approve/in-transit/delivered 都把 `created_at` 刷新——已改为 builder 还原原值，仅新建时才 `now()` 兜底（ISS-048），实库回归验证连续 3 次写入后 `created_at` 不变 |
 | R-05 | 唯一约束缺失 | 高 | `inventory_records(sku_code,warehouse_id)`、`locations(warehouse_id,location_code)`、~~`purchase_order_items(purchase_order_id,sku_code)`~~、`financial_transactions(reference_id,reference_type)`——2026-01-25 复测实库这 4 张表仍只有 PRIMARY + FK 索引，结论不变 → 🔄 **2026-03-22 复测：4 条里已补 1 条**，`purchase_order_items` 现在有 `uk_po_item(purchase_order_id, sku_code)`（声明在 `PurchaseOrderItemJpaEntity:25-26`，运行时库 `information_schema.statistics` 实测该索引 `non_unique=0` 已建），所以 R-05 还剩 **3 条**：`inventory_records`（实测只有 PK + `location_id`/`warehouse_id` 两个外键索引）、`locations`（只有 PK + `warehouse_id` 外键索引）、`financial_transactions`（**只有 PK，连外键索引都没有**） |
 | R-06 | 外键列无索引 | 中 | ⚠️ 2026-01-25 更正：并非「所有」。① 声明了 `@ManyToOne`/`@OneToMany(mappedBy)` 的关联列由 MySQL 自动建 FK 索引（`purchase_order_items.purchase_order_id`、`inventory_records.warehouse_id`/`location_id`、`locations.warehouse_id`、6 张 `*_import_job_errors.job_id` 等）；② `*_import_jobs`/`*_field_mappings`/orders/customers/products/logistics_orders/shop_warehouses 的 `tenant_id` 已带显式 `@Index`（全仓 27 个 `@Index`）。**仍无索引的 `tenant_id`：`users`、`roles`、`warehouses`、`platform_integrations`、`financial_transactions`、`purchase_orders`（6/23）**；裸字符串引用列（`order_items.sku_code`、`inventory_records.sku_code`、`financial_transactions.reference_id`）依旧全表扫描 |
-| R-07 | 多租户隔离缺位 | 高 | ⚠️ 2026-01-25 实测：42 张表里 **23 张有 `tenant_id`、19 张没有**（旧口径「24 张里 5 张」已过期，本次给 `purchase_orders` 补了列）。但**有列 ≠ 隔离生效**：`PurchaseApplicationService` 的 `findAllPurchaseOrders()` / `findPurchaseOrdersByStatus()` / `findPurchaseOrderById()` 均不带租户条件，列表与详情仍是跨租户可读（ISS-050）；`users.username/email` 全局唯一与租户模型冲突也未变 |
+| R-07 | 多租户隔离缺位 | 高 | ⚠️ 2026-01-25 实测：~~42 张表里 **23 张有 `tenant_id`、19 张没有**~~ → 🔄 **2026-10-21 实库复测：45 张表里 25 张有 `tenant_id`、20 张没有；其中 20 张的 `tenant_id` 建了索引**（`information_schema.statistics` 去重）。`shops`/`audit_logs` 有列有索引，`system_configs` 两者都无。但**有列 ≠ 隔离生效**：~~`PurchaseApplicationService` 的 `findAllPurchaseOrders()` / `findPurchaseOrdersByStatus()` / `findPurchaseOrderById()` 均不带租户条件，列表与详情仍是跨租户可读（ISS-050）~~ → 🔄 **2026-10-21：采购域的这条例子已过期**，它现在由仓储内强制租户条件（`PurchaseOrderRepositoryImpl:68-75`）+ `TenantAccessGuard.scopedTenantId`（`PurchaseApplicationService:135`）承担；ISS-050 的残留形态是**其他上下文的读路径仍靠逐聚合 `requireOwned`（28 处 / 8 个文件），没有结构性保证**（[ADR-0003](../adr/0003-multi-tenancy-isolation.md)）。`users.username/email` 全局唯一与租户模型冲突也未变 |
 | R-08 | 软删除无统一策略 | 中 | `active` 布尔（products/skus/warehouses/locations/channels）、`DELETED` 状态（customers）、`orphanRemoval` 硬删除（其余）三种并存 |
 | R-09 | 金额类型混用 | 高 | ⚠️ 2026-01-25 更正类型口径：未显式声明 precision 的 `BigDecimal` 实际生成 **`DECIMAL(38,2)`**（`purchase_orders.total_amount`、`purchase_order_items.unit_price`/`total_price`、`financial_transactions.amount`），只有 `payment_infos.amount` 显式写了 `precision=19,scale=2` 才是 `DECIMAL(19,2)`。`DOUBLE`（orders/order_items/skus/logistics_*）与 DECIMAL 并存、浮点用于货币有精度风险这两点不变。✅ **2026-10-10 已收口（ISS-023 关闭，口径见 §2 第 95 行与 [../qa/known-issues.md](../qa/known-issues.md) §20）**：R-09 描述的**两个半边同闭** —— ① 全库无浮点金额列（`data_type IN ('double','float','real')` 且列名含金额词根 = **0 行**，浮点只剩两个重量列）；② 定点金额只剩**两种**宽度（14 × `19,2` + 每克费率 `19,4`，`decimal` 且不等于这两种宽度的列 = **0 行**）。**「是 DECIMAL」不等于「达标」**是这条风险真正的内容；常驻位是 `smoke.sh` §14 的 `14.0`/`14.0b`/`14.1` 与静态守卫 `MoneyPrecisionGuardTest`（15 字段名册 + 覆盖计数 + 反向自证） |
 | R-10 | 时间类型混用 | 中 | `DATETIME(6)` 与 `BIGINT` epoch 并存 |
-| R-11 | 主键策略与命名不统一 | 中 | String 领域赋值（15 表）/ UUID @GeneratedValue（2 表）/ IDENTITY 自增（1 表）；PK 列名 `id` vs `purchase_order_id` vs `transaction_id` |
-| R-12 | 敏感数据明文 | 高 → 🟢已缓解（有运维门槛） | ~~`platform_integrations.api_secret`、`api_key` 明文入库并原样返回 API。**2026-01-25 复核：仍未修**——本轮明确排除该项（同 ISS-011）~~ → 🔄 **2026-03-22 按代码复测：已修**。列里存的是 AES-256-GCM 密文（`enc:v1:base64(iv‖ct‖tag)`，`infrastructure/security/CredentialCipher.java:18,31,33`），加解密收敛在仓储边界（`PlatformIntegrationRepositoryImpl:80-92`，含 `access_token`/`refresh_token` 共四列）；API 出参不含明文（`PlatformIntegrationDto:33,35,37` 只给 `apiKeyMasked` + `hasApiSecret`/`hasAccessToken`），`docs/db/schema.sql:420-422` 的列注释已同步为密文口径。**两个必须记住的数据事实**：① `platform.credential.master-key` 未注入时（`application.yml:60` 是 `${PLATFORM_CREDENTIAL_MASTER_KEY:}` 空缺省）`CredentialCipher:42-44` 只 WARN 后**按明文读写**，此时本条风险原样存在；② 密文有膨胀——`api_key`/`api_secret` 仍是 `VARCHAR(255)`，约只容 180 字符原文，`access_token`/`refresh_token` 给到 1024 ≈ 740 字符（`schema.sql:437-438`）。修复前已入库的明文仍须平台侧轮换才算解除泄漏。 |
+| R-11 | 主键策略与命名不统一 | 中 | ~~String 领域赋值（15 表）/ UUID @GeneratedValue（2 表）/ IDENTITY 自增（1 表）；PK 列名 `id` vs `purchase_order_id` vs `transaction_id`~~ → 🔄 **2026-10-21 实库清点（45 张表）**：43 张单列 PK = `VARCHAR(255)` 37 + `VARCHAR(36)` 2（`audit_logs`、`shops`）+ `VARCHAR(64)` 2（`customers`、`system_configs.config_key`）+ `BINARY(16)` 1（`platform_integrations`）+ `BIGINT` 1（`purchase_order_items`）；另 2 张复合 PK（`user_roles`、`role_jpa_entity_permissions`）。**PK 列名非 `id` 的共 3 处**：`purchase_orders.purchase_order_id`、`financial_transactions.transaction_id`、`system_configs.config_key` |
+| R-12 | 敏感数据明文 | 高 → 🟢已缓解（有运维门槛） | ~~`platform_integrations.api_secret`、`api_key` 明文入库并原样返回 API。**2026-01-25 复核：仍未修**——本轮明确排除该项（同 ISS-011）~~ → 🔄 **2026-03-22 按代码复测：已修**。列里存的是 AES-256-GCM 密文（`enc:v1:base64(iv‖ct‖tag)`，`infrastructure/security/CredentialCipher.java:18,31,33`），加解密收敛在仓储边界（`PlatformIntegrationRepositoryImpl:80-92`，含 `access_token`/`refresh_token` 共四列）；API 出参不含明文（`PlatformIntegrationDto:33,35,37` 只给 `apiKeyMasked` + `hasApiSecret`/`hasAccessToken`），`docs/db/schema.sql:420-422` 的列注释已同步为密文口径。**两个必须记住的数据事实**：① `platform.credential.master-key` 未注入时（~~`application.yml:60`~~ → 🔄 2026-10-21 现 `:66`，值仍是 `${PLATFORM_CREDENTIAL_MASTER_KEY:}` 空缺省）`CredentialCipher:42-44` 只 WARN 后**按明文读写**，此时本条风险原样存在；② 密文有膨胀——`api_key`/`api_secret` 仍是 `VARCHAR(255)`，约只容 180 字符原文，`access_token`/`refresh_token` 给到 1024 ≈ 740 字符（`schema.sql:437-438`）。修复前已入库的明文仍须平台侧轮换才算解除泄漏。<br>🔄 **2026-10-21 范围补充**：`shops` 的 `api_key`/`api_secret`（512）/`access_token`/`refresh_token`（2048）四列也走同一个 `CredentialCipher`（`ShopRepositoryImpl:184` 起），列宽更宽；主密钥缺失时同样降级明文。 |
 | R-13 | 保留字撞名 | 中 | 🆕 2026-01-25（ISS-049，已修）：6 张 `*_import_job_errors` 的行号列原名 `row_number`，是 MySQL 8 保留字，Hibernate 未加引号 → `create table` 报 1064，这 6 张表在 `ddl-auto=update` 下**从未被建出来**，导入错误明细写入功能整体不可用。实体与快照统一改名为 `line_number` |
+| R-14 | 跨表 ID 类型不一致 | 中 | 🆕 2026-10-21：`shops.integration_id` 是 `VARCHAR(36)`，`platform_integrations.id` 是 **`BINARY(16)`**，且两列之间**没有外键**；同一条集成记录无法按裸值 join（[ADR-0013 §9](../adr/0013-shop-entity-and-platform-connection-split.md) 的预测已兑现）。同类：`audit_logs.tenant_id`/`shops.id` 用 `VARCHAR(36)`，而多数业务表 `tenant_id` 是 `VARCHAR(255)`、`shops.tenant_id` 是 `VARCHAR(64)` |
 
 ## 7. 建议的目标约束（切换到 Flyway 时一次性落地）
 

@@ -2,8 +2,9 @@
 
 > 用途：① 项目归档与技术底账；② 技术债评估与风险识别。
 > **复测日期：2026-03-22，全部数字由当日工作树实测得出**（非引用既有文档口径）。
+> 🔄 **2026-10-21 全局订正（以本块为准）**：本报告正文是 **2026-03-22 快照**；当前工作树已变为——主源码 **568** 个 `.java`；**24 控制器 / 214 端点**；`@PreAuthorize` **130 处注解（9 类级 + 121 方法级）/ 22 个控制器**，覆盖 **198/214 端点（92.5%）**；`@Transactional` **145 处 / 30 个文件**（`readOnly = true` 20 / `rollbackFor` 0）；`@Table` **43** 个、运行时库 **45** 张表；测试 **102 类 / 801 例**（0 failures / 0 errors / 0 skipped）。前端 `services/api.js`：user-web **23 个模块 / 209 个方法**、admin-web **6 个模块 / 35 个方法**，两端 `platformApi` **均已删除**，`pages/` 下 `mock` 字样 **0 处**。正文 §5、§7.2、§9、§10 中与本块冲突的数字均以本块为准（对应行已就地加订正注）；`inventory/*.csv` 仍是 2026-03-22 快照、**未按 2026-10-21 重生成**。
 > 计量口径：行数 = 文件字节流换行数（末行无换行符仍计 1 行）；排除 `target/`、`node_modules/`、`dist/`、`.git/`、`.idea/`。
-> 数据底账（本报告每个表格都可下钻）：[`inventory/`](inventory/)，共 15 张 CSV、含 202 条端点与 42 张表的逐条明细。
+> 数据底账（本报告每个表格都可下钻）：[`inventory/`](inventory/)，共 15 张 CSV、含 **202 条端点与 42 张表**的逐条明细（🔄 2026-10-21：CSV 仍是 2026-03-22 快照；当前实测为 **214 端点 / 45 张表**，见 §5/§6）。
 
 ## 0. 底账文件索引
 
@@ -36,13 +37,13 @@
 | 项 | 内容 |
 |---|---|
 | 仓库 | `ecommerce-logistics-erp`，分支 `main` |
-| 提交基线 | `bfbce09 分离用户端和管理端`（其下为 `7a237ab init`，共 2 个提交） |
-| 工作树状态 | **大量未提交改动**（后端 60+ 文件、前端、docs），统计以工作树而非 `HEAD` 为准 |
+| 提交基线 | ~~`bfbce09 分离用户端和管理端`（其下为 `7a237ab init`，共 2 个提交）~~ → 🔄 **2026-10-21 复测：共 5 个提交，`HEAD = c2a22ff 文档回写项目现状实测数据`**（其上依次 `6927f01 租户隔离增强与系统配置、审计服务新增`、`37415ac 同步最新代码`、`bfbce09`、`7a237ab`） |
+| 工作树状态 | ~~**大量未提交改动**（后端 60+ 文件、前端、docs），统计以工作树而非 `HEAD` 为准~~ → 🔄 **2026-10-21 复测：后端/前端工作树干净，未提交改动只剩本轮文档同步（`git status --short` 42 个文件 = `README.md` + 41 个 `docs/` 文件）**；本报告 2026-03-22 的数字仍按当时工作树口径读 |
 | 结构 | `backend/`（单 Maven 模块）、`frontend/user-web`、`frontend/admin-web`、`docs/`、`scripts/` |
 | 规模 | ~~744 个文件 / 105,902 行~~ ~~744 个文件 / 105,946 行~~ ~~744 个文件 / 105,983 行~~ **744 个文件 / 105,999 行**（🔄 2026-03-22 末次复测：本次一致性核对累计写入 +97 行 ＝ Markdown +66 ＋ inventory CSV +31，文件数未变；其中 +16 行来自仓库/采购章节收尾时的三处补写：`docs/spec` +12、`docs/api` +3、`docs/product` +1）；生产代码 72,161 行（后端 54,858 行 Java + 前端 src 内 17,303 行 JS/JSX） |
-| 业务上下文 | 9 个限界上下文 + 共享内核：order / logistics / warehouse / product / customer / finance / **purchase** / tenant / platform / common |
-| 运行形态 | 后端 `:8082` 单进程；MySQL 8.0 + RocketMQ 5.3.2 由 docker-compose 提供；前端 Vite dev / 静态构建 |
-| 交付判断 | **仍不可对外提供服务**（凭据明文、读路径租户隔离、事件链路三处 P1 未闭环，见 §10） |
+| 业务上下文 | ~~9 个限界上下文 + 共享内核：order / logistics / warehouse / product / customer / finance / **purchase** / tenant / platform / common~~ → 🔄 **2026-10-21 复测：13 个限界上下文 + `common`**（`domain/` 下逐目录：audit / config / customer / finance / logistics / order / overview / platform / product / purchase / shop / tenant / warehouse，加 `common`） |
+| 运行形态 | 后端 `:8082` 单进程；MySQL 8.0 + RocketMQ 5.3.2 由 docker-compose 提供；前端 Vite dev（user-web `:5120`、admin-web `:5110`）/ 静态构建 |
+| 交付判断 | ~~**仍不可对外提供服务**（凭据明文、读路径租户隔离、事件链路三处 P1 未闭环，见 §10）~~ → 🔄 **2026-10-21 复测：三处里的「凭据明文」已不成立**——平台/店铺凭据自 2026-03-08 起 AES-256-GCM 落库、出参掩码（ISS-011；门槛是 `PLATFORM_CREDENTIAL_MASTER_KEY` 未注入时降级明文并 WARN）。仍阻断对外的是**读路径租户隔离**（ISS-050 及本轮新登记 ISS-146/147）与**事件链路**（ISS-053 无 outbox、ISS-054 双通道重复）；另有运维侧主密钥注入这一前提，见 §10 |
 
 本轮已完成的采购管理模块补全（P1 档：正确性 + 集成）已计入以下所有统计：12 个端点全量 REST 化、审批字段与状态机白名单、到货同事务入库 + 采购应付编排、前端契约对齐与服务端分页。
 
@@ -61,7 +62,7 @@
 | 认证 | jjwt-api / -impl / -jackson | 0.12.5 |
 | API 文档 | springdoc-openapi-starter-webmvc-ui | 2.6.0（`/swagger-ui.html`、`/v3/api-docs`） |
 | 对象映射 | MapStruct + mapstruct-processor | 1.5.5.Final（12 个 `@Mapper`，ADR-0010） |
-| 样板代码 | Lombok | 1.18.34（**278** 个文件引用） |
+| 样板代码 | Lombok | 1.18.34（~~**278** 个文件引用~~ → 🔄 2026-10-21：**296** 个主源文件） |
 | Excel 导入 | poi-ooxml | 5.2.5 |
 | 测试 | junit-jupiter / mockito-core / spring-boot-starter-test | managed |
 | 开发期 | spring-boot-devtools | managed（runtime） |
@@ -74,6 +75,8 @@
 React **19.2** + Vite **7.2.4** + antd **6.2** + `@ant-design/icons` 6.1 + react-router-dom **7.12** + axios **1.13.2**；开发期 ESLint 9 + `@vitejs/plugin-react` 5.1.1。脚本 4 个：`dev / build / lint / preview`。**无状态管理库**（无 Pinia/Redux/Zustand，状态靠 hooks + Context），**无 UI 测试框架**，**无 TypeScript**。
 
 ## 3. 代码规模统计
+
+> 🔄 **2026-10-21 复测（本节表格仍是 2026-03-22 快照，下表按当前工作树逐目录重取）**：`backend/src/main/java` **568** 个 `.java` / **62,426** 行（快照 513 / 54,858）；`backend/src/test/java` **102** 个 / **22,123** 行（快照 54 / 13,149）；Java 合计 **670** 个 / **84,549** 行。前端 `src`：user-web **62** 个 JS/JSX / **16,858** 行（快照 62 / 15,842，文件数不变、行数 +1,016）；admin-web **14** 个 / **1,963** 行（快照 13 / 1,620，多 1 个 `pages/platform/SystemConfig.jsx`）。全仓按扩展名的文件数/总行数本轮**未重新统计** ⇒ §3.1／§3.2 的总计（744 / 105,999）按快照引用，不要与上面的当前值相加。
 
 ### 3.1 按语言
 
@@ -133,6 +136,8 @@ React **19.2** + Vite **7.2.4** + antd **6.2** + `@ant-design/icons` 6.1 + react
 | domain/tenant | 11 | 890 | — | — |
 | domain/common | 9 | 293 | — | 异常家族 + PageResult |
 
+> 🔄 **2026-10-21 复测（上表是 2026-03-22 快照，四层按当前工作树重取）**：`domain` **205 文件 / 19,718 行**、`application` **43 / 9,089**、`interfaces` **110 / 9,765**、`infrastructure` **209 / 23,830**（四层合计 567 个 `.java`，另 1 个根包启动类 = 主源 568）。`domain` 现为 **13 个限界上下文 + `common`**：上表的 9 个业务目录之外新增 `audit` 6 文件 / 339 行、`config` 3 / 142、`overview` 2 / 74、`shop` 6 / 543，`tenant` 由 11 / 890 增至 **13 / 1,164**。`infrastructure/platform` 现 **61 文件 / 11,308 行**，占后端生产代码 **18.1%**（分母 62,426），为 `domain` 总行的 **57.3%** ⇒ 「一个包抵平台适配层」的结论不变，但原文 20.3% / 55% 是旧分母（54,858）下的值。
+
 平台适配层（infrastructure/platform）是全仓最大单一子系统：**10 个包 / 60 文件 / 11,123 行**，占后端生产代码 **20.3%**，规模排序 magento 1,356 > ozon 1,197 > shopify 1,160 > shopee 1,099 > ebay 941 > mercado 835 > aliexpress 811 > amazon 676 > common 446 > oauth 326。**domain 十个上下文合计 20,144 行（含 common 293），平台适配层一个包就抵到它的 55%**——这是本项目最不对称的投入结构。
 
 ### 4.2 层间依赖（import 边，全量 **1,530** 条 / 102 个源-目标组对；CSV 只存了权重降序的前 89 对 = 1,103 条，见 §0 提示）
@@ -166,12 +171,12 @@ infrastructure ──373──▶ domain        domain ──1──▶ infrastr
 
 | 指标 | 实测 |
 |---|---|
-| 控制器 | **20** 个 `@RestController` |
-| 端点 | **202** 个（`@GetMapping`82 / `@PostMapping`64 / `@PutMapping`41 / `@DeleteMapping`15，注解级计数与逐条枚举一致） |
-| 有 `@PreAuthorize` | **111（55.0%）**，其余 91 个无 |
-| 类级注解覆盖的端点 | 90（占已鉴权端点的 81%） |
-| 自描述覆盖 | 202/202 带 `@Operation`（springdoc 全量） |
-| 文档口径 | `docs/qa/known-issues.md`（2026-03-08 档）记 198，实测 202；差额主要来自采购接口 REST 化（`/statuses`、明细 PUT/DELETE）等增量 |
+| 控制器 | ~~**20** 个~~ → 🔄 2026-10-21：**24** 个 `@RestController` |
+| 端点 | ~~**202** 个~~ → 🔄 2026-10-21：**214** 个（`@GetMapping`88 / `@PostMapping`65 / `@PutMapping`45 / `@DeleteMapping`16，合计 214；逐控制器计数见 [api.md §4C](../api/api.md)） |
+| 有 `@PreAuthorize` | ~~**111（55.0%）**，其余 91 个无~~ → 🔄 2026-10-21：**130 处注解**（9 类级 + 121 方法级），分布在 **22/24 个控制器**；覆盖 **198/214 端点（92.5%）**，仍无注解的是 `AuthController`（4）、`TenantController`（9）与 `PlatformIntegrationController` 的 3 个端点 |
+| 类级注解覆盖的端点 | ~~90（占已鉴权端点的 81%）~~ → 🔄 2026-10-21：**79 个端点**（9 个类级控制器：Audit 2 / Config 2 / CustomerImport 10 / FinanceImport 11 / LogisticsImport 12 / OrderImport 11 / ProductImport 10 / Role 10 / User 11） |
+| 自描述覆盖 | ~~202/202~~ → 🔄 2026-10-21：**214/214** 带 `@Operation`（springdoc 全量；`@ApiResponse` 仍 0） |
+| 文档口径 | ~~`docs/qa/known-issues.md`（2026-03-08 档）记 198，实测 202；差额主要来自采购接口 REST 化（`/statuses`、明细 PUT/DELETE）等增量~~ → 🔄 2026-10-21：现行 [api.md §4C](../api/api.md) 与 [known-issues.md:11](../qa/known-issues.md) 均已记 214 |
 
 ### 5.2 每控制器（完整见 api-endpoints-by-controller.csv）
 
@@ -191,7 +196,7 @@ infrastructure ──373──▶ domain        domain ──1──▶ infrastr
 | ShopWarehouseController | 5 | 0 | 0% | |
 | AuthController | 4 | 0 | 0% | 设计上应公开 |
 
-**结构判读**：鉴权呈"新模块类级全覆盖、老控制器零覆盖"的二元分布，`AuthController` 之外的 90 个未鉴权端点集中在 order/logistics/product/warehouse/customer/tenant 六个主业务域——这是 TD-01，也是读路径越权的直接成因。
+**结构判读**：~~鉴权呈"新模块类级全覆盖、老控制器零覆盖"的二元分布，`AuthController` 之外的 90 个未鉴权端点集中在 order/logistics/product/warehouse/customer/tenant 六个主业务域——这是 TD-01，也是读路径越权的直接成因。~~ → 🔄 **2026-10-21 复测：上表与判读整体失效**——24 个控制器中 **22 个**有 `@PreAuthorize`（130 处注解），`LogisticsController` 13/13、`WarehouseController` 13/13、`ProductController` 12/12、`Customer` 9/9、`Finance` 9/9、`Order` 9/9、`Purchase` 12/12、`LogisticsChannel` 7/7、`ShopWarehouse` 5/5、`WarehouseImport` 10/10 均为方法级覆盖；`PlatformIntegration` 12/15（3 个端点无注解）；仅 `AuthController`（4）与 `TenantController`（9）完全无注解。剩余未鉴权端点 **16 个 = Auth 4 + Tenant 9 + PlatformIntegration 3**，「90 个未鉴权端点集中在六个主业务域」不再成立。**TD-01 的残余风险不再是"没注解"，而是注解只回答"能不能做这类操作"、不回答"这一行是不是他的租户"（ISS-050）**。
 
 ### 5.3 错误契约
 
@@ -207,18 +212,18 @@ infrastructure ──373──▶ domain        domain ──1──▶ infrastr
 
 | 指标 | 值 |
 |---|---|
-| 表 | **42** 张（全部 InnoDB + utf8mb4） |
-| 映射来源 | 40 个 `@Entity`（均有显式 `@Table`）+ 2 张 `@ManyToMany` 隐式关联表（`user_roles`、`role_jpa_entity_permissions`） |
-| 列 | **421**（均值 10.0 / 最大 19） |
-| 索引 | **110**（含 **26** 个唯一索引） |
-| 外键约束 | **19** |
-| 空表 | **23 / 42（55%）** |
+| 表 | ~~**42** 张~~ → 🔄 2026-10-21：**45** 张（全部 InnoDB + utf8mb4） |
+| 映射来源 | ~~40 个 `@Entity`（均有显式 `@Table`）+ 2 张 `@ManyToMany` 隐式关联表~~ → 🔄 2026-10-21：**43 个 `@Entity`（均有显式 `@Table`）+ 2 张 `@ElementCollection` 隐式关联表**（`user_roles`、`role_jpa_entity_permissions`） |
+| 列 | ~~**421**（均值 10.0 / 最大 19）~~ → 🔄 2026-10-21：**463**（`information_schema.columns` 实测） |
+| 索引 | ~~**110**（含 **26** 个唯一索引）~~ → 🔄 2026-10-21：**119** 个索引（`information_schema.statistics` 去重 `table_name,index_name`；其中唯一索引 **72** 个） |
+| 外键约束 | **19**（未变） |
+| 空表 | ~~**23 / 42（55%）**~~ → ⚠️ 2026-10-21 未逐表复测行数，勿引用旧分母；`shops`/`platform_integrations`/`shop_warehouses` 实测均为 0 行 |
 
 **最宽表**：logistics_orders 19、platform_integrations 19、shop_warehouses 16、6 张 `*_import_jobs` 各 15、orders 14、purchase_orders 12。
 
 ### 6.1 风险判读
 
-1. **无迁移工具**：`ddl-auto: update` + 手工快照 `docs/db/schema.sql`（42 个 `CREATE TABLE`，与运行库表数一致）。`scripts/docker/mysql/init/01-init.sql` **只有 1 条 INSERT、0 条 CREATE TABLE**——新环境完全靠 Hibernate 启动建表。已知历史事故：6 张表曾因保留字从未被建出（ISS-049）。→ **TD-05**。
+1. **无迁移工具**：`ddl-auto: update` + 手工快照 `docs/db/schema.sql`（~~42~~ → 🔄 2026-10-21：**45** 个 `CREATE TABLE`，与运行库表数一致）。`scripts/docker/mysql/init/01-init.sql` **只有 1 条 INSERT、0 条 CREATE TABLE**——新环境完全靠 Hibernate 启动建表。已知历史事故：6 张表曾因保留字从未被建出（ISS-049）。→ **TD-05**。
 2. **外键覆盖率 4.5%（19/421 列）**：引用完整性主要由应用层保证，跨表脏数据无库级拦截；带 FK 的表集中在 order(2)、inventory_records(2)、user_roles(1) 等少数。
 3. **索引分布极不均**：orders 9、purchase_orders 4、logistics_channels 3、inventory_records 3，而 23 张表 ≤1（仅主键）；多租户查询依赖 `(tenant_id, …)` 复合索引，缺表的查询会随数据量线性劣化。
 4. **行数分布显示这是演示库而非业务库**：role_jpa_entity_permissions 22、logistics_channels 8、inventory_records 7、purchase_orders 4、purchase_order_items 4（本轮 e2e 产物）、financial_transactions 3、orders 3，其余多为 0/1。任何容量结论都不可从此库推出。
@@ -237,6 +242,8 @@ infrastructure ──373──▶ domain        domain ──1──▶ infrastr
 | >500 行文件 | 6 | 0 |
 | console.* / localStorage.* | 46 / 20 | 3 / 11 |
 
+> 🔄 **2026-10-21 复测（上表其余行仍是 2026-03-22 快照）**：src 文件/行 user-web **62 / 16,858**、admin-web **14 / 1,963**；页面文件 user-web **46**、admin-web **6**；api 分组 / HTTP 调用 user-web **23 / 209**、admin-web **6 / 35**（`services/api.js` 实测）。路由数、复用组件数、`>500` 行文件数未重测。
+
 ### 7.1 页面按模块
 
 user-web：product 6、logistics 6、order 4、finance 4、warehouse 4、customer 4、tenant 3、user 3、**purchase 3**、platform-integration 3、platform 2、auth/home/role 各 1。
@@ -244,10 +251,10 @@ admin-web：platform 2、tenant 1、user 1、Login 1。
 
 ### 7.2 判读
 
-1. **组件复用几乎为零**：45 个页面对 2 个共享组件，页面各自直调 antd 与 `api.js`；6 个 >500 行页面（LogisticsImport 824、OrderImport 794、FinanceImport 794、ProductImport 725、CustomerImport 722、ShopWarehouseSync 532）5 个是导入页，前端导入页两两相似度 **0.30–0.87**（Finance↔Order 0.87、Customer↔Product 0.81）。→ **TD-10**。
-2. **`platformApi` 是空壳**：~~`api.js:486` 起 0 个方法，仅注释「根据实际后端API补充」，而 `platformIntegrationApi` 已有 9 个方法~~ → 🔄 2026-03-22 复测：空壳仍在（`user-web/src/services/api.js:486-488`），`platformIntegrationApi` 已增到 **14 个方法**（新增 `testConnection`、`pushFulfillment`），落差扩大。**更重的问题在页面侧**：`user-web` 与 `admin-web` 的 `pages/platform/SystemConfig.jsx` 是**逐字节相同的两份副本**（各 174 行），`fetchSystemConfig` 在函数体内现造 mockConfig（站点名/SMTP/密码策略全是假值），`onFinish` 只 `console.log` + `message.success('系统配置保存成功')`，**零网络请求**；两端 `SystemConfig.jsx:3` 那行 `import { platformApi }` 全文件再无第二处引用（死导入）。`admin-web/src/services/api.js:116-141` 另有一份等价桩（`getSystemConfig` 返回硬编码、`saveSystemConfig` 只 `console.log` 后 `return true`），同样无人调用。→ **TD-12（建议升 P1：用户看到"保存成功"但什么都没发生）**。
-3. **租户 ID 由前端下发**：`api.js` 中 `tenantId` 出现 ~~78~~ → **79**（user-web）+ 4（admin-web）= 83 次；`DEFAULT_TENANT_ID` 被 23 个文件引用 78 次（复测一致），且在 `constants/order.js:7` 与 `constants/product.js:7` **重复定义两份**（另有 `logistics.js:7`/`purchase.js:7`/`finance.js:7` 三处 re-export），取值 `localStorage.getItem('tenantId')` 而登录流程**从未写入该键** → 恒为 `'default-tenant'`。**本轮已在采购模块（PurchaseList / CreatePurchase）移除该下发并实测验证**，其余 18 个页面仍在下发。→ **TD-04（P1）**。
-4. **鉴权模型**：`AuthGuard` / `PlatformAdminGuard` / `TenantAdminGuard` 三个守卫仅在 `routes.jsx` 做路由级拦截，与后端 91 个未鉴权端点不构成一致边界。
+1. **组件复用几乎为零**：~~45 个页面~~ → 🔄 2026-10-21：**user-web 46 个页面 + admin-web 6 个页面 = 52** 对 2 个共享组件，页面各自直调 antd 与 `api.js`；6 个 >500 行页面（LogisticsImport 824、OrderImport 794、FinanceImport 794、ProductImport 725、CustomerImport 722、ShopWarehouseSync 532）5 个是导入页，前端导入页两两相似度 **0.30–0.87**（Finance↔Order 0.87、Customer↔Product 0.81）。→ **TD-10**。
+2. **`platformApi` 是空壳**：**🔄 2026-10-21：本条已整体失效。** ~~`api.js:486` 起 0 个方法，仅注释「根据实际后端API补充」，而 `platformIntegrationApi` 已有 9 个方法~~ → 2026-03-22 复测称空壳仍在、`SystemConfig.jsx` 是 mock 副本。→ 🔄 **2026-10-21 复测：两端 `platformApi` 均已从 `services/api.js` 删除**（user-web 23 个模块 / 209 个方法、admin-web 6 个模块 / 35 个方法）；user-web 与 admin-web 的 `SystemConfig.jsx` **均已调用 `systemConfigApi.getConfig/saveConfig`**（`user-web/...:14,31`、`admin-web/...:12,29`），无 `mockConfig`、无死导入；`pages/` 下 `mock` 字样 0 处。→ **TD-12 可关闭**。
+3. **租户 ID 由前端下发**：`api.js` 中 `tenantId` 出现 ~~78~~ → ~~**79**（user-web）+ 4（admin-web）= 83 次~~ → 🔄 **2026-10-21 复测：95（user-web）+ 6（admin-web）= 101 次**；`DEFAULT_TENANT_ID` 仍被 **23** 个文件引用、出现 **76** 次（原文 78 次），且在 `constants/order.js:7` 与 `constants/product.js:7` **重复定义两份**（另有 `logistics.js:7`/`purchase.js:7`/`finance.js:7` 三处 re-export），取值 `localStorage.getItem('tenantId')` 而登录流程**从未写入该键** → 恒为 `'default-tenant'`。**采购模块（PurchaseList / CreatePurchase）确认仍不下发**（`PurchaseList.jsx:61`、`CreatePurchase.jsx:71` 均为「不传 tenantId」注释，`PurchaseDetail.jsx:292` 只在详情展示 `purchase.tenantId`）；其余页面逐页是否仍在下发**本轮未重做普查**，原文「18 个页面」按快照引用。→ **TD-04（P1）**。
+4. **鉴权模型**：`AuthGuard` / `PlatformAdminGuard` / `TenantAdminGuard` 三个守卫仅在 `routes.jsx` 做路由级拦截，与后端 ~~91 个未鉴权端点~~ → 🔄 2026-10-21：**16 个未鉴权端点**（Auth 4 + Tenant 9 + PlatformIntegration 3）不构成一致边界。
 5. **两端重复**：`admin-web/src/services/api.js` 133 个非空行中 **86 行（65%）与 user-web 逐字节相同**；依赖集、脚本、`baseURL http://localhost:8082/api` 硬编码全部一致，无共享包。→ ADR-0005/0008 完成了拆分但未沉淀共享层。
 
 ## 8. 构建与部署配置
@@ -262,17 +269,19 @@ admin-web：platform 2、tenant 1、user 1、Login 1。
 | CI/CD | **不存在**：无 `.github/`、无 **任何 Dockerfile**、无 Jenkins/GitLab CI 文件，而 `docs/tech/ci-cd.md` 描述了完整流水线（→ **TD-09**） |
 | 前端构建 | Vite `build`，无环境变量注入（`baseURL` 源码硬编码），无 Docker 化静态托管配置 |
 
+> 🔄 **2026-10-21 复测（上表为 2026-03-22 快照）**：`application.yml` 现 **121 行**；`ddl-auto: update` 在 `:35`、`show-sql: true` `:36`、`platform.credential.master-key: ${PLATFORM_CREDENTIAL_MASTER_KEY:}` `:66`、`jwt.secret: ${JWT_SECRET:…}` `:119`。**密钥处理一行已不成立**：数据源口令现为 `:28` 的 `${ERP_DB_PASSWORD:123456}`、JWT 为 `:119` 的 `${JWT_SECRET:…}` ⇒ **三处都改成了环境变量占位**，区别只在 master-key **无明文兜底**，而 DB 口令与 JWT 仍带源文件默认值（未注入时照常启动）。其余构建/CI/基础设施结论未变。
+
 **判读**：可交付性完全绑定"能连到本机的 MySQL + 手动 `mvn spring-boot:run`"。没有镜像、没有流水线、没有 profile，意味着 §6 的 DDL 风险与 §5.3 的错误契约风险都无法通过发布流程兜住。
 
 ## 9. 测试现状分析
 
 | 指标 | 实测 |
 |---|---|
-| 测试文件 / 测试类 | 54 / 54（每个测试文件都是一个含 `@Test` 的真实测试类，无纯 helper 文件） |
-| `@Test` 方法 | **494**（无 `@ParameterizedTest`） |
-| 结果 | **494 通过 / 0 失败 / 0 错误 / 0 跳过，BUILD SUCCESS**（2026-03-22 复跑 `mvn -o test-compile` + `surefire:test`；54 个 surefire 报告计时合计 **10.4s**） |
-| 断言密度 | `when()` 154、`@Mock` 37、~~断言与 verify 合计 1,776~~ → **`assert*` 1,776 + `verify(` 55 = 1,831**（2026-03-22 复测：1,776 是 `assert[A-Za-z]*(` 的单独计数；`verify(` 55 处集中在 **9 个类**，见 quality-indicators.csv；54 个测试类**全部 ≥3 个断言点**、`assertTrue(true)` 0 处） |
-| 主类 : 测试类 | 513 : 54（**9.5 : 1**）；按同名匹配仅 **28** 个主类有对应测试类（5.5%） |
+| 测试文件 / 测试类 | ~~54 / 54~~ → 🔄 2026-10-21：**102 / 102**（每个测试文件都是一个含 `@Test` 的真实测试类，无纯 helper 文件） |
+| `@Test` 方法 | ~~**494**~~ → 🔄 2026-10-21：**801**（无 `@ParameterizedTest`） |
+| 结果 | ~~**494 通过 / 0 失败 / 0 错误 / 0 跳过，BUILD SUCCESS**~~ → 🔄 2026-10-21：**801 通过 / 0 失败 / 0 错误 / 0 跳过**（`target/surefire-reports` 102 个 XML 汇总；测试计时合计 **10.7s**，上一次完整 `mvn test` 的运行产物） |
+| 断言密度 | `when()` ~~154~~ → **409**、`@Mock` ~~37~~ → **119**、~~**`assert*` 1,776 + `verify(` 55 = 1,831**~~ → 🔄 2026-10-21：**`assert*` 2,501 + `verify(` 177 = 2,678**（`verify(` 分布在 34 个类；`assertTrue(true)` 仍 0 处） |
+| 主类 : 测试类 | ~~513 : 54（**9.5 : 1**）；按同名匹配仅 **28** 个主类有对应测试类（5.5%）~~ → 🔄 2026-10-21：**568 : 102（5.6 : 1）**；同名匹配未重算 |
 | 覆盖率工具 | **无**（TD-08） |
 
 ### 9.1 分布（完整见 tests-by-class.csv）
@@ -286,14 +295,14 @@ admin-web：platform 2、tenant 1、user 1、Login 1。
 | infrastructure.security | 17 | JWT + 租户切面 |
 | persistence.repository / messaging(+config) / infrastructure.config | 20 | 7 / 11 / 2 |
 
-**按层汇总**：平台适配 283（57.3%）> 控制器 87（17.6%）> 领域 45 > 应用 42 > 持久化/消息/配置 20 > 安全 17，合计 494。
+**按层汇总**：~~平台适配 283（57.3%）> 控制器 87（17.6%）> 领域 45 > 应用 42 > 持久化/消息/配置 20 > 安全 17，合计 494。~~ → 🔄 **2026-10-21 复测**：`infrastructure.platform` **26 类 / 291 例** > `application.service` **28 类 / 185 例** > `interfaces.controller` **11 类 / 101 例**（另有 interfaces 根 1 类 / 7 例）> `domain` **12 类 / 79 例** > `architecture` **9 类 / 44 例** > `infrastructure.persistence` 6/25 > `infrastructure.security` 4/23 > `infrastructure.messaging` 2/11 > `infrastructure.config` 1/2；合计 **102 类 / 801 例**。占比：platform **36.3%**、application **23.1%**、controller **12.6%**、domain **9.9%**、architecture **5.5%**。
 
 ### 9.2 判读
 
-1. **测试资产投向与业务风险错位**：**57.3%** 的测试（283/494）在平台适配层，且全部是本地 `HttpServer` 桩 + 官方形状 fixture，无任一真实沙箱凭据（ISS-064）；而承载资金与库存的 `domain.*` 只有 **45 例（9.1%）**，其中采购独占 17 例（本轮补全）。
-2. **完全没有集成级测试**：`@SpringBootTest` **0**、`@WebMvcTest` **0**、`@DataJpaTest` **0**、Testcontainers **0**。控制器测试用 `MockMvcBuilders.standaloneSetup`（10 个类 / 11 处），**不经 Spring 过滤链 → 202 端点上那 111 个 `@PreAuthorize` 在测试里全部不生效**；仅 2 个测试类接入了 `GlobalExceptionHandler`。建表风险（ISS-049）也不在任何测试保护范围内。
-3. **无前端测试**：两端 devDeps 无任何测试框架，45 个页面 0 覆盖；本轮采购 UI 全链路仅能靠浏览器驱动人工验证。
-4. **文档口径漂移**：`docs/qa/known-issues.md` 2026-03-08 档记为「31 测试类 211 @Test」，与当日工作树实测（54 类 / 494 例）不符。以本报告与 CSV 为准。
+1. **测试资产投向与业务风险错位**：~~**57.3%** 的测试（283/494）~~ → 🔄 2026-10-21：**platform 291/801（36.3%）** 在平台适配层，且全部是本地 `HttpServer` 桩 + 官方形状 fixture，无任一真实沙箱凭据（ISS-064）；而承载资金与库存的 `domain.*` ~~只有 **45 例（9.1%）**~~ → **79 例（9.9%）**，其中采购独占 17 例（本轮补全）。
+2. **完全没有集成级测试**：`@SpringBootTest` **0**、`@WebMvcTest` **0**、`@DataJpaTest` **0**、Testcontainers **0**。控制器测试用 `MockMvcBuilders.standaloneSetup`（10 个类 / 11 处），**不经 Spring 过滤链 → ~~202~~ → 🔄 2026-10-21：214 端点上那 ~~111~~ → 130 个 `@PreAuthorize` 在测试里全部不生效**；~~仅 2 个测试类~~ → 🔄 2026-10-21：**仅 4 个测试类**接入了 `GlobalExceptionHandler`（`PurchaseControllerTest:63`、`PlatformIntegrationControllerTest:52`、`LogisticsChannelControllerTest:64`、`FinanceControllerTest:62`）。建表风险（ISS-049）也不在任何测试保护范围内。
+3. **无前端测试**：两端 devDeps 无任何测试框架，~~45 个页面~~ → 🔄 2026-10-21：**52 个页面**（user-web 46 + admin-web 6）0 覆盖；本轮采购 UI 全链路仅能靠浏览器驱动人工验证。
+4. **文档口径漂移**：`docs/qa/known-issues.md` 2026-03-08 档记为「31 测试类 211 @Test」，与当日工作树实测（54 类 / 494 例）不符。→ 🔄 **2026-10-21：known-issues.md 已补 2026-10-21 计量口径（102 类 / 801 例 / 24 控制器 / 214 端点 / 130 `@PreAuthorize`），当前以该行与本报告顶部订正块为准**。
 
 ## 10. 代码质量评估
 
@@ -302,12 +311,12 @@ admin-web：platform 2、tenant 1、user 1、Login 1。
 | 指标 | 值 |
 |---|---|
 | TODO / FIXME / printStackTrace / System.out（主源码） | **0 / 0 / 0 / 0** |
-| 空 catch 块 | **0**（252 个 catch 全部有处理） |
-| Javadoc 块 | **2,185**（≈4.0 块/百行，中文，含 `@author`） |
-| 注入风格 | `@Autowired` 字段注入 **11** 处 vs `private final` 构造注入 **647** 处 |
-| 事务边界 | `@Transactional` ~~115~~ → **116** 处（2026-03-22 复测：application 96 / infrastructure 20 / domain 0 / interfaces 0。⚠️ `readOnly` ~~仅 7 处~~ → **9 处**、`rollbackFor` **0** 处——默认不回滚 checked 异常，见 quality-indicators.csv） |
+| 空 catch 块 | **0**（~~252~~ → 🔄 2026-10-21：**278** 个 catch 全部有处理） |
+| Javadoc 块 | ~~**2,185**（≈4.0 块/百行，中文，含 `@author`）~~ → 🔄 2026-10-21：**2,504 块**（主源 62,426 行 ⇒ ≈4.0 块/百行，密度不变） |
+| 注入风格 | ~~`@Autowired` 字段注入 **11** 处 vs `private final` 构造注入 **647** 处~~ → 🔄 2026-10-21：**13 处 vs 724 处** |
+| 事务边界 | `@Transactional` ~~115~~ → ~~**116** 处~~ → 🔄 2026-10-21：**145 处 / 30 个文件**（`readOnly` ~~7~~ → ~~9~~ → **20 处**、`rollbackFor` **0** 处——默认不回滚 checked 异常，ISS-036 仍未修） |
 | 上下文切分 | 跨上下文 import 仅 17 条 / 6 条边（§4.3） |
-| API 自描述 | 202/202 端点带 `@Operation` |
+| API 自描述 | ~~202/202 端点带 `@Operation`~~ → 🔄 2026-10-21：**214/214**（`@ApiResponse` 仍 0） |
 
 卫生程度高于同规模业务系统常态：**没有调试残留、没有静默吞异常、没有字段注入泛滥**。
 
@@ -320,7 +329,7 @@ admin-web：platform 2、tenant 1、user 1、Login 1。
 | 绕过异常家族 | `new RuntimeException` 8 处（6 处表达 not-found，会被 handler 归为 400 INVALID_OPERATION 而非 404） |
 | 分层违规 | 2 类（domain→infrastructure 1 处、application→interfaces/dto 69 处） |
 | 前端卫生 | console.* 49、localStorage.* 31，无 ESLint 规则收紧（无 no-console） |
-| 契约完整性 | **9 个控制器**仍有 `catch → Result.error`，共 **45** 处：PlatformIntegration 23、Finance 8、LogisticsImport 3、CustomerImport/FinanceImport/OrderImport/ProductImport/WarehouseImport 各 2、Logistics 1；采购与其余 11 个控制器本轮已清零（`PurchaseController` 0 catch）。🔄 2026-03-22 订正口径：~~"把失败压成 HTTP 200 + code 500"~~ 对**其中 22 处**成立（`FinanceController` 8 处 = HTTP 200 + 数字串 `"500"`；6 个导入控制器 13 处 + `LogisticsController:164` 1 处 = HTTP 200 但码已是语义串）；`PlatformIntegrationController` 那 23 处包在 `ResponseEntity` 里（14×500 + 9×400），状态码正确，**残留问题是 45 处全部把 `e.getMessage()` 原文写进响应体**（信息泄漏，M-08）。另有 148 个端点返回类型是裸 `Result`（9 个控制器 89 个端点完全无 `ResponseEntity`），这部分即使无 catch 也给不出正确状态码 |
+| 契约完整性 | **9 个控制器**仍有 `catch → Result.error`，共 ~~**45** 处~~ → 🔄 **2026-10-21 复测 46 处**：PlatformIntegration ~~23~~ → **24**、Finance 8、LogisticsImport 3、CustomerImport/FinanceImport/OrderImport/ProductImport/WarehouseImport 各 2、Logistics 1；采购与其余 11 个控制器本轮已清零（`PurchaseController` 0 catch）。全仓 `Result.error(` 共 **62** 处 = 控制器 46 + 非控制器 16。🔄 2026-03-22 订正口径：~~"把失败压成 HTTP 200 + code 500"~~ 对**其中 22 处**成立（`FinanceController` 8 处 = HTTP 200 + 数字串 `"500"`；6 个导入控制器 13 处 + `LogisticsController:164` 1 处 = HTTP 200 但码已是语义串）；`PlatformIntegrationController` 那 23 处包在 `ResponseEntity` 里（14×500 + 9×400），状态码正确，**残留问题是 45 处全部把 `e.getMessage()` 原文写进响应体**（信息泄漏，M-08）。另有 148 个端点返回类型是裸 `Result`（9 个控制器 89 个端点完全无 `ResponseEntity`），这部分即使无 catch 也给不出正确状态码 |
 
 ### 10.3 技术债登记表
 
@@ -330,19 +339,21 @@ admin-web：platform 2、tenant 1、user 1、Login 1。
 - **P2（影响稳定集成，5 条）**：TD-07 控制器吞异常 · TD-09 无 CI 与镜像 · TD-11 分层方向违规 · TD-12 前端空壳客户端 · TD-16 文档口径漂移
 - **P3（可维护性，2 条）**：TD-13 超大类 · TD-15 前端调试残留
 
+> 🔄 **2026-10-21 复测（CSV 本身仍是 2026-03-22 快照，未重生成；以下为正文口径订正）**：**TD-01** 已不再成立——214 端点里只有 **16 个**无 `@PreAuthorize`（Auth 4 + Tenant 9 + PlatformIntegration 3），风险转为**行级租户归属**（ISS-050；本轮新登记 ISS-146/147）；**TD-06** 的「明文入库」已不成立——平台/店铺凭据自 2026-03-08 起 AES-256-GCM 落库、出参掩码（ISS-011），残余风险是**主密钥未注入时降级明文**与**历史明文行需轮换**；**TD-12** 可关闭——两端 `platformApi` 已删除，`SystemConfig`/`PlatformDashboard` 均接真实接口（§7.2）。TD-02/03/05/08/09/10/13/15 未在本文重测，按 CSV 快照引用。
+
 ### 10.4 与既有文档的一致性提示
 
 - ~~`docs/qa/known-issues.md`（65 个 ISS 条目，001–065，多轮复测标注）与代码存在口径漂移：端点 198 vs 实测 **202**、测试 31 类/211 例 vs 实测 **54 类/494 例**。~~ → 🔄 **2026-03-22 本轮已在该文件内修复**：`known-issues.md:10` 追加了「2026-03-22 全量复测」计量口径行（513 主源 / 202 端点 / 54 类 494 例 / `@Transactional` 116 / `@PreAuthorize` 29），并在 `:9` 原 10-03 档上标注其已过期，198 与 31/211 作为历史档位保留。
-- 该文档另引用 **ADR-0014**，但 ~~`docs/adr/` 实际只有 **0001–0013**（+README）——编号已占用但文件不存在，后续新裁决请从 **0015** 起~~。→ 🔄 **2026-03-22 复测更正**：`docs/adr/` 实测 **13 个文件 = ADR-0001…0012 + README**，**0013 与 0014 都不存在**。因此 0013 是**下一个可用编号**（不是已占用），新裁决应从 **0013** 起；`docs/tech/README.md` 与 `docs/api/error-codes.md` 此前沿用了「实际有 0001–0013 / 从 0015 起」的错误结论，已同步更正。
-- 本文与 inventory CSV 为当日实测，可独立作为底账引用；`docs/spec/purchase.md`、`docs/api/api.md`、`docs/db/*` 的采购章节尚待按本轮改动同步（进行中任务）。
+- 该文档另引用 **ADR-0014**，但 ~~`docs/adr/` 实际只有 **0001–0013**（+README）——编号已占用但文件不存在，后续新裁决请从 **0015** 起~~。→ 🔄 **2026-03-22 复测更正**：`docs/adr/` 实测 **13 个文件 = ADR-0001…0012 + README**，**0013 与 0014 都不存在**。因此 0013 是**下一个可用编号**（不是已占用），新裁决应从 **0013** 起；`docs/tech/README.md` 与 `docs/api/error-codes.md` 此前沿用了「实际有 0001–0013 / 从 0015 起」的错误结论，已同步更正。→ 🔄 **2026-10-21 再订正：ADR-0013 已被占用**——`docs/adr/0013-shop-entity-and-platform-connection-split.md` 已存在（14 个文件 = ADR-0001…0013 + README），**下一个可用编号是 0014**；ADR-0014 仍不存在。
+- 本文与 inventory CSV 为当日实测，可独立作为底账引用；~~`docs/spec/purchase.md`、`docs/api/api.md`、`docs/db/*` 的采购章节尚待按本轮改动同步（进行中任务）~~ → 🔄 **2026-10-21：已同步**——`docs/spec/purchase.md` 全篇按当前工作树复测（行号对照表见其 §2 前注），`docs/api/api.md` 已记 214 端点，`docs/db/*` 已补店铺/审计/系统配置三表与 45 张基表口径；仍未同步的是 `docs/tech/inventory/*.csv`（保持 2026-03-22 快照）。
 
 ### 10.5 结论与建议顺序
 
 **当前不可对外提供服务**。按投入产出排序的最小闭环路径：
 
-1. TD-04（前端租户）→ 一次性收掉余下 18 个页面，采购模块的做法可直接复制；
-2. TD-01 + TD-02/03（鉴权 + 错误契约）→ 6 个主业务域控制器补类级 `@PreAuthorize`，errorCode 收常量并落文档 §3 码表；
-3. TD-06 + TD-05（密钥 + DDL）→ 环境变量注入与轮换，schema 快照加 CI 校验；
+1. TD-04（前端租户）→ 采购模块「不下发 tenantId」的做法可直接复制到其余页面（🔴 2026-10-21：剩余页面数**未重测**，原文「18 个」仅作历史口径）；
+2. TD-01 + TD-02/03（鉴权 + 错误契约）→ 🔄 2026-10-21：**类级补注解已不是主战场**，只剩 16 个未鉴权端点（Auth 4 / Tenant 9 / PlatformIntegration 3）；真正要收的是**行级归属**（ISS-050、ISS-146/147），errorCode 仍要收常量并落文档 §3 码表；
+3. TD-06 + TD-05（密钥 + DDL）→ 🔄 2026-10-21：凭据已加密，剩**主密钥注入/轮换 + 历史明文行收敛**；DDL 仍是 `ddl-auto: update`，schema 快照加 CI 校验不变；
 4. TD-14（事件链路）→ 统一仓储 `save()` 语义，把"下单→物流""到货→入库/应付"变成可验证的横切能力；
 5. TD-09 + TD-08（CI + 覆盖率基线）→ 1/2/3 步的回归保护；
 6. TD-10 / TD-13（导入子系统收敛）→ 收益最大但改动面最广，放在契约稳定之后。
